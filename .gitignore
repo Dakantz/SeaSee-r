@@ -34,3 +34,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# IDEs
+/.idea/
+
+# Obsidian workspace state
+/.obsidian/workspace.json
+/.obsidian/workspace-mobile.json
