@@ -20,17 +20,10 @@ A convenient PowerShell wrapper script is provided to let you execute PySLAM Pyt
 
 ### Usage Examples
 
-To check the installed PyTorch version and GPU passthrough:
+To verify PyTorch GPU acceleration inside the Docker container:
 ```powershell
-.\pyslam\scripts\run_in_docker.ps1 "python -c `"import torch; print(torch.__version__); print(torch.cuda.is_available())`""
+powershell.exe -ExecutionPolicy Bypass -File .\pyslam\scripts\run_in_docker.ps1 "python tests/test_gpu.py"
 ```
-
-To run a specific PySLAM script (for instance, `main_vo.py`):
-```powershell
-.\pyslam\scripts\run_in_docker.ps1 "python main_vo.py --dataset kitti"
-```
-
-> **Note:** The wrapper script automatically sources the Python virtual environment (`/opt/pyslam/venv`) before executing your command.
 
 ## Stopping the Container
 

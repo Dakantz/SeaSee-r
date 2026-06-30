@@ -1,0 +1,21 @@
+{
+  "name": "PySLAM Dev Environment",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "pyslam-dev",
+  "workspaceFolder": "/workspace",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/root/.python/venvs/pyslam/bin/python",
+        "python.terminal.activateEnvironment": true
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-toolsai.jupyter",
+        "ms-vscode.cpptools"
+      ]
+    }
+  },
+  "remoteUser": "root",
+  "postCreateCommand": "echo 'Dev container created. To build PySLAM, run: cd /opt/pyslam && ./install_all.sh'"
+}
