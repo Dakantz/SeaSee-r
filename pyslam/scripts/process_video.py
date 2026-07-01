@@ -4,8 +4,20 @@ import argparse
 import cv2
 
 # Ensure pyslam is accessible
-# We installed it in /opt/pyslam inside the Docker container
-PYSLAM_DIR = os.environ.get("PYSLAM_DIR", "/opt/pyslam")
+# Try to find pyslam from environment or standard relative paths
+PYSLAM_DIR = os.environ.get("PYSLAM_DIR")
+if not PYSLAM_DIR:
+    # First check if we are in Docker (/opt/pyslam exists)
+    if os.path.exists("/opt/pyslam"):
+        PYSLAM_DIR = "/opt/pyslam"
+    else:
+        # Check if we have a cloned copy in thirdparty relative to this script on the host
+        possible_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "thirdparty", "pyslam"))
+        if os.path.exists(possible_dir):
+            PYSLAM_DIR = possible_dir
+        else:
+            PYSLAM_DIR = "/opt/pyslam"
+
 sys.path.append(PYSLAM_DIR)
 
 try:
