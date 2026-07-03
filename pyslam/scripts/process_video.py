@@ -5,6 +5,8 @@ import sys
 import argparse
 import cv2
 import numpy as np
+import yaml
+import json
 
 # Ensure pyslam is accessible
 # Try to find pyslam from environment or standard relative paths
@@ -66,7 +68,7 @@ def save_ply(filename, points, colors=None):
                 f.write(f"{p[0]:.6f} {p[1]:.6f} {p[2]:.6f}\n")
 
 
-def process_video(video_path, fx=None, fy=None, cx=None, cy=None, custom_fps=None, output_map_path="map.ply"):
+def process_video(video_path, output_map_path="map.ply", config_path=None):
     print(f"Processing underwater video: {video_path}")
     
     if not HAS_PYSLAM:
@@ -90,21 +92,30 @@ def process_video(video_path, fx=None, fy=None, cx=None, cy=None, custom_fps=Non
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps <= 0:
         fps = 30.0
-    if custom_fps is not None:
-        fps = custom_fps
+        
+    config_data = {}
+    if config_path and os.path.exists(config_path):
+        print(f"Loading camera configuration from {config_path}")
+        with open(config_path, 'r') as f:
+            if config_path.endswith('.yaml') or config_path.endswith('.yml'):
+                config_data = yaml.safe_load(f)
+            elif config_path.endswith('.json'):
+                config_data = json.load(f)
+            else:
+                print("Warning: Unsupported config file format. Please use .yaml or .json")
+                
+    pyslam_settings = config_data.get("pyslam_settings", {})
+    intrinsics = pyslam_settings.get("intrinsics", {})
+    print(intrinsics)
+    #if "video_dimensions" in pyslam_settings:
+    #    width = pyslam_settings["video_dimensions"][0]
+    #    height = pyslam_settings["video_dimensions"][1]
+    #    
+    #if "fps" in pyslam_settings:
+    #    fps = pyslam_settings["fps"]
 
     print(f"Video Dimensions: {width}x{height} @ {fps} FPS")
-
-    # Define or dynamically estimate default camera intrinsic parameters if not provided
-    # A standard heuristic is setting focal lengths fx, fy roughly equal to frame width,
-    # and principal points cx, cy in the center of the frame.
-    fx = fx if fx is not None else float(width) * 1.0
-    fy = fy if fy is not None else float(width) * 1.0
-    cx = cx if cx is not None else float(width) / 2.0
-    cy = cy if cy is not None else float(height) / 2.0
     
-    print(f"Camera Intrinsics configured as: fx={fx}, fy={fy}, cx={cx}, cy={cy}")
-
     # Step 1: Initialize PySLAM Config and set settings
     from pyslam.config import Config
     from pyslam.slam import PinholeCamera
@@ -112,8 +123,21 @@ def process_video(video_path, fx=None, fy=None, cx=None, cy=None, custom_fps=Non
     from pyslam.io.dataset_types import SensorType
     from pyslam.local_features.feature_tracker_configs import FeatureTrackerConfigs
     from pyslam.utilities.logging import LoggerQueue
+    from pyslam.loop_closing.loop_detector_configs import LoopDetectorConfigs
+    from pyslam.config_parameters import Parameters
+    from pyslam.slam.frame import Frame
+
+    # Disable storing images in KeyFrames natively in PySLAM C++
+    Frame.is_store_imgs = False
 
     config = Config()
+    
+    # Relax relocalization parameters for blurry underwater video
+    # Parameters.kRelocalizationMinKpsMatches = 8
+    # Parameters.kRelocalizationPoseOpt1MinMatches = 8
+    # Parameters.kRelocalizationFeatureMatchRatioTest = 0.85
+    # Parameters.kRelocalizationDoPoseOpt2NumInliers = 15
+
     
     # Configure monocular camera setup
     config.sensor_type = SensorType.MONOCULAR
@@ -121,18 +145,22 @@ def process_video(video_path, fx=None, fy=None, cx=None, cy=None, custom_fps=Non
         config.cam_settings = {}
         
     # Update config.cam_settings with the resolved intrinsics
-    config.cam_settings["Camera.width"] = width
-    config.cam_settings["Camera.height"] = height
-    config.cam_settings["Camera.fx"] = fx
-    config.cam_settings["Camera.fy"] = fy
-    config.cam_settings["Camera.cx"] = cx
-    config.cam_settings["Camera.cy"] = cy
-    config.cam_settings["Camera.fps"] = fps
-    config.cam_settings["Camera.k1"] = 0.0
-    config.cam_settings["Camera.k2"] = 0.0
-    config.cam_settings["Camera.p1"] = 0.0
-    config.cam_settings["Camera.p2"] = 0.0
-    config.cam_settings["Camera.k3"] = 0.0
+    config.cam_settings["Camera.width"] = intrinsics.get("width", width)
+    config.cam_settings["Camera.height"] = intrinsics.get("height", height)
+
+    # Define or dynamically estimate default camera intrinsic parameters if not provided
+    # A standard heuristic is setting focal lengths fx, fy roughly equal to frame width,
+    # and principal points cx, cy in the center of the frame.
+    config.cam_settings["Camera.fx"] = intrinsics.get("fx", float(width) * 1.0)
+    config.cam_settings["Camera.fy"] = intrinsics.get("fy", float(width) * 1.0)
+    config.cam_settings["Camera.cx"] = intrinsics.get("cx", float(width) / 2.0)
+    config.cam_settings["Camera.cy"] = intrinsics.get("cy", float(height) / 2.0)
+    config.cam_settings["Camera.fps"] = intrinsics.get("fps", fps)
+    config.cam_settings["Camera.k1"] = intrinsics.get("k1", 0.0)
+    config.cam_settings["Camera.k2"] = intrinsics.get("k2", 0.0)
+    config.cam_settings["Camera.p1"] = intrinsics.get("p1", 0.0)
+    config.cam_settings["Camera.p2"] = intrinsics.get("p2", 0.0)
+    config.cam_settings["Camera.k3"] = intrinsics.get("k3", 0.0)
 
     # Invalidate cached properties on config to force re-evaluation with our overrides
     for attr in ["_DistCoef", "_Kinv", "_bf", "_width", "_height", "_fps"]:
@@ -148,16 +176,23 @@ def process_video(video_path, fx=None, fy=None, cx=None, cy=None, custom_fps=Non
     slam = Slam(
         camera=camera,
         feature_tracker_config=feature_tracker_config,
-        loop_detector_config=None,
+        loop_detector_config=LoopDetectorConfigs.DBOW3,
         semantic_mapping_config=None,
         sensor_type=SensorType.MONOCULAR,
         config=config,
         headless=True
     )
 
-    frame_count = 0
+    # Set the start and end time in seconds for processing
+    start_time = 0
+    duration = 60
+    start_frame = int(start_time * fps)
+    end_frame = int(duration * fps)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    frame_count = start_frame
+
     try:
-        while True:
+        while frame_count <= end_frame:
             ret, frame = cap.read()
             if not ret:
                 break
@@ -167,8 +202,9 @@ def process_video(video_path, fx=None, fy=None, cx=None, cy=None, custom_fps=Non
             
             # Step 4: Frame Processing - Pass the frame to the PySLAM tracker
             slam.track(frame, None, None, frame_count, timestamp)
-            
-            if frame_count % 30 == 0:
+
+
+            if frame_count % 100 == 0:
                 print(f"Processed {frame_count} frames...")
                 if slam.tracking.cur_R is not None and slam.tracking.cur_t is not None:
                     # Print current position for visual progress feedback
@@ -202,6 +238,13 @@ def process_video(video_path, fx=None, fy=None, cx=None, cy=None, custom_fps=Non
                 else:
                     colors_rgb.append(np.array([255, 255, 255]))
                     
+        # Add camera trajectory points as red dots (BGR: [0, 0, 255])
+        for pose in est_poses:
+            pos = pose[:3, 3]
+            if np.all(np.isfinite(pos)):
+                points_3d.append(pos)
+                colors_rgb.append(np.array([0, 0, 255]))
+                    
         points_3d = np.array(points_3d)
         colors_rgb = np.array(colors_rgb)
 
@@ -222,15 +265,12 @@ def process_video(video_path, fx=None, fy=None, cx=None, cy=None, custom_fps=Non
     LoggerQueue.stop_all_instances()
     print("Shutdown complete.")
 
-
+#Example Call:
+#./pyslam/scripts/run_native.sh python pyslam/scripts/process_video.py --video ../Data/Video/Krk\ 2026-5/sample_1.MP4 --config ../pyslam/scripts/camera_config.yaml
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process ROV underwater video using PySLAM")
     parser.add_argument("--video", type=str, required=True, help="Path to the input video file")
-    parser.add_argument("--fx", type=float, default=None, help="Camera intrinsic focal length fx (pixels)")
-    parser.add_argument("--fy", type=float, default=None, help="Camera intrinsic focal length fy (pixels)")
-    parser.add_argument("--cx", type=float, default=None, help="Camera principal point cx (pixels)")
-    parser.add_argument("--cy", type=float, default=None, help="Camera principal point cy (pixels)")
-    parser.add_argument("--fps", type=float, default=None, help="Force custom camera FPS")
+    parser.add_argument("--config", type=str, default=None, help="Path to camera configuration file (.yaml or .json)")
     parser.add_argument("--output_map", type=str, default="map.ply", help="Path to save output 3D map (.ply)")
     
     args = parser.parse_args()
@@ -241,11 +281,7 @@ if __name__ == "__main__":
         
     process_video(
         video_path=args.video,
-        fx=args.fx,
-        fy=args.fy,
-        cx=args.cx,
-        cy=args.cy,
-        custom_fps=args.fps,
-        output_map_path=args.output_map
+        output_map_path=args.output_map,
+        config_path=args.config
     )
 
