@@ -1,0 +1,13 @@
+ocean/Easy/depth_left.zip 1.834772057
+ocean/Easy/depth_right.zip 1.834383757
+ocean/Easy/image_left.zip 3.440934445
+ocean/Easy/image_right.zip 3.441524237
+ocean/Easy/seg_left.zip 0.086238329
+ocean/Easy/seg_right.zip 0.086148888
+ocean/Hard/depth_left.zip 1.361743146
+ocean/Hard/depth_right.zip 1.362096349
+ocean/Hard/image_left.zip 2.556269907
+ocean/Hard/image_right.zip 2.556107385
+ocean/Hard/seg_left.zip 0.061717142
+ocean/Hard/seg_right.zip 0.061752799
+
