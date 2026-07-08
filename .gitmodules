@@ -1,0 +1,3 @@
+[submodule "pyslam/pyslam_core"]
+	path = pyslam/pyslam_core
+	url = https://github.com/Cott3r/pyslam-ocean.git
