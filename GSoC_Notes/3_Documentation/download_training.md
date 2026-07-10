@@ -1,6 +1,6 @@
 # Documentation: `download_training.py`
 
-**Script Path**: `/home/gsoc-thomas/Documents/GsoC/SeaSee-r/pyslam/scripts/download_tartanair_dataset/download_training.py`
+**Script Path**: `./SeaSee-r/pyslam/scripts/download_tartanair_dataset/download_training.py`
 
 ## Overview
 This script is responsible for downloading the TartanAir dataset for training purposes. Based on the project's requirements, this script is used **exclusively to download the Ocean dataset**, as it is the only relevant environment for SeaSee-r.
