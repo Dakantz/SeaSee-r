@@ -229,12 +229,12 @@ def write_positionalData(gt: PositionalData, output_path, format="tum"):
                 f.write(f"{t:.6f}\n")
 
 
-def convert_logdata(video, log, output, input_format, output_format="tum", start_time=None, stop_time=None):
+def process_logdata(video, log, input_format="tum", start_time=None, stop_time=None):
     # ==========================================
     # 1. INPUT STAGE -> Returns a subclass of PositionalData
     # ==========================================
     print(f"Parsing input log: {log} (Format: {input_format})")
-    
+
     if input_format == "json":
         input_gt = JsonPositionalData(log)
     elif input_format == "tum":
@@ -243,14 +243,16 @@ def convert_logdata(video, log, output, input_format, output_format="tum", start
         input_gt = KittiPositionalData(log)
     elif input_format == "tartanair":
         input_gt = TartanairPositionalData(log)
-        
+    else:
+        raise Exception(f"Unsupported input format: {input_format}")
+
     # ==========================================
     # 2. PositionalData STAGE -> Returns a SyncedPositionalData
     # ==========================================
     print(f"Extracting video metadata from {video}...")
     fps, total_frames, duration_sec, creation_time_epoch = get_video_metadata(video)
     print(f"Video: {fps:.2f} FPS, {total_frames} frames, duration: {duration_sec:.2f}s")
-    
+
     if start_time:
         start_epoch = parser.parse(start_time).timestamp()
         print(f"Using provided start_time: {start_time} (Epoch: {start_epoch})")
@@ -259,31 +261,37 @@ def convert_logdata(video, log, output, input_format, output_format="tum", start
             raise ValueError("Could not extract creation time from video, and --start-time not provided.")
         start_epoch = creation_time_epoch
         print(f"Using video creation_time: {creation_time_epoch}")
-        
+
     if stop_time:
         stop_epoch = parser.parse(stop_time).timestamp()
         print(f"Using provided stop_time: {stop_time} (Epoch: {stop_epoch})")
     else:
         stop_epoch = start_epoch + duration_sec
         print(f"Using default stop_time based on duration (Epoch: {stop_epoch})")
-        
+
     frame_times = []
     max_frames_based_on_stop = int((stop_epoch - start_epoch) * fps)
     num_frames = min(total_frames, max_frames_based_on_stop)
-    
+
     for i in range(num_frames):
         t = start_epoch + (i / fps)
         if t <= stop_epoch:
             frame_times.append(t)
-            
+
     frame_times = np.array(frame_times)
     if len(frame_times) == 0:
         print("Warning: No frames within the specified time range.")
         return
 
     print("Interpolating data to match video frames via Slerp and Linear interpolation...")
-    synced_gt = SyncedPositionalData(input_gt, frame_times)
-    
+
+    return SyncedPositionalData(input_gt, frame_times)
+
+
+def convert_logdata(video, log, output, input_format, output_format="tum", start_time=None, stop_time=None):
+
+    synced_gt = process_logdata(video, log, input_format, start_time, stop_time)
+
     # ==========================================
     # 3. OUTPUT STAGE -> Writes the PositionalData to output format
     # ==========================================

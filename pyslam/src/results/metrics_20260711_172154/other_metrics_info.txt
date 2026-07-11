@@ -1,0 +1,4 @@
+num_total_frames: 1111
+num_processed_frames: 964
+num_lost_frames: 5
+percent_lost: 0.45
