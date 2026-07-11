@@ -3,8 +3,8 @@
 # Stop on errors
 set -e
 
-echo "Downloading openFsM and pyslam submodules (no sub-submodules)..."
-git submodule update --init openSfM/openFsM_core pyslam1/pyslam_core
+echo "Downloading openSfM and pyslam submodules (no sub-submodules)..."
+git submodule update --init openSfM/openSfM_core pyslam/pyslam_core
 
 if [ ! -d "$HOME/miniconda3" ]; then
     echo "Installing Miniconda..."
@@ -23,9 +23,9 @@ fi
 # Initialize conda for the script
 source $HOME/miniconda3/etc/profile.d/conda.sh
 
-echo "Installing openFsM..."
+echo "Installing openSfM..."
 # Install using conda lock files
-cd openSfM/openFsM_core
+cd openSfM/openSfM_core
 conda create --name opensfm --file conda-linux-64.lock --yes
 conda activate opensfm
 pip install -e .
