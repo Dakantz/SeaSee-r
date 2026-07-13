@@ -6,7 +6,7 @@ import {
 
 import CameraPanel from "../CameraPanel/CameraPanel";
 import PointCloudPanel from "../PointCloudPanel/PointCloudPanel";
-import TelemetryPanel from "../TelemetoryPanel/TelemetryPanel";
+import TelemetryPanel from "../TelemetoryPanel/TrajectoryPanel";
 
 import "./Workspace.css";
 

@@ -1,6 +1,6 @@
 import { useCurrentFrame, useVideoStore } from "../../store/videoStore";
 
-import "./TrajectoryPanel.css";
+import "./TelemetryPanel.css";
 
 export default function Telemetry() {
     const currentFrame = useCurrentFrame();
