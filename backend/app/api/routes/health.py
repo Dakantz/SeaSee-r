@@ -1,13 +1,8 @@
 from fastapi import APIRouter
-from pydantic import BaseModel
-from typing import Dict, List
+from app.schemas.health import HealthCheck, SystemDiagnostics
 import os
 
 router = APIRouter(tags=["System health"], prefix="/health")
-
-class HealthCheck(BaseModel):
-    status: str
-    version: str
 
 @router.get("", response_model=HealthCheck)
 async def health_check():
@@ -15,13 +10,6 @@ async def health_check():
     Dummy health check route to verify backend is running.
     """
     return HealthCheck(status="ok", version="1.0.0")
-
-class SystemDiagnostics(BaseModel):
-    cpu_usage: float | None
-    memory_usage: float | None
-    active_connections: int | None
-    services_status: Dict[str, str]
-    recent_errors: List[str]
 
 @router.get("/diagnostics", response_model=SystemDiagnostics)
 async def get_diagnostics():
