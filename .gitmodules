@@ -1,0 +1,6 @@
+[submodule "pyslam/pyslam_core"]
+	path = pyslam/pyslam_core
+	url = https://github.com/Cott3r/pyslam-ocean.git
+[submodule "openSfM/openSfM_core"]
+	path = openSfM/openSfM_core
+	url = https://github.com/Cott3r/OpenSfM-ocean.git
