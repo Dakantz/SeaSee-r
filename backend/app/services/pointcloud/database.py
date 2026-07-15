@@ -1,17 +1,104 @@
+import json
+import re
+import subprocess
 from typing import List
-from fastapi.responses import FileResponse
+from fastapi import HTTPException
+from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+
 from app.services.pointcloud.base import PointCloudStorageService
 
 class DatabasePointCloudStorageService(PointCloudStorageService):
-    def __init__(self):
-        # In the future, database session dependencies could be injected here
-        pass
+    def __init__(self, db_session: AsyncSession):
+        self.db = db_session
 
-    async def get_pointcloud(self, identifier: str) -> FileResponse:
-        # Stub implementation
-        # TODO: Implement database lookup and conversion using pgPointcloud
-        raise NotImplementedError("Database storage for point clouds is not yet implemented.")
-        
+    async def get_pointcloud(self, identifier: str) -> StreamingResponse:
+        """
+        Fetches the pointcloud from a dynamic pgPointcloud table for a given 
+        identifier (UUID) and LOD, streams the result as a PLY file using a PDAL reader.
+        """
+        # Parse identifier and optional lod parameters (e.g. "uuid?lod=1")
+        lod = 0
+        pointcloud_uuid = identifier
+        if "?" in identifier:
+            parts = identifier.split("?")
+            pointcloud_uuid = parts[0]
+            for param in parts[1].split("&"):
+                if param.startswith("lod="):
+                    try:
+                        lod = int(param.split("=")[1])
+                    except ValueError:
+                        lod = 0
+
+        # Sanitize UUID to prevent SQL Injection in table names
+        clean_uuid = re.sub(r'[^a-fA-F0-9\-]', '', pointcloud_uuid)
+        # Remove hyphens for table name representation
+        table_uuid = clean_uuid.replace("-", "")
+        if not table_uuid:
+            raise HTTPException(status_code=400, detail="Invalid Point Cloud UUID format.")
+
+        dynamic_table_name = f"pc_{table_uuid}_lod{lod}"
+
+        # Verify that the point cloud metadata exists in pointclouds table
+        try:
+            result = await self.db.execute(
+                text("SELECT id FROM pointclouds WHERE id = :id"),
+                {"id": clean_uuid}
+            )
+            row = result.first()
+            if not row:
+                raise HTTPException(status_code=404, detail="Point cloud metadata not found in database.")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database query failed: {str(e)}")
+
+        # Build a PDAL read pipeline configuration
+        pdal_pipeline = {
+            "pipeline": [
+                {
+                    "type": "readers.pgpointcloud",
+                    "connection": "host=localhost dbname=seaseer user=postgres password=postgres_secure_password",
+                    "table": dynamic_table_name,
+                    "column": "patch",
+                    "spatialreference": "EPSG:4326"
+                },
+                {
+                    "type": "writers.ply",
+                    "filename": "stdout"
+                }
+            ]
+        }
+
+        # Run PDAL process and stream output stdout directly
+        def generate_ply():
+            try:
+                proc = subprocess.Popen(
+                    ["pdal", "pipeline", "--stdin"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=False
+                )
+                stdout, stderr = proc.communicate(input=json.dumps(pdal_pipeline).encode('utf-8'))
+                if proc.returncode != 0:
+                    raise RuntimeError(f"PDAL export failed: {stderr.decode('utf-8')}")
+                yield stdout
+            except FileNotFoundError:
+                raise HTTPException(status_code=500, detail="PDAL CLI is not installed on the system.")
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to export point cloud: {str(e)}")
+
+        return StreamingResponse(
+            generate_ply(),
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f"attachment; filename={pointcloud_uuid}_lod{lod}.ply"}
+        )
+
     async def list_pointclouds(self) -> List[str]:
-        # Stub implementation
-        raise NotImplementedError("Database listing of point clouds is not yet implemented.")
+        """Queries the pointclouds metadata table for available point cloud IDs."""
+        try:
+            result = await self.db.execute(text("SELECT id::text FROM pointclouds"))
+            return [row[0] for row in result.all()]
+        except Exception:
+            # Fallback to empty list if DB is not setup or offline
+            return []

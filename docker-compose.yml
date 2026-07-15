@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database
+  db:
+    image: pgpointcloud/pointcloud:latest
+    container_name: seasee-r-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432" # Keeps host access available via localhost:5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: seasee-r-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: seasee-r-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  # RQ Worker
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: seasee-r-worker
+    volumes:
+      - ./backend:/app
+    # Instead of hardcoding the URL in command, reference the env variable
+    command: ["rq", "worker", "pointcloud_tasks", "--url", "${REDIS_URL}"]
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_started
+
+volumes:
+  pgdata:
+  redisdata:

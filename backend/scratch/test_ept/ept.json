@@ -1,0 +1,74 @@
+{
+  "bounds": [
+    -1,
+    -1,
+    -2,
+    3,
+    3,
+    2
+  ],
+  "boundsConforming": [
+    -1.0,
+    -1.0,
+    -1.0,
+    2.0,
+    2.0,
+    1.0
+  ],
+  "dataType": "laszip",
+  "hierarchyType": "json",
+  "points": 3,
+  "schema": [
+    {
+      "count": 3,
+      "maximum": 1,
+      "mean": 0.3333333333333333,
+      "minimum": 0,
+      "name": "X",
+      "offset": 1,
+      "scale": 0.01,
+      "size": 4,
+      "stddev": 0.4714045207910317,
+      "type": "signed",
+      "variance": 0.2222222222222222
+    },
+    {
+      "count": 3,
+      "maximum": 1,
+      "mean": 0.6666666666666666,
+      "minimum": 0,
+      "name": "Y",
+      "offset": 1,
+      "scale": 0.01,
+      "size": 4,
+      "stddev": 0.4714045207910317,
+      "type": "signed",
+      "variance": 0.2222222222222222
+    },
+    {
+      "count": 3,
+      "maximum": 0,
+      "mean": 0,
+      "minimum": 0,
+      "name": "Z",
+      "scale": 0.01,
+      "size": 4,
+      "stddev": 0,
+      "type": "signed",
+      "variance": 0
+    },
+    {
+      "count": 3,
+      "maximum": 0,
+      "mean": 0,
+      "minimum": 0,
+      "name": "OriginId",
+      "size": 4,
+      "stddev": 0,
+      "type": "unsigned",
+      "variance": 0
+    }
+  ],
+  "span": 128,
+  "version": "1.1.0"
+}

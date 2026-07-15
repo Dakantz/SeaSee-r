@@ -1,8 +1,24 @@
-from fastapi import APIRouter
+import socket
+import urllib.parse
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 from app.schemas.health import HealthCheck, SystemDiagnostics
+from app.core.database import get_db_session
+from app.core.config import settings
 import os
 
 router = APIRouter(tags=["System health"], prefix="/health")
+
+def check_redis_online() -> bool:
+    try:
+        parsed = urllib.parse.urlparse(settings.redis_url)
+        host = parsed.hostname or "localhost"
+        port = parsed.port or 6379
+        with socket.create_connection((host, port), timeout=1.0):
+            return True
+    except Exception:
+        return False
 
 @router.get("", response_model=HealthCheck)
 async def health_check():
@@ -12,20 +28,36 @@ async def health_check():
     return HealthCheck(status="ok", version="1.0.0")
 
 @router.get("/diagnostics", response_model=SystemDiagnostics)
-async def get_diagnostics():
+async def get_diagnostics(
+    db: AsyncSession = Depends(get_db_session)
+):
     """
-    Detailed diagnostics route to test complex generated types in hey-api.
+    Detailed diagnostics route to check active service statuses.
     """
+    db_status = "offline"
+    pg_pointcloud_status = "offline"
+    try:
+        await db.execute(text("SELECT 1"))
+        db_status = "online"
+        
+        result = await db.execute(text("SELECT extname FROM pg_extension WHERE extname = 'pointcloud'"))
+        if result.scalar_one_or_none():
+            pg_pointcloud_status = "online"
+    except Exception:
+        pass
+
+    redis_status = "online" if check_redis_online() else "offline"
+
     return SystemDiagnostics(
         cpu_usage=get_cpu_usage(),
         memory_usage=get_memory_usage(),
         active_connections=None,
         services_status={
-            "database": "online",
-            "redis": "online",
-            "pgPointcloud": "offline"
+            "database": db_status,
+            "redis": redis_status,
+            "pgPointcloud": pg_pointcloud_status
         },
-        recent_errors= []
+        recent_errors=[]
     )
 
 def get_cpu_usage() -> float | None:

@@ -9,6 +9,9 @@ from unittest import TestCase
 
 from app.main import app
 from app.core.config import settings
+from unittest.mock import MagicMock
+from app.main import app
+from app.core.config import settings
 from app.services.pointcloud import (
     LocalPointCloudStorageService,
     DatabasePointCloudStorageService
@@ -35,6 +38,7 @@ class TestPointCloudServices(TestCase):
 
     def test_local_service_valid_file(self):
         # Test retrieving a valid file synchronously
+        # Use asyncio.run since test case class methods are synchronous
         response = asyncio.run(self.local_service.get_pointcloud(self.dummy_filename))
         self.assertIsNotNone(response)
         self.assertEqual(response.path, self.dummy_filepath)
@@ -51,8 +55,9 @@ class TestPointCloudServices(TestCase):
         self.assertEqual(context.exception.status_code, 404)
 
     def test_database_service_not_implemented(self):
-        db_service = DatabasePointCloudStorageService()
-        with self.assertRaises(NotImplementedError):
+        mock_db = MagicMock()
+        db_service = DatabasePointCloudStorageService(db_session=mock_db)
+        with self.assertRaises(HTTPException):
             asyncio.run(db_service.get_pointcloud("test_cloud.ply"))
             
     def test_local_service_list_pointclouds(self):
@@ -62,9 +67,11 @@ class TestPointCloudServices(TestCase):
         self.assertIn(self.dummy_filename, files)
         
     def test_database_service_list_not_implemented(self):
-        db_service = DatabasePointCloudStorageService()
-        with self.assertRaises(NotImplementedError):
-            asyncio.run(db_service.list_pointclouds())
+        mock_db = MagicMock()
+        mock_db.execute.side_effect = Exception("Offline DB")
+        db_service = DatabasePointCloudStorageService(db_session=mock_db)
+        files = asyncio.run(db_service.list_pointclouds())
+        self.assertEqual(files, [])
 
 from app.core.config import settings, StorageType
 
@@ -73,18 +80,20 @@ def test_dependency_injection():
     
     # Temporarily override settings
     original_type = settings.pointcloud_storage_type
+    mock_db = MagicMock()
     
     try:
         settings.pointcloud_storage_type = StorageType.database
-        service = get_pointcloud_service()
+        service = get_pointcloud_service(db=mock_db)
         assert isinstance(service, DatabasePointCloudStorageService)
 
         settings.pointcloud_storage_type = StorageType.filesystem
-        service = get_pointcloud_service()
+        service = get_pointcloud_service(db=mock_db)
         assert isinstance(service, LocalPointCloudStorageService)
     finally:
         # Restore settings
         settings.pointcloud_storage_type = original_type
+
 
 
 def test_endpoint_get_pointcloud():
