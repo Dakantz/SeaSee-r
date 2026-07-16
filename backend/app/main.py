@@ -6,6 +6,7 @@ from app.api.routes.health import router as health_router
 from app.api.routes.pointclouds import router as pointclouds_router
 from app.api.routes.jobs import router as jobs_router
 from app.api.routes.videos import router as videos_router
+from app.api.routes.videos_upload import router as videos_upload_router
 
 # Custom function to generate unique and clean operation IDs for the frontend client
 def custom_generate_unique_id(route: APIRoute):
@@ -44,3 +45,4 @@ app.include_router(health_router)
 app.include_router(pointclouds_router)
 app.include_router(jobs_router)
 app.include_router(videos_router)
+app.include_router(videos_upload_router)
