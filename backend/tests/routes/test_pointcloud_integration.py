@@ -1,0 +1,181 @@
+import os
+import time
+import shutil
+import pytest
+import anyio
+from httpx import AsyncClient, ASGITransport
+from sqlalchemy import text
+from app.main import app
+from app.core.config import settings, StorageType
+from app.core.database import async_session, engine
+
+# Simple dummy PLY file content
+PLY_CONTENT = b"""ply
+format ascii 1.0
+element vertex 3
+property float x
+property float y
+property float z
+end_header
+0.0 0.0 0.0
+0.0 1.0 0.0
+1.0 1.0 0.0
+"""
+
+@pytest.fixture
+def anyio_backend():
+    return 'asyncio'
+
+@pytest.fixture(autouse=True)
+async def cleanup_engine():
+    yield
+    await engine.dispose()
+
+@pytest.fixture
+async def async_client():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+async def clean_database_records(file_id: str, job_id: str):
+    """Clean up the pointcloud metadata, jobs, and dynamic tables from database."""
+    async with async_session() as session:
+        # Drop dynamic table if it exists
+        table_uuid = file_id.replace("-", "")
+        await session.execute(text(f"DROP TABLE IF EXISTS pc_{table_uuid}_lod0"))
+        # Delete pointcloud metadata
+        await session.execute(text("DELETE FROM pointclouds WHERE id = :id"), {"id": file_id})
+        # Delete job record
+        if job_id:
+            await session.execute(text("DELETE FROM jobs WHERE id = :job_id"), {"job_id": job_id})
+        await session.commit()
+
+@pytest.mark.anyio
+async def test_pointcloud_filesystem_flow(async_client):
+    """
+    Test the upload, list, and download flow using filesystem storage.
+    """
+    # Override pointcloud storage type settings to filesystem
+    original_storage_type = settings.pointcloud_storage_type
+    settings.pointcloud_storage_type = StorageType.filesystem
+
+    file_id = None
+    job_id = None
+
+    try:
+        # 1. Upload the pointcloud file
+        files = {"file": ("test_fs.ply", PLY_CONTENT, "application/octet-stream")}
+        response = await async_client.post("/pointclouds/upload", files=files)
+        assert response.status_code == 200
+        data = response.json()
+        assert "file_id" in data
+        assert "job_id" in data
+        file_id = data["file_id"]
+        job_id = data["job_id"]
+
+        # 2. Check that the file is in the list of pointclouds
+        response = await async_client.get("/pointclouds/")
+        assert response.status_code == 200
+        pointclouds_list = response.json()
+        assert f"{file_id}.ply" in pointclouds_list
+
+        # 3. Download the uploaded file by ID
+        response = await async_client.get(f"/pointclouds/{file_id}")
+        assert response.status_code == 200
+        assert response.content == PLY_CONTENT
+
+    finally:
+        # Restore configuration
+        settings.pointcloud_storage_type = original_storage_type
+
+        # Cleanup created files
+        if file_id:
+            file_path = os.path.join(settings.upload_dir, f"{file_id}.ply")
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            ept_path = os.path.join(settings.ept_dir, file_id)
+            if os.path.exists(ept_path):
+                shutil.rmtree(ept_path)
+        
+        # Cleanup database job record created by the upload endpoint
+        if job_id:
+            await clean_database_records(file_id=file_id, job_id=job_id)
+
+
+@pytest.mark.anyio
+async def test_pointcloud_database_flow(async_client):
+    """
+    Test the upload, wait for conversion, list, and download flow using database storage.
+    """
+    # Override pointcloud storage type settings to database
+    original_storage_type = settings.pointcloud_storage_type
+    settings.pointcloud_storage_type = StorageType.database
+
+    file_id = None
+    job_id = None
+
+    try:
+        # 1. Upload the pointcloud file
+        files = {"file": ("test_db.ply", PLY_CONTENT, "application/octet-stream")}
+        response = await async_client.post("/pointclouds/upload", files=files)
+        assert response.status_code == 200
+        data = response.json()
+        assert "file_id" in data
+        assert "job_id" in data
+        file_id = data["file_id"]
+        job_id = data["job_id"]
+
+        # 2. Wait for the background worker to complete the EPT conversion and database ingestion
+        # Poll the job status endpoint /jobs/{job_id}
+        timeout = 60
+        start_time = time.time()
+        job_completed = False
+        while time.time() - start_time < timeout:
+            job_resp = await async_client.get(f"/jobs/{job_id}")
+            assert job_resp.status_code == 200
+            job_data = job_resp.json()
+            status = job_data.get("status")
+            if status == "COMPLETED":
+                job_completed = True
+                break
+            elif status == "FAILED":
+                pytest.fail(f"Background conversion job failed with error: {job_data.get('error_message')}")
+            await anyio.sleep(1)
+
+        assert job_completed, "Job did not complete within the timeout period"
+
+        # 3. Check that the file is in the list of pointclouds
+        response = await async_client.get("/pointclouds/")
+        assert response.status_code == 200
+        pointclouds_list = response.json()
+        assert file_id in pointclouds_list
+
+        # 4. Download the pointcloud from database stream
+        from unittest.mock import patch, MagicMock
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = (PLY_CONTENT, b"")
+        mock_proc.returncode = 0
+
+        with patch("app.services.pointcloud.database.subprocess.Popen", return_value=mock_proc):
+            response = await async_client.get(f"/pointclouds/{file_id}")
+            assert response.status_code == 200
+            downloaded_content = response.content
+            assert downloaded_content.startswith(b"ply\n")
+            assert b"vertex" in downloaded_content
+
+    finally:
+        # Restore configuration
+        settings.pointcloud_storage_type = original_storage_type
+
+        # Cleanup created files
+        if file_id:
+            file_path = os.path.join(settings.upload_dir, f"{file_id}.ply")
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            ept_path = os.path.join(settings.ept_dir, file_id)
+            if os.path.exists(ept_path):
+                shutil.rmtree(ept_path)
+        
+        # Cleanup database metadata record, job, and dynamic table
+        if file_id or job_id:
+            await clean_database_records(file_id=file_id or "", job_id=job_id or "")

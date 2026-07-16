@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database for testing
+  test-db:
+    image: pgpointcloud/pointcloud:latest
+    container_name: seasee-r-test-db
+    environment:
+      POSTGRES_DB: seaseer_test
+      POSTGRES_USER: seaseer_user
+      POSTGRES_PASSWORD: seaseer_password
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U seaseer_user -d seaseer_test" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for testing
+  test-redis:
+    image: redis:7-alpine
+    container_name: seasee-r-test-redis
+    ports:
+      - "6380:6379"
+
+  # Worker for testing
+  test-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: seasee-r-test-worker
+    volumes:
+      - ./backend:/app
+    command: ["rq", "worker", "pointcloud_tasks", "--url", "redis://test-redis:6379"]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://seaseer_user:seaseer_password@test-db:5432/seaseer_test
+      - REDIS_URL=redis://test-redis:6379
+      - POINTCLOUD_STORAGE_TYPE=${POINTCLOUD_STORAGE_TYPE:-filesystem}
+    depends_on:
+      - test-redis
+      - test-db

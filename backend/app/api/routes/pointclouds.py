@@ -77,6 +77,13 @@ async def upload_pointcloud(
     # Enqueue job
     redis_conn = Redis.from_url(settings.redis_url)
     q = Queue("pointcloud_tasks", connection=redis_conn)
-    rq_job = q.enqueue("app.services.worker.tasks.convert_to_ept", file_path, file_id, job_id=str(job_record.id))
+    rq_job = q.enqueue(
+        "app.services.worker.tasks.convert_to_ept", 
+        file_path, 
+        file_id, 
+        job_id=str(job_record.id),
+        storage_type=settings.pointcloud_storage_type.value
+    )
     
     return {"message": "File uploaded and conversion queued", "job_id": job_record.id, "file_id": file_id}
+

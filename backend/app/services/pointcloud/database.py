@@ -7,6 +7,8 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
+from urllib.parse import urlparse
+from app.core.config import settings
 from app.services.pointcloud.base import PointCloudStorageService
 
 class DatabasePointCloudStorageService(PointCloudStorageService):
@@ -47,17 +49,34 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
                 {"id": clean_uuid}
             )
             row = result.first()
-            if not row:
-                raise HTTPException(status_code=404, detail="Point cloud metadata not found in database.")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Database query failed: {str(e)}")
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Point cloud metadata not found in database.")
+
+        # Dynamically build libpq connection string from settings
+        db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+        parsed = urlparse(db_url)
+        conn_parts = []
+        if parsed.hostname:
+            conn_parts.append(f"host={parsed.hostname}")
+        if parsed.port:
+            conn_parts.append(f"port={parsed.port}")
+        if parsed.username:
+            conn_parts.append(f"user={parsed.username}")
+        if parsed.password:
+            conn_parts.append(f"password={parsed.password}")
+        if parsed.path:
+            conn_parts.append(f"dbname={parsed.path.lstrip('/')}")
+        connection_str = " ".join(conn_parts)
 
         # Build a PDAL read pipeline configuration
         pdal_pipeline = {
             "pipeline": [
                 {
                     "type": "readers.pgpointcloud",
-                    "connection": "host=localhost dbname=seaseer user=postgres password=postgres_secure_password",
+                    "connection": connection_str,
                     "table": dynamic_table_name,
                     "column": "patch",
                     "spatialreference": "EPSG:4326"

@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres_secure_password@localhost:5432/seaseer"
     redis_url: str = "redis://localhost:6379/0"
     
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 settings = Settings()

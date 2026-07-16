@@ -4,8 +4,10 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 from app.core.config import settings
 
+from sqlalchemy.pool import NullPool
+
 # Create async engine for PostgreSQL connection
-engine = create_async_engine(settings.database_url, echo=True)
+engine = create_async_engine(settings.database_url, echo=True, poolclass=NullPool)
 
 # Session factory for async database sessions
 async_session = sessionmaker(

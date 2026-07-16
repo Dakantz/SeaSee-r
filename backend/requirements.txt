@@ -10,3 +10,5 @@ rq
 redis
 python-multipart
 aiofiles
+pytest
+httpx

@@ -9,7 +9,7 @@ from unittest import TestCase
 
 from app.main import app
 from app.core.config import settings
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, AsyncMock
 from app.main import app
 from app.core.config import settings
 from app.services.pointcloud import (
@@ -54,23 +54,64 @@ class TestPointCloudServices(TestCase):
             asyncio.run(self.local_service.get_pointcloud("nonexistent.ply"))
         self.assertEqual(context.exception.status_code, 404)
 
-    def test_database_service_not_implemented(self):
+    def test_database_service_get_invalid_uuid(self):
         mock_db = MagicMock()
         db_service = DatabasePointCloudStorageService(db_session=mock_db)
-        with self.assertRaises(HTTPException):
-            asyncio.run(db_service.get_pointcloud("test_cloud.ply"))
-            
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(db_service.get_pointcloud("???"))
+        self.assertEqual(context.exception.status_code, 400)
+        self.assertEqual(context.exception.detail, "Invalid Point Cloud UUID format.")
+
+    def test_database_service_get_not_found(self):
+        mock_result = MagicMock()
+        mock_result.first.return_value = None  # No metadata found
+        
+        mock_db = MagicMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        
+        db_service = DatabasePointCloudStorageService(db_session=mock_db)
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(db_service.get_pointcloud("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"))
+        
+        self.assertEqual(context.exception.status_code, 404)
+        self.assertEqual(context.exception.detail, "Point cloud metadata not found in database.")
+
+    def test_database_service_get_db_failure(self):
+        mock_db = MagicMock()
+        mock_db.execute.side_effect = Exception("DB Connection Lost")
+        
+        db_service = DatabasePointCloudStorageService(db_session=mock_db)
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(db_service.get_pointcloud("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"))
+        
+        self.assertEqual(context.exception.status_code, 500)
+        self.assertIn("Database query failed", context.exception.detail)
+
     def test_local_service_list_pointclouds(self):
         # Should return a list containing our single dummy file
         files = asyncio.run(self.local_service.list_pointclouds())
         self.assertIsInstance(files, list)
         self.assertIn(self.dummy_filename, files)
+
+    def test_database_service_list_success(self):
+        mock_result = MagicMock()
+        mock_result.all.return_value = [("uuid-1",), ("uuid-2",)]
         
-    def test_database_service_list_not_implemented(self):
         mock_db = MagicMock()
-        mock_db.execute.side_effect = Exception("Offline DB")
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        
         db_service = DatabasePointCloudStorageService(db_session=mock_db)
         files = asyncio.run(db_service.list_pointclouds())
+        
+        self.assertEqual(files, ["uuid-1", "uuid-2"])
+
+    def test_database_service_list_failure(self):
+        mock_db = MagicMock()
+        mock_db.execute.side_effect = Exception("Query error")
+        
+        db_service = DatabasePointCloudStorageService(db_session=mock_db)
+        files = asyncio.run(db_service.list_pointclouds())
+        
         self.assertEqual(files, [])
 
 from app.core.config import settings, StorageType
