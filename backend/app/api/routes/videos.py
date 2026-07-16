@@ -139,3 +139,31 @@ async def upload_resumable_chunk(
         await db.commit()
             
     return {"message": "Chunk uploaded successfully", "uploaded_bytes": new_size}
+
+
+@router.delete("/upload/resumable/{safe_filename}")
+async def cancel_resumable_upload(
+    safe_filename: str,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Cancel an incomplete upload. Deletes the file from disk and the database record.
+    """
+    file_path = os.path.join(settings.video_dir, safe_filename)
+
+    # Remove from disk if it exists
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    else:
+        return {"message": "File not found"}
+        
+    # Remove from database
+    stmt = select(Video).where(Video.safe_filename == safe_filename)
+    result = await db.execute(stmt)
+    video = result.scalar_one_or_none()
+    
+    if video:
+        await db.delete(video)
+        await db.commit()
+        
+    return {"message": "Upload cancelled successfully"}

@@ -1,0 +1,175 @@
+.vu-container {
+  max-width: 500px;
+  margin: 0 auto;
+  font-family: 'Inter', 'Roboto', sans-serif;
+  color: #e2e8f0;
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+}
+
+.vu-dropzone {
+  border: 2px dashed rgba(148, 163, 184, 0.4);
+  border-radius: 12px;
+  padding: 40px 20px;
+  text-align: center;
+  background-color: rgba(15, 23, 42, 0.4);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.vu-dropzone.active {
+  border-color: #3b82f6;
+  background-color: rgba(59, 130, 246, 0.1);
+  transform: scale(1.02);
+}
+
+.vu-dropzone:hover {
+  border-color: #60a5fa;
+  background-color: rgba(59, 130, 246, 0.05);
+}
+
+.vu-icon {
+  font-size: 48px;
+  color: #94a3b8;
+  margin-bottom: 16px;
+  transition: transform 0.3s ease;
+}
+
+.vu-dropzone:hover .vu-icon {
+  transform: translateY(-5px);
+  color: #60a5fa;
+}
+
+.vu-text {
+  font-size: 16px;
+  font-weight: 500;
+  color: #f1f5f9;
+  margin-bottom: 8px;
+}
+
+.vu-subtext {
+  font-size: 14px;
+  color: #94a3b8;
+}
+
+.vu-file-info {
+  margin-top: 10px;
+  padding: 20px;
+  background-color: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.1);
+}
+
+.vu-filename {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: #f8fafc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vu-progress-bar-container {
+  width: 100%;
+  height: 8px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+  position: relative;
+}
+
+.vu-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
+  background-size: 200% 200%;
+  border-radius: 4px;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: gradient-shift 3s ease infinite;
+}
+
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.vu-progress-text {
+  font-size: 13px;
+  color: #cbd5e1;
+  text-align: right;
+  font-weight: 500;
+}
+
+.vu-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.vu-button {
+  flex: 1;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  padding: 10px 20px;
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+}
+
+.vu-button:hover:not(:disabled) {
+  background-color: #2563eb;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 8px -1px rgba(59, 130, 246, 0.4);
+}
+
+.vu-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.vu-button:disabled {
+  background-color: rgba(148, 163, 184, 0.2);
+  color: rgba(255, 255, 255, 0.4);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.vu-button-danger {
+  background-color: transparent;
+  color: #f87171;
+  border: 1px solid #f87171;
+  box-shadow: none;
+}
+
+.vu-button-danger:hover:not(:disabled) {
+  background-color: rgba(248, 113, 113, 0.1);
+  box-shadow: none;
+}
+
+.vu-button-success {
+  background-color: #10b981;
+  box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.3);
+}
+
+.vu-button-success:hover:not(:disabled) {
+  background-color: #059669;
+  box-shadow: 0 6px 8px -1px rgba(16, 185, 129, 0.4);
+}

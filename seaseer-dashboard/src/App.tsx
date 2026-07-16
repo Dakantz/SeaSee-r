@@ -5,6 +5,7 @@ import Toolbar from "./components/Toolbar";
 import Workspace from "./components/Workspace/Workspace";
 import StatusBar from "./components/StatusBar";
 import ExampleDiagnostics from "./components/ExampleDiagnostics.tsx";
+import VideoUploadTestPage from "./components/VideoUploader/VideoUploadTestPage.tsx";
 
 function App() {
     return (
@@ -20,7 +21,8 @@ function App() {
                         </>
                     } 
                 />
-                <Route path="/exampleDiagnostics" element={<ExampleDiagnostics />} />
+                <Route path="/example-diagnostics" element={<ExampleDiagnostics />} />
+                <Route path="/upload-test" element={<VideoUploadTestPage />} />
             </Routes>
         </div>
     );
