@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     upload_dir: str = "./data/pointclouds"
     # directory for generated EPT datasets
     ept_dir: str = "./data/ept"
+    # directory for video uploads
+    video_dir: str = "./data/videos"
     
     # Database and Redis connections (with localhost fallback for local runs)
     database_url: str = "postgresql+asyncpg://postgres:postgres_secure_password@localhost:5432/seaseer"
