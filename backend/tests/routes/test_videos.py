@@ -7,8 +7,6 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.core.config import settings
 
-client = TestClient(app)
-
 @pytest.fixture(autouse=True)
 def override_video_dir():
     # Store original and override with temp dir
@@ -23,7 +21,7 @@ def override_video_dir():
     shutil.rmtree(temp_dir)
 
 
-def test_upload_video():
+def test_upload_video(client):
     # Test uploading a file normally
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
         tmp.write(b"fake video content")
@@ -45,10 +43,10 @@ def test_upload_video():
         os.remove(tmp_path)
 
 
-def test_init_resumable_upload(override_video_dir):
+def test_init_resumable_upload(client, override_video_dir):
     response = client.post(
         "/videos/upload/resumable/init",
-        data={"filename": "my_video.mp4"}
+        data={"filename": "my_video.mp4", "total_bytes": 1000}
     )
     assert response.status_code == 200
     data = response.json()
@@ -61,22 +59,25 @@ def test_init_resumable_upload(override_video_dir):
     assert os.path.getsize(file_path) == 0
 
 
-def test_get_resumable_status_not_found():
+def test_get_resumable_status_not_found(client):
     response = client.get("/videos/upload/resumable/fake_file.mp4/status")
     assert response.status_code == 404
     assert response.json()["detail"] == "File not found"
 
 
-def test_resumable_upload_flow(override_video_dir):
+def test_resumable_upload_flow(client, override_video_dir):
     # 1. Init
+    chunk1 = b"chunk 1 data "
+    chunk2 = b"chunk 2 data"
+    total_bytes = len(chunk1) + len(chunk2)
+    
     init_res = client.post(
         "/videos/upload/resumable/init",
-        data={"filename": "flow_video.mp4"}
+        data={"filename": "flow_video.mp4", "total_bytes": total_bytes}
     )
     safe_filename = init_res.json()["safe_filename"]
     
     # 2. Upload Chunk 1
-    chunk1 = b"chunk 1 data "
     response = client.post(
         f"/videos/upload/resumable/{safe_filename}",
         data={"offset": 0},
@@ -91,7 +92,6 @@ def test_resumable_upload_flow(override_video_dir):
     assert status_res.json()["uploaded_bytes"] == len(chunk1)
     
     # 4. Upload Chunk 2
-    chunk2 = b"chunk 2 data"
     response = client.post(
         f"/videos/upload/resumable/{safe_filename}",
         data={"offset": len(chunk1)},
@@ -107,11 +107,11 @@ def test_resumable_upload_flow(override_video_dir):
     assert content == chunk1 + chunk2
 
 
-def test_resumable_upload_offset_mismatch(override_video_dir):
+def test_resumable_upload_offset_mismatch(client, override_video_dir):
     # Init
     init_res = client.post(
         "/videos/upload/resumable/init",
-        data={"filename": "mismatch.mp4"}
+        data={"filename": "mismatch.mp4", "total_bytes": 1000}
     )
     safe_filename = init_res.json()["safe_filename"]
     
@@ -126,7 +126,7 @@ def test_resumable_upload_offset_mismatch(override_video_dir):
     assert "Offset mismatch" in response.json()["detail"]
 
 
-def test_resumable_upload_file_not_found():
+def test_resumable_upload_file_not_found(client):
     chunk = b"some data"
     response = client.post(
         "/videos/upload/resumable/fake_file.mp4",
