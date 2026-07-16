@@ -196,27 +196,29 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
     setMetadataFiles(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
-  const resetState = async () => {
-    for (const safeName of Object.values(videoSafeFilenames)) {
-      if (safeName) {
-        try {
-          await fetch(`${apiUrl}/videos/upload/${safeName}`, {
-            method: 'DELETE',
-          });
-        } catch (err) {
-          console.error("Failed to delete incomplete upload", err);
+  const resetState = async (cancelUpload: boolean = true) => {
+    if (cancelUpload) {
+      for (const safeName of Object.values(videoSafeFilenames)) {
+        if (safeName) {
+          try {
+            await fetch(`${apiUrl}/videos/upload/${safeName}`, {
+              method: 'DELETE',
+            });
+          } catch (err) {
+            console.error("Failed to delete incomplete upload", err);
+          }
         }
       }
-    }
 
-    for (const safeNames of Object.values(metadataSafeFilenames)) {
-      for (const safeName of safeNames) {
-        try {
-          await fetch(`${apiUrl}/videos/upload/metadata/${safeName}`, {
-            method: 'DELETE',
-          });
-        } catch (err) {
-          console.error("Failed to delete incomplete metadata upload", err);
+      for (const safeNames of Object.values(metadataSafeFilenames)) {
+        for (const safeName of safeNames) {
+          try {
+            await fetch(`${apiUrl}/videos/upload/metadata/${safeName}`, {
+              method: 'DELETE',
+            });
+          } catch (err) {
+            console.error("Failed to delete incomplete metadata upload", err);
+          }
         }
       }
     }
@@ -332,7 +334,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
             }
           } catch (err) { }
         }
-        const currentOffset = videoOffsets[video.name] || 0;
+        const currentOffset = Math.min(videoOffsets[video.name] || 0, video.size);
         totalUploadedBytes += currentOffset;
         initialFileProgress[video.name] = video.size > 0 ? Math.min(100, Math.round((currentOffset / video.size) * 100)) : 100;
       }
@@ -350,7 +352,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
             }
           } catch (err) { }
         }
-        const currentOffset = metaOffsets[metaFile.name] || 0;
+        const currentOffset = Math.min(metaOffsets[metaFile.name] || 0, metaFile.size);
         totalUploadedBytes += currentOffset;
         initialFileProgress[metaFile.name] = metaFile.size > 0 ? Math.min(100, Math.round((currentOffset / metaFile.size) * 100)) : 100;
       }
@@ -400,8 +402,9 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
           }
 
           const chunkData = await chunkRes.json();
-          const bytesUploadedThisChunk = chunkData.uploaded_bytes - videoOffset;
-          videoOffset = chunkData.uploaded_bytes;
+          const newOffset = Math.min(chunkData.uploaded_bytes, video.size);
+          const bytesUploadedThisChunk = newOffset - videoOffset;
+          videoOffset = newOffset;
 
           totalUploadedBytes += bytesUploadedThisChunk;
 
@@ -410,7 +413,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
             [video.name]: video.size > 0 ? Math.min(100, Math.round((videoOffset / video.size) * 100)) : 100
           }));
 
-          const updatedProgress = Math.round((totalUploadedBytes / totalSize) * 100);
+          const updatedProgress = Math.min(100, Math.round((totalUploadedBytes / totalSize) * 100));
           setProgress(updatedProgress);
           if (onProgress) {
             onProgress(updatedProgress);
@@ -449,8 +452,9 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
           }
 
           const chunkData = await chunkRes.json();
-          const bytesUploadedThisChunk = chunkData.uploaded_bytes - metaOffset;
-          metaOffset = chunkData.uploaded_bytes;
+          const newOffset = Math.min(chunkData.uploaded_bytes, metaFile.size);
+          const bytesUploadedThisChunk = newOffset - metaOffset;
+          metaOffset = newOffset;
 
           totalUploadedBytes += bytesUploadedThisChunk;
 
@@ -459,7 +463,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
             [metaFile.name]: metaFile.size > 0 ? Math.min(100, Math.round((metaOffset / metaFile.size) * 100)) : 100
           }));
 
-          const updatedProgress = Math.round((totalUploadedBytes / totalSize) * 100);
+          const updatedProgress = Math.min(100, Math.round((totalUploadedBytes / totalSize) * 100));
           setProgress(updatedProgress);
           if (onProgress) {
             onProgress(updatedProgress);
@@ -506,12 +510,9 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            backdropFilter: 'blur(2px)'
+            backdropFilter: 'blur(2px)',
+            pointerEvents: 'none'
           }}
-          onDragEnter={handleDrag}
-          onDragLeave={handleDrag}
-          onDragOver={handleDrag}
-          onDrop={handleDrop}
         >
           <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#60a5fa', pointerEvents: 'none', backgroundColor: '#1f2937', padding: '12px 24px', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
             Drop files to add them
@@ -668,7 +669,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
                 <button className="vu-button" onClick={() => startUpload(false)}>
                   Start Upload
                 </button>
-                <button className="vu-button vu-button-danger" onClick={resetState}>
+                <button className="vu-button vu-button-danger" onClick={() => resetState(true)}>
                   Cancel
                 </button>
               </>
@@ -679,7 +680,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
                 <button className="vu-button" style={{ backgroundColor: '#f59e0b', boxShadow: '0 4px 6px -1px rgba(245, 158, 11, 0.3)' }} onClick={() => startUpload(true)}>
                   Resume Upload
                 </button>
-                <button className="vu-button vu-button-danger" onClick={resetState}>
+                <button className="vu-button vu-button-danger" onClick={() => resetState(true)}>
                   Cancel
                 </button>
               </>
@@ -703,7 +704,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
             )}
 
             {progress === 100 && (
-              <button className="vu-button vu-button-success" onClick={resetState}>
+              <button className="vu-button vu-button-success" onClick={() => resetState(false)}>
                 Upload Another
               </button>
             )}
