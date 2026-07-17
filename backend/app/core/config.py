@@ -8,6 +8,8 @@ class StorageType(str, Enum):
 
 
 class Settings(BaseSettings):
+    # API version
+    version: str = "1.0.0"
     # 'filesystem' or 'database'
     pointcloud_storage_type: StorageType
     # directory for local .ply files

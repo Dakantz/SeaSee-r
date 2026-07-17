@@ -5,7 +5,6 @@ import pytest
 import anyio
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy import text
-from app.main import app
 from app.core.config import settings, StorageType
 from app.core.database import async_session, engine
 
@@ -32,7 +31,8 @@ async def cleanup_engine():
     await engine.dispose()
 
 @pytest.fixture
-async def async_client():
+async def async_client(test_environment):
+    from app.main import app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
@@ -63,15 +63,33 @@ async def test_pointcloud_filesystem_flow(async_client):
     job_id = None
 
     try:
-        # 1. Upload the pointcloud file
-        files = {"file": ("test_fs.ply", PLY_CONTENT, "application/octet-stream")}
-        response = await async_client.post("/pointclouds/upload", files=files)
+        # 1. Simulate TUSD upload and webhook
+        import uuid
+        file_id = str(uuid.uuid4())
+        
+        os.makedirs(settings.upload_dir, exist_ok=True)
+        with open(os.path.join(settings.upload_dir, file_id), "wb") as f:
+            f.write(PLY_CONTENT)
+            
+        payload = {
+            "EventName": "post-finish",
+            "Upload": {
+                "ID": file_id,
+                "Size": len(PLY_CONTENT),
+                "MetaData": {
+                    "name": "test_fs.ply",
+                    "filename": "test_fs.ply",
+                    "filetype": "application/octet-stream"
+                }
+            }
+        }
+        response = await async_client.post("/pointclouds/upload/complete", json=payload)
         assert response.status_code == 200
-        data = response.json()
-        assert "file_id" in data
-        assert "job_id" in data
-        file_id = data["file_id"]
-        job_id = data["job_id"]
+        assert response.json()["status"] == "ok"
+        
+        async with async_session() as session:
+            res = await session.execute(text("SELECT id FROM jobs WHERE payload->>'file_id' = :file_id ORDER BY created_at DESC LIMIT 1"), {"file_id": file_id})
+            job_id = str(res.scalar())
 
         # 2. Check that the file is in the list of pointclouds
         response = await async_client.get("/pointclouds/")
@@ -115,15 +133,33 @@ async def test_pointcloud_database_flow(async_client):
     job_id = None
 
     try:
-        # 1. Upload the pointcloud file
-        files = {"file": ("test_db.ply", PLY_CONTENT, "application/octet-stream")}
-        response = await async_client.post("/pointclouds/upload", files=files)
+        # 1. Simulate TUSD upload and webhook
+        import uuid
+        file_id = str(uuid.uuid4())
+        
+        os.makedirs(settings.upload_dir, exist_ok=True)
+        with open(os.path.join(settings.upload_dir, file_id), "wb") as f:
+            f.write(PLY_CONTENT)
+            
+        payload = {
+            "EventName": "post-finish",
+            "Upload": {
+                "ID": file_id,
+                "Size": len(PLY_CONTENT),
+                "MetaData": {
+                    "name": "test_db.ply",
+                    "filename": "test_db.ply",
+                    "filetype": "application/octet-stream"
+                }
+            }
+        }
+        response = await async_client.post("/pointclouds/upload/complete", json=payload)
         assert response.status_code == 200
-        data = response.json()
-        assert "file_id" in data
-        assert "job_id" in data
-        file_id = data["file_id"]
-        job_id = data["job_id"]
+        assert response.json()["status"] == "ok"
+        
+        async with async_session() as session:
+            res = await session.execute(text("SELECT id FROM jobs WHERE payload->>'file_id' = :file_id ORDER BY created_at DESC LIMIT 1"), {"file_id": file_id})
+            job_id = str(res.scalar())
 
         # 2. Wait for the background worker to complete the EPT conversion and database ingestion
         # Poll the job status endpoint /jobs/{job_id}

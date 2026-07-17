@@ -73,6 +73,30 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "rq info -u $${REDIS_URL} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # TUSD Resumable Upload Server
+  tusd:
+    image: tusproject/tusd:latest
+    container_name: seaseer-r-tusd
+    ports:
+      - "8080:8080"
+    environment:
+      - TUSD_UPLOAD_DIR=/srv/tusd-data
+    command: >
+      -upload-dir /srv/tusd-data
+      -hooks-http http://backend:8000/pointclouds/upload/complete
+      -hooks-http-forward-headers Cookie,Authorization
+      -hooks-enabled-events post-finish
+    volumes:
+      - ./backend/data/pointclouds:/srv/tusd-data
+    depends_on:
+      backend:
+        condition: service_healthy
 
 volumes:
   pgdata:

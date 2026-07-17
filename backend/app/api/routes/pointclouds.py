@@ -5,9 +5,10 @@ from redis import Redis
 from rq import Queue
 
 from typing import List
-from fastapi import APIRouter, Depends, UploadFile, File
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.services.pointcloud import PointCloudStorageService
 from app.api.dependencies.pointcloud import get_pointcloud_service
@@ -44,46 +45,71 @@ async def get_pointcloud(
     return await storage_service.get_pointcloud(filename_or_id)
 
 """
-Upload a .las, .laz, or .ply file and queue a conversion to EPT.
+Webhook endpoint for TUSD when an upload finishes.
 """
-@router.post("/upload")
-async def upload_pointcloud(
-    file: UploadFile = File(...),
+from fastapi import Request
+
+@router.post("/upload/complete")
+async def pointcloud_upload_complete(
+    request: Request,
     db: AsyncSession = Depends(get_db_session)
 ):
-    # Create job in database first
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    event_name = data.get("EventName")
+    upload = data.get("Upload", {})
+    
+    if not upload:
+        return {"status": "ignored", "reason": "No upload data"}
+        
+    file_id = upload.get("ID")
+    metadata = upload.get("MetaData", {})
+    filename = metadata.get("name", metadata.get("filename", f"unknown-{file_id}.ply"))
+    total_bytes = upload.get("Size")
+    
+    # tusd saves the file without an extension in the upload_dir
+    original_file_path = os.path.join(settings.upload_dir, file_id)
+    
+    # Give it the proper extension so tools like pdal can guess the format
+    original_ext = os.path.splitext(filename)[1]
+    new_safe_filename = f"{file_id}{original_ext}"
+    new_file_path = os.path.join(settings.upload_dir, new_safe_filename)
+    
+    if os.path.exists(original_file_path):
+        os.rename(original_file_path, new_file_path)
+    else:
+        # File might have already been moved or not exist
+        pass
+
+    # Create job in database
     job_record = Job(
-        name=f"Convert {file.filename} to EPT",
-        payload={"filename": file.filename},
+        name=f"Convert {filename} to EPT",
+        payload={
+            "filename": filename,
+            "safe_filename": new_safe_filename,
+            "total_bytes": total_bytes,
+            "file_id": file_id
+        },
         status="PENDING",
         progress=0.0
     )
     db.add(job_record)
     await db.commit()
     await db.refresh(job_record)
-
-    # Generate unique ID for the file
-    file_id = str(uuid.uuid4())
-    original_ext = os.path.splitext(file.filename)[1]
-    safe_filename = f"{file_id}{original_ext}"
-    
-    file_path = os.path.join(settings.upload_dir, safe_filename)
-    
-    # Save file asynchronously
-    async with aiofiles.open(file_path, 'wb') as out_file:
-        while content := await file.read(1024 * 1024):  # read in 1MB chunks
-            await out_file.write(content)
-            
-    # Enqueue job
+        
+    # Queue the job
     redis_conn = Redis.from_url(settings.redis_url)
     q = Queue("pointcloud_tasks", connection=redis_conn)
-    rq_job = q.enqueue(
+    q.enqueue(
         "app.services.worker.tasks.convert_to_ept", 
-        file_path, 
+        new_file_path, 
         file_id, 
         job_id=str(job_record.id),
         storage_type=settings.pointcloud_storage_type.value
     )
     
-    return {"message": "File uploaded and conversion queued", "job_id": job_record.id, "file_id": file_id}
+    return {"status": "ok"}
 

@@ -1,23 +1,48 @@
-import socket
-import urllib.parse
-from fastapi import APIRouter, Depends
+import logging
+import psutil
+import asyncio
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.schemas.health import HealthCheck, SystemDiagnostics
 from app.core.database import get_db_session
 from app.core.config import settings
-import os
+from redis.asyncio import Redis as AsyncRedis
+from redis import Redis as SyncRedis
+from rq import Worker
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["System health"], prefix="/health")
 
-def check_redis_online() -> bool:
+# Shared connection pools
+async_redis_client = AsyncRedis.from_url(settings.redis_url)
+sync_redis_client = SyncRedis.from_url(settings.redis_url)
+
+async def check_redis_online() -> bool:
     try:
-        parsed = urllib.parse.urlparse(settings.redis_url)
-        host = parsed.hostname or "localhost"
-        port = parsed.port or 6379
-        with socket.create_connection((host, port), timeout=1.0):
-            return True
-    except Exception:
+        await async_redis_client.ping()
+        return True
+    except Exception as e:
+        logger.error(f"Redis health check failed: {e}")
+        return False
+
+def check_worker_online_sync() -> bool:
+    try:
+        workers = Worker.all(connection=sync_redis_client)
+        return len(workers) > 0
+    except Exception as e:
+        logger.error(f"Worker health check failed: {e}")
+        return False
+
+async def check_tusd_online() -> bool:
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            response = await client.options("http://tusd:8080/files/")
+            return response.status_code in (200, 204)
+    except Exception as e:
+        logger.error(f"TUSD health check failed: {e}")
         return False
 
 @router.get("", response_model=HealthCheck)
@@ -25,7 +50,7 @@ async def health_check():
     """
     Dummy health check route to verify backend is running.
     """
-    return HealthCheck(status="ok", version="1.0.0")
+    return HealthCheck(status="ok", version=settings.version)
 
 @router.get("/diagnostics", response_model=SystemDiagnostics)
 async def get_diagnostics(
@@ -43,44 +68,40 @@ async def get_diagnostics(
         result = await db.execute(text("SELECT extname FROM pg_extension WHERE extname = 'pointcloud'"))
         if result.scalar_one_or_none():
             pg_pointcloud_status = "online"
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
 
-    redis_status = "online" if check_redis_online() else "offline"
+    redis_online = await check_redis_online()
+    redis_status = "online" if redis_online else "offline"
+    
+    worker_online = await asyncio.to_thread(check_worker_online_sync)
+    worker_status = "online" if worker_online else "offline"
+
+    tusd_online = await check_tusd_online()
+    tusd_status = "online" if tusd_online else "offline"
+
+    # Fail the health check if critical services are offline
+    if db_status == "offline" or redis_status == "offline" or tusd_status == "offline":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Critical services are offline"
+        )
+
+    # Use psutil in a thread pool as reading system stats can be blocking
+    cpu_usage = await asyncio.to_thread(psutil.cpu_percent, 0.1)
+    memory = await asyncio.to_thread(psutil.virtual_memory)
+    memory_usage = memory.percent
 
     return SystemDiagnostics(
-        cpu_usage=get_cpu_usage(),
-        memory_usage=get_memory_usage(),
+        cpu_usage=cpu_usage,
+        memory_usage=memory_usage,
         active_connections=None,
         services_status={
             "database": db_status,
             "redis": redis_status,
-            "pgPointcloud": pg_pointcloud_status
+            "pgPointcloud": pg_pointcloud_status,
+            "worker": worker_status,
+            "tusd": tusd_status
         },
         recent_errors=[]
     )
-
-def get_cpu_usage() -> float | None:
-    try:
-        load1, _, _ = os.getloadavg()
-        cpu_count = os.cpu_count() or 1
-        return round((load1 / cpu_count) * 100, 1)
-    except Exception:
-        return None
-
-def get_memory_usage() -> float | None:
-    try:
-        with open('/proc/meminfo', 'r') as f:
-            lines = f.readlines()
-        mem_total = 0
-        mem_available = 0
-        for line in lines:
-            if line.startswith('MemTotal:'):
-                mem_total = int(line.split()[1])
-            elif line.startswith('MemAvailable:'):
-                mem_available = int(line.split()[1])
-        if mem_total > 0:
-            return round(((mem_total - mem_available) / mem_total) * 100, 1)
-        return None
-    except Exception:
-        return None

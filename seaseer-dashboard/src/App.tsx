@@ -6,23 +6,25 @@ import Workspace from "./components/Workspace/Workspace";
 import StatusBar from "./components/StatusBar";
 import ExampleDiagnostics from "./components/ExampleDiagnostics.tsx";
 import VideoUploadTestPage from "./components/VideoUploader/VideoUploadTestPage.tsx";
+import PointCloudUploadTestPage from "./components/PointCloudUploader/PointCloudUploadTestPage.tsx";
 
 function App() {
     return (
         <div className="app">
             <Toolbar />
             <Routes>
-                <Route 
-                    path="/" 
+                <Route
+                    path="/"
                     element={
                         <>
                             <Workspace />
                             <StatusBar />
                         </>
-                    } 
+                    }
                 />
                 <Route path="/example-diagnostics" element={<ExampleDiagnostics />} />
-                <Route path="/upload-test" element={<VideoUploadTestPage />} />
+                <Route path="/video-upload-test" element={<VideoUploadTestPage />} />
+                <Route path="/pointcloud-upload-test" element={<PointCloudUploadTestPage />} />
             </Routes>
         </div>
     );

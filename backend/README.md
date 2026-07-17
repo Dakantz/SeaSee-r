@@ -20,6 +20,10 @@ This directory contains the FastAPI backend for the SeaSee-r project. It is stru
 - **Isolation:** The worker container shares the same Docker image and codebase as the API but does not expose any network ports. It only communicates internally with Redis and the PostgreSQL database to report job statuses.
 - **Asynchronous Execution:** By using `asyncio` and `subprocess` within the worker tasks, heavy CLI operations (like `entwine build`) run concurrently without freezing the main application logic, and provide real-time parsing of task progress back to the database.
 
+### Resumable File Uploads (TUS Protocol)
+- **TUSD Container:** The system uses the official `tusproject/tusd` Go server as a dedicated container (`tusd`) to handle file uploads. This provides robust support for resumable, chunked uploads, protecting against network disconnects.
+- **Webhook Integration:** Once `tusd` successfully receives a complete point cloud file, it triggers a webhook to the FastAPI backend (`/api/pointclouds/upload/complete`), which seamlessly enqueues the conversion task to the worker.
+
 ---
 
 ## Startup Instructions
@@ -36,6 +40,7 @@ This command will:
 - Build the API and worker images (using Conda-forge for modern point cloud capabilities like `pdal` and `entwine`).
 - Initialize the PostgreSQL database with PostGIS extensions.
 - Start the Redis message broker.
+- Launch the `tusd` resumable upload server.
 - Launch the FastAPI application (with hot-reloading) and the RQ background worker.
 
 ### 2. Access the Application
@@ -46,14 +51,7 @@ Once the containers are running:
 
 ### 3. Testing
 
-The backend includes tests that can be run directly inside the Docker container.
-
-**Run the test suite via Docker:**
+**Run the test suite from the backend directory:**
 ```bash
-docker compose exec backend pytest -v
-```
-
-Alternatively, you can run the provided Docker integration test script from the host machine:
-```bash
-python backend/test_docker_integration_filesystem.py
+pytest -v
 ```
