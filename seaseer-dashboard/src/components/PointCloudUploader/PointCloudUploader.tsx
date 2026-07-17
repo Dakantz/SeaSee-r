@@ -211,17 +211,19 @@ export const PointCloudUploader: React.FC<PointCloudUploaderProps> = ({
     try {
       const promises = pointCloudFiles.map(file => {
         return new Promise<void>((resolve, reject) => {
-          // Robust fingerprinting
-          const fingerprint = `${file.name}-${file.size}-${file.lastModified}`;
+          // Robust fingerprinting with prefix to prevent collisions between different upload types
+          const fingerprint = `pc-${file.name}-${file.size}-${file.lastModified}`;
           
           const upload = new tus.Upload(file, {
             endpoint: tusEndpoint,
             retryDelays: [0, 1000, 3000, 5000, 10000, 20000, 60000],
             metadata: {
               filename: file.name,
-              filetype: file.type || 'application/octet-stream'
+              filetype: file.type || 'application/octet-stream',
+              upload_type: 'pointcloud'
             },
             chunkSize,
+            addRequestId: true,
             fingerprint: () => Promise.resolve(fingerprint),
             onError: (error) => {
               console.error("Upload failed:", error);

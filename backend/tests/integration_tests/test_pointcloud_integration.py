@@ -79,11 +79,12 @@ async def test_pointcloud_filesystem_flow(async_client):
                 "MetaData": {
                     "name": "test_fs.ply",
                     "filename": "test_fs.ply",
-                    "filetype": "application/octet-stream"
+                    "filetype": "application/octet-stream",
+                    "upload_type": "pointcloud"
                 }
             }
         }
-        response = await async_client.post("/pointclouds/upload/complete", json=payload)
+        response = await async_client.post("/webhooks/tusd", json=payload)
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
         
@@ -149,11 +150,12 @@ async def test_pointcloud_database_flow(async_client):
                 "MetaData": {
                     "name": "test_db.ply",
                     "filename": "test_db.ply",
-                    "filetype": "application/octet-stream"
+                    "filetype": "application/octet-stream",
+                    "upload_type": "pointcloud"
                 }
             }
         }
-        response = await async_client.post("/pointclouds/upload/complete", json=payload)
+        response = await async_client.post("/webhooks/tusd", json=payload)
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
         

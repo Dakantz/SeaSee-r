@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     pointcloud_storage_type: StorageType
     # directory for local .ply files
     pointcloud_local_dir: str = "./data/pointclouds"
-    # directory for raw pointcloud uploads (.las, .laz, .ply)
-    upload_dir: str = "./data/pointclouds"
+    # directory for raw resumable uploads before processing
+    upload_dir: str = "./data/uploads"
     # directory for generated EPT datasets
     ept_dir: str = "./data/ept"
     # directory for video uploads

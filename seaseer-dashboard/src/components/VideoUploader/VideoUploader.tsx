@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
+import * as tus from 'tus-js-client';
 import './VideoUploader.css';
 
 export interface VideoUploaderProps {
@@ -7,6 +8,7 @@ export interface VideoUploaderProps {
   onProgress?: (percentage: number) => void;
   chunkSize?: number; // In bytes, default 5MB
   apiUrl?: string;
+  tusEndpoint?: string;
   simulateDisconnectAt?: number; // percentage (0-100) to simulate disconnect
 }
 
@@ -18,6 +20,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
   onProgress,
   chunkSize = DEFAULT_CHUNK_SIZE,
   apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000',
+  tusEndpoint = import.meta.env.VITE_TUS_URL || 'http://localhost:8080/files/',
   simulateDisconnectAt
 }) => {
   const [videoFiles, setVideoFiles] = useState<File[]>([]);
@@ -35,6 +38,9 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
   const triggeredDisconnects = useRef<Set<number>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement>(null);
+  
+  const uploadsRef = useRef<Record<string, tus.Upload>>({});
+  const bytesUploadedRef = useRef<Record<string, number>>({});
 
   const dragCounter = useRef(0);
 
@@ -151,78 +157,58 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
 
   const removeVideoFile = async (indexToRemove: number) => {
     const fileToRemove = videoFiles[indexToRemove];
-    if (fileToRemove && videoSafeFilenames[fileToRemove.name]) {
-      const safeName = videoSafeFilenames[fileToRemove.name];
-      try {
-        await fetch(`${apiUrl}/videos/upload/${safeName}`, {
-          method: 'DELETE',
-        });
-      } catch (err) {
-        console.error("Failed to delete incomplete upload", err);
+    if (fileToRemove) {
+      const upload = uploadsRef.current[fileToRemove.name];
+      if (upload) {
+        upload.abort(true).catch(err => console.error("Failed to abort upload:", err));
+        delete uploadsRef.current[fileToRemove.name];
       }
-      setVideoSafeFilenames(prev => {
-        const newMap = { ...prev };
-        delete newMap[fileToRemove.name];
-        return newMap;
-      });
-      setVideoFileIds(prev => {
-        const newMap = { ...prev };
-        delete newMap[fileToRemove.name];
-        return newMap;
-      });
+      
+      if (videoSafeFilenames[fileToRemove.name]) {
+        setVideoSafeFilenames(prev => {
+          const newMap = { ...prev };
+          delete newMap[fileToRemove.name];
+          return newMap;
+        });
+        setVideoFileIds(prev => {
+          const newMap = { ...prev };
+          delete newMap[fileToRemove.name];
+          return newMap;
+        });
+      }
     }
     setVideoFiles(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
   const removeMetadataFile = async (indexToRemove: number) => {
     const fileToRemove = metadataFiles[indexToRemove];
-    if (fileToRemove && metadataSafeFilenames[fileToRemove.name]) {
-      const safeNames = metadataSafeFilenames[fileToRemove.name];
-      for (const safeName of safeNames) {
-        try {
-          await fetch(`${apiUrl}/videos/upload/metadata/${safeName}`, {
-            method: 'DELETE',
-          });
-        } catch (err) {
-          console.error("Failed to delete incomplete metadata upload", err);
-        }
+    if (fileToRemove) {
+      const upload = uploadsRef.current[fileToRemove.name];
+      if (upload) {
+        upload.abort(true).catch(err => console.error("Failed to abort upload:", err));
+        delete uploadsRef.current[fileToRemove.name];
       }
-      setMetadataSafeFilenames(prev => {
-        const newMap = { ...prev };
-        delete newMap[fileToRemove.name];
-        return newMap;
-      });
+
+      if (metadataSafeFilenames[fileToRemove.name]) {
+        setMetadataSafeFilenames(prev => {
+          const newMap = { ...prev };
+          delete newMap[fileToRemove.name];
+          return newMap;
+        });
+      }
     }
     setMetadataFiles(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
   const resetState = async (cancelUpload: boolean = true) => {
     if (cancelUpload) {
-      for (const safeName of Object.values(videoSafeFilenames)) {
-        if (safeName) {
-          try {
-            await fetch(`${apiUrl}/videos/upload/${safeName}`, {
-              method: 'DELETE',
-            });
-          } catch (err) {
-            console.error("Failed to delete incomplete upload", err);
-          }
-        }
-      }
-
-      for (const safeNames of Object.values(metadataSafeFilenames)) {
-        for (const safeName of safeNames) {
-          try {
-            await fetch(`${apiUrl}/videos/upload/metadata/${safeName}`, {
-              method: 'DELETE',
-            });
-          } catch (err) {
-            console.error("Failed to delete incomplete metadata upload", err);
-          }
-        }
+      for (const upload of Object.values(uploadsRef.current)) {
+        upload.abort(true).catch(err => console.error("Failed to abort upload:", err));
       }
     }
 
+    uploadsRef.current = {};
+    bytesUploadedRef.current = {};
     setVideoFiles([]);
     setMetadataFiles([]);
     setVideoSafeFilenames({});
@@ -245,6 +231,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
 
     if (!isResume) {
       setProgress(0);
+      bytesUploadedRef.current = {};
     }
 
     try {
@@ -252,25 +239,15 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
       const currentVideoFileIds = { ...videoFileIds };
       const currentMetadataSafeFilenames = { ...metadataSafeFilenames };
 
-      // Initialize all videos
+      // Initialize all videos locally by generating UUIDs
       for (const video of videoFiles) {
         if (!isResume || !currentVideoSafeFilenames[video.name]) {
-          const initFormData = new FormData();
-          initFormData.append('filename', video.name);
-          initFormData.append('total_bytes', video.size.toString());
-
-          const initRes = await fetch(`${apiUrl}/videos/upload/init`, {
-            method: 'POST',
-            body: initFormData,
-          });
-
-          if (!initRes.ok) {
-            throw new Error(`Failed to initialize upload for ${video.name}: ${initRes.statusText}`);
-          }
-
-          const initData = await initRes.json();
-          currentVideoSafeFilenames[video.name] = initData.safe_filename;
-          currentVideoFileIds[video.name] = initData.file_id;
+          const file_id = crypto.randomUUID();
+          const ext = video.name.split('.').pop() || '';
+          const safeFilename = ext ? `${file_id}.${ext}` : file_id;
+          
+          currentVideoSafeFilenames[video.name] = safeFilename;
+          currentVideoFileIds[video.name] = file_id;
         }
       }
       setVideoSafeFilenames(currentVideoSafeFilenames);
@@ -283,193 +260,105 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
         .join(',');
 
       if (activeVideoSafeFilenames) {
-        const initPromises = metadataFiles.map(async (metaFile) => {
+        for (const metaFile of metadataFiles) {
           if (!currentMetadataSafeFilenames[metaFile.name] || currentMetadataSafeFilenames[metaFile.name].length === 0) {
-            const initMetaFormData = new FormData();
-            initMetaFormData.append('video_safe_filenames', activeVideoSafeFilenames);
-            initMetaFormData.append('filename', metaFile.name);
-            initMetaFormData.append('content_type', metaFile.type || 'application/octet-stream');
-            initMetaFormData.append('total_bytes', metaFile.size.toString());
-
-            const initMetaRes = await fetch(`${apiUrl}/videos/upload/metadata/init_multiple`, {
-              method: 'POST',
-              body: initMetaFormData,
-            });
-
-            if (!initMetaRes.ok) {
-              throw new Error(`Failed to initialize metadata upload for ${metaFile.name}: ${initMetaRes.statusText}`);
-            }
-
-            const initMetaData = await initMetaRes.json();
-            return { name: metaFile.name, safeFilenames: initMetaData.safe_filenames };
+            currentMetadataSafeFilenames[metaFile.name] = activeVideoSafeFilenames.split(',');
           }
-          return null;
-        });
-
-        const results = await Promise.all(initPromises);
-        results.forEach(res => {
-          if (res) {
-            currentMetadataSafeFilenames[res.name] = res.safeFilenames;
-          }
-        });
-
+        }
         setMetadataSafeFilenames(currentMetadataSafeFilenames);
       }
 
-      // Calculate total size for progress bar
+      // TUS upload logic
       const totalSize = videoFiles.reduce((acc, f) => acc + f.size, 0) + metadataFiles.reduce((acc, f) => acc + f.size, 0);
-      let totalUploadedBytes = 0;
 
-      // Fetch offsets first to establish base progress BEFORE starting uploads
-      const videoOffsets: Record<string, number> = {};
-      const initialFileProgress: Record<string, number> = {};
-      for (const video of videoFiles) {
-        const currentSafeFilename = currentVideoSafeFilenames[video.name];
-        if (currentSafeFilename) {
-          try {
-            const statusRes = await fetch(`${apiUrl}/videos/upload/${currentSafeFilename}/status`);
-            if (statusRes.ok) {
-              const statusData = await statusRes.json();
-              videoOffsets[video.name] = statusData.uploaded_bytes || 0;
-            }
-          } catch (err) { }
+      const updateOverallProgress = () => {
+        let totalUploadedBytes = 0;
+        for (const f of [...videoFiles, ...metadataFiles]) {
+          totalUploadedBytes += bytesUploadedRef.current[f.name] || 0;
         }
-        const currentOffset = Math.min(videoOffsets[video.name] || 0, video.size);
-        totalUploadedBytes += currentOffset;
-        initialFileProgress[video.name] = video.size > 0 ? Math.min(100, Math.round((currentOffset / video.size) * 100)) : 100;
-      }
-
-      const metaOffsets: Record<string, number> = {};
-      for (const metaFile of metadataFiles) {
-        const safeFilenamesList = currentMetadataSafeFilenames[metaFile.name];
-        if (safeFilenamesList && safeFilenamesList.length > 0) {
-          try {
-            const safeFilenamesStr = safeFilenamesList.join(',');
-            const statusRes = await fetch(`${apiUrl}/videos/upload/metadata_multiple/status?safe_filenames=${encodeURIComponent(safeFilenamesStr)}`);
-            if (statusRes.ok) {
-              const statusData = await statusRes.json();
-              metaOffsets[metaFile.name] = statusData.uploaded_bytes || 0;
-            }
-          } catch (err) { }
-        }
-        const currentOffset = Math.min(metaOffsets[metaFile.name] || 0, metaFile.size);
-        totalUploadedBytes += currentOffset;
-        initialFileProgress[metaFile.name] = metaFile.size > 0 ? Math.min(100, Math.round((currentOffset / metaFile.size) * 100)) : 100;
-      }
-      setFileProgress(initialFileProgress);
-
-      // Update initial progress visually
-      if (totalSize > 0) {
-        const initialProgress = Math.round((totalUploadedBytes / totalSize) * 100);
-        setProgress(initialProgress);
-        if (onProgress) onProgress(initialProgress);
-      }
-
-      const checkDisconnect = (currentProgress: number) => {
-        if (simulateDisconnectAt !== undefined && simulateDisconnectAt > 0 && currentProgress >= simulateDisconnectAt) {
-          if (!triggeredDisconnects.current.has(simulateDisconnectAt)) {
-            triggeredDisconnects.current.add(simulateDisconnectAt);
-            throw new Error(`Simulated network disconnect at ${currentProgress}%`);
-          }
+        if (totalSize > 0) {
+          const overall = Math.min(100, Math.round((totalUploadedBytes / totalSize) * 100));
+          setProgress(overall);
+          if (onProgress) onProgress(overall);
         }
       };
 
-      // Upload Video Chunks
-      for (const video of videoFiles) {
-        const currentSafeFilename = currentVideoSafeFilenames[video.name];
-        if (!currentSafeFilename) continue;
+      const createTusUpload = (file: File, fileType: 'video' | 'video_metadata', additionalMetadata: Record<string, string>) => {
+        return new Promise<void>((resolve, reject) => {
+          const fingerprint = `${file.name}-${file.size}-${file.lastModified}`;
+          
+          const upload = new tus.Upload(file, {
+            endpoint: tusEndpoint,
+            retryDelays: [0, 1000, 3000, 5000, 10000, 20000, 60000],
+            metadata: {
+              filename: file.name,
+              filetype: file.type || 'application/octet-stream',
+              upload_type: fileType,
+              ...additionalMetadata
+            },
+            chunkSize,
+            fingerprint: () => Promise.resolve(fingerprint),
+            onError: (error) => {
+              console.error("Upload failed:", error);
+              reject(error);
+            },
+            onProgress: (bytesUploaded, bytesTotal) => {
+              bytesUploadedRef.current[file.name] = bytesUploaded;
+              setFileProgress(prev => ({
+                ...prev,
+                [file.name]: bytesTotal > 0 ? Math.min(100, Math.round((bytesUploaded / bytesTotal) * 100)) : 100
+              }));
+              updateOverallProgress();
 
-        let videoOffset = videoOffsets[video.name] || 0;
-
-        while (videoOffset < video.size) {
-          const currentProgress = Math.round((totalUploadedBytes / totalSize) * 100);
-          checkDisconnect(currentProgress);
-
-          const chunkEnd = Math.min(videoOffset + chunkSize, video.size);
-          const chunk = video.slice(videoOffset, chunkEnd);
-
-          const chunkFormData = new FormData();
-          chunkFormData.append('offset', videoOffset.toString());
-          chunkFormData.append('file', chunk, video.name);
-
-          const chunkRes = await fetch(`${apiUrl}/videos/upload/${currentSafeFilename}`, {
-            method: 'POST',
-            body: chunkFormData,
+              if (simulateDisconnectAt !== undefined && simulateDisconnectAt > 0) {
+                const currentOverall = Math.round(
+                  (Object.values(bytesUploadedRef.current).reduce((a, b) => a + b, 0) / totalSize) * 100
+                );
+                if (currentOverall >= simulateDisconnectAt && !triggeredDisconnects.current.has(simulateDisconnectAt)) {
+                  triggeredDisconnects.current.add(simulateDisconnectAt);
+                  upload.abort();
+                  reject(new Error(`Simulated network disconnect at ${currentOverall}%`));
+                }
+              }
+            },
+            onSuccess: () => {
+              bytesUploadedRef.current[file.name] = file.size;
+              updateOverallProgress();
+              resolve();
+            }
           });
 
-          if (!chunkRes.ok) {
-            throw new Error(`Failed to upload video chunk for ${video.name} at offset ${videoOffset}`);
-          }
+          uploadsRef.current[file.name] = upload;
 
-          const chunkData = await chunkRes.json();
-          const newOffset = Math.min(chunkData.uploaded_bytes, video.size);
-          const bytesUploadedThisChunk = newOffset - videoOffset;
-          videoOffset = newOffset;
+          upload.findPreviousUploads().then((previousUploads) => {
+            if (previousUploads.length > 0) {
+              upload.resumeFromPreviousUpload(previousUploads[0]);
+            }
+            upload.start();
+          }).catch(() => {
+              upload.start();
+          });
+        });
+      };
 
-          totalUploadedBytes += bytesUploadedThisChunk;
+      const uploadPromises: Promise<void>[] = [];
 
-          setFileProgress(prev => ({
-            ...prev,
-            [video.name]: video.size > 0 ? Math.min(100, Math.round((videoOffset / video.size) * 100)) : 100
-          }));
-
-          const updatedProgress = Math.min(100, Math.round((totalUploadedBytes / totalSize) * 100));
-          setProgress(updatedProgress);
-          if (onProgress) {
-            onProgress(updatedProgress);
-          }
+      for (const video of videoFiles) {
+        const safeFilename = currentVideoSafeFilenames[video.name];
+        const fileId = currentVideoFileIds[video.name];
+        if (safeFilename && fileId) {
+          uploadPromises.push(createTusUpload(video, 'video', { safe_filename: safeFilename, file_id: fileId }));
         }
       }
 
-      // Upload Metadata Chunks
       for (const metaFile of metadataFiles) {
         const safeFilenamesList = currentMetadataSafeFilenames[metaFile.name];
-        if (!safeFilenamesList || safeFilenamesList.length === 0) continue;
-
-        const safeFilenamesStr = safeFilenamesList.join(',');
-
-        let metaOffset = metaOffsets[metaFile.name] || 0;
-
-        while (metaOffset < metaFile.size) {
-          const currentProgress = Math.round((totalUploadedBytes / totalSize) * 100);
-          checkDisconnect(currentProgress);
-
-          const chunkEnd = Math.min(metaOffset + chunkSize, metaFile.size);
-          const chunk = metaFile.slice(metaOffset, chunkEnd);
-
-          const chunkFormData = new FormData();
-          chunkFormData.append('safe_filenames', safeFilenamesStr);
-          chunkFormData.append('offset', metaOffset.toString());
-          chunkFormData.append('file', chunk, metaFile.name);
-
-          const chunkRes = await fetch(`${apiUrl}/videos/upload/metadata_multiple`, {
-            method: 'POST',
-            body: chunkFormData,
-          });
-
-          if (!chunkRes.ok) {
-            throw new Error(`Failed to upload metadata chunk for ${metaFile.name} at offset ${metaOffset}`);
-          }
-
-          const chunkData = await chunkRes.json();
-          const newOffset = Math.min(chunkData.uploaded_bytes, metaFile.size);
-          const bytesUploadedThisChunk = newOffset - metaOffset;
-          metaOffset = newOffset;
-
-          totalUploadedBytes += bytesUploadedThisChunk;
-
-          setFileProgress(prev => ({
-            ...prev,
-            [metaFile.name]: metaFile.size > 0 ? Math.min(100, Math.round((metaOffset / metaFile.size) * 100)) : 100
-          }));
-
-          const updatedProgress = Math.min(100, Math.round((totalUploadedBytes / totalSize) * 100));
-          setProgress(updatedProgress);
-          if (onProgress) {
-            onProgress(updatedProgress);
-          }
+        if (safeFilenamesList && safeFilenamesList.length > 0) {
+          uploadPromises.push(createTusUpload(metaFile, 'video_metadata', { video_safe_filenames: safeFilenamesList.join(',') }));
         }
       }
+
+      await Promise.all(uploadPromises);
 
       setIsUploading(false);
       setProgress(100);

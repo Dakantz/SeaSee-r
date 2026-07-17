@@ -4,10 +4,9 @@ import { VideoUploader } from './VideoUploader';
 interface UploaderInstanceProps {
   title: string;
   chunkSize?: number;
-  disconnectPercentage: number;
 }
 
-const UploaderInstance: React.FC<UploaderInstanceProps> = ({ title, chunkSize, disconnectPercentage }) => {
+const UploaderInstance: React.FC<UploaderInstanceProps> = ({ title, chunkSize }) => {
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [fileIds, setFileIds] = useState<string[]>([]);
 
@@ -39,7 +38,6 @@ const UploaderInstance: React.FC<UploaderInstanceProps> = ({ title, chunkSize, d
         onUploadSuccess={handleUploadSuccess}
         onUploadError={handleUploadError}
         onProgress={handleProgress}
-        simulateDisconnectAt={disconnectPercentage > 0 ? disconnectPercentage : undefined}
         chunkSize={chunkSize}
       />
 
@@ -83,8 +81,6 @@ const UploaderInstance: React.FC<UploaderInstanceProps> = ({ title, chunkSize, d
 };
 
 export const VideoUploadTestPage: React.FC = () => {
-  const [disconnectPercentage, setDisconnectPercentage] = useState<number>(0);
-
   return (
     <div style={{
       padding: '40px',
@@ -110,38 +106,8 @@ export const VideoUploadTestPage: React.FC = () => {
           Test the chunked video uploader component below. You can now test multiple simultaneous uploads!
         </p>
 
-        <div style={{ marginBottom: '32px', padding: '16px', background: 'rgba(15, 23, 42, 0.4)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: '#f8fafc' }}>
-            Simulate Disconnect At (Global): {disconnectPercentage > 0 ? `${disconnectPercentage}%` : 'Off'}
-          </label>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={disconnectPercentage}
-            onChange={(e) => setDisconnectPercentage(Number(e.target.value))}
-            style={{ width: '100%', accentColor: '#3b82f6' }}
-          />
-          <p style={{ margin: '8px 0 0 0', fontSize: '13px', color: '#94a3b8' }}>
-            Set above 0% to test resumability. All active uploads will throw an error when they reach the specified progress.
-          </p>
-        </div>
-
         <UploaderInstance 
           title="Uploader 1 (5MB Chunks - Default)" 
-          disconnectPercentage={disconnectPercentage} 
-        />
-        
-        <UploaderInstance 
-          title="Uploader 2 (10MB Chunks)" 
-          chunkSize={10 * 1024 * 1024} 
-          disconnectPercentage={disconnectPercentage} 
-        />
-        
-        <UploaderInstance 
-          title="Uploader 3 (1MB Chunks)" 
-          chunkSize={1 * 1024 * 1024} 
-          disconnectPercentage={disconnectPercentage} 
         />
       </div>
     </div>

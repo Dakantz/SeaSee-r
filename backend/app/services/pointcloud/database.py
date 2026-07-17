@@ -2,13 +2,18 @@ import json
 import re
 import subprocess
 from typing import List
-from fastapi import HTTPException
+from fastapi import HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
+from app.core.database import get_db_session
 from urllib.parse import urlparse
 from app.core.config import settings
+from app.models import PointCloudMetadata
+from app.models.video import Video, VideoMetadata
 from app.services.pointcloud.base import PointCloudStorageService
 
 class DatabasePointCloudStorageService(PointCloudStorageService):
@@ -113,11 +118,15 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
             headers={"Content-Disposition": f"attachment; filename={pointcloud_uuid}_lod{lod}.ply"}
         )
 
-    async def list_pointclouds(self) -> List[str]:
+    async def list_pointclouds(self) -> list:
         """Queries the pointclouds metadata table for available point cloud IDs."""
         try:
-            result = await self.db.execute(text("SELECT id::text FROM pointclouds"))
-            return [row[0] for row in result.all()]
-        except Exception:
+            from app.models import PointCloudMetadata
+            from sqlalchemy import select
+            stmt = select(PointCloudMetadata)
+            result = await self.db.execute(stmt)
+            return list(result.scalars().all())
+        except Exception as e:
+            print(f"Error fetching pointclouds: {e}")
             # Fallback to empty list if DB is not setup or offline
             return []

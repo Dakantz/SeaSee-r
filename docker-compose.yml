@@ -89,11 +89,11 @@ services:
       - TUSD_UPLOAD_DIR=/srv/tusd-data
     command: >
       -upload-dir /srv/tusd-data
-      -hooks-http http://backend:8000/pointclouds/upload/complete
+      -hooks-http http://backend:8000/webhooks/tusd
       -hooks-http-forward-headers Cookie,Authorization
-      -hooks-enabled-events post-finish
+      -hooks-enabled-events post-create,post-finish,post-terminate
     volumes:
-      - ./backend/data/pointclouds:/srv/tusd-data
+      - ./backend/data/uploads:/srv/tusd-data
     depends_on:
       backend:
         condition: service_healthy

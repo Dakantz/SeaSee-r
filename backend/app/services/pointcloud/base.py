@@ -10,5 +10,5 @@ class PointCloudStorageService(ABC):
 
     """Return a list of available point clouds."""
     @abstractmethod
-    async def list_pointclouds(self) -> List[str]:
+    async def list_pointclouds(self) -> list:
         pass
