@@ -22,7 +22,7 @@ def upgrade() -> None:
     op.create_table('video_metadata',
         sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('video_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('filename', sa.String(length=255), nullable=False),
+        sa.Column('orig_filename', sa.String(length=255), nullable=False),
         sa.Column('safe_filename', sa.String(length=255), nullable=False),
         sa.Column('content_type', sa.String(length=100), nullable=True),
         sa.Column('total_bytes', sa.Integer(), nullable=True),

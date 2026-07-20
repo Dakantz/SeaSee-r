@@ -4,7 +4,7 @@ import json
 import uuid
 from urllib.parse import urlparse
 from rq import get_current_job
-from sqlalchemy import update, text
+from sqlalchemy import update, text, select
 from app.core.config import settings, StorageType
 from app.core.database import async_session
 from app.models.job import Job
@@ -184,11 +184,23 @@ async def _convert_to_ept_async(file_path: str, file_id: str, job_id: str, stora
                     except Exception as e2:
                         print(f"Failed to query pointcloud_formats: {e2}")
                         
-                # 6. Insert metadata into pointclouds table
+                # 6. Fetch job record to get original filename
+                orig_filename = os.path.basename(file_path)
+                safe_filename = os.path.basename(file_path)
+                if job_id:
+                    stmt_job = select(Job).where(Job.id == job_id)
+                    result_job = await session.execute(stmt_job)
+                    job_record = result_job.scalar_one_or_none()
+                    if job_record and isinstance(job_record.payload, dict):
+                        orig_filename = job_record.payload.get("filename", orig_filename)
+                        safe_filename = job_record.payload.get("safe_filename", safe_filename)
+
+                # 7. Insert metadata into pointclouds table
                 metadata_record = PointCloudMetadata(
                     id=uuid.UUID(file_id),
                     job_id=uuid.UUID(job_id) if job_id else None,
-                    name=os.path.basename(file_path),
+                    orig_filename=orig_filename,
+                    safe_filename=safe_filename,
                     number_of_points=number_of_points,
                     min_x=min_x,
                     min_y=min_y,

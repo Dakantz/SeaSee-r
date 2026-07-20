@@ -9,8 +9,9 @@ from app.models.video import VideoStatus
 
 class VideoMetadataResponse(BaseModel):
     id: UUID
-    filename: str
-    safe_filename: str
+    batch_id: Optional[UUID] = None
+    orig_filename: Optional[str] = None
+    safe_filename: Optional[str] = None
     content_type: Optional[str] = None
     total_bytes: Optional[int] = None
     status: VideoStatus
@@ -22,12 +23,12 @@ class VideoMetadataResponse(BaseModel):
 
 class VideoResponse(BaseModel):
     id: UUID
-    filename: str
-    safe_filename: str
+    batch_id: Optional[UUID] = None
+    orig_filename: Optional[str] = None
+    safe_filename: Optional[str] = None
     total_bytes: Optional[int] = None
     status: VideoStatus
     created_at: datetime
     completed_at: Optional[datetime] = None
-    metadata_files: List[VideoMetadataResponse] = []
 
     model_config = ConfigDict(from_attributes=True)

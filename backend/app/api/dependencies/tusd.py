@@ -2,7 +2,7 @@ import os
 from fastapi import Request, HTTPException
 from typing import Optional
 from app.core.config import settings
-from app.services.tusd.base import WebhookPayload
+from app.services.tusd.base_upload_service import WebhookPayload
 
 class IgnoreWebhook(Exception):
     def __init__(self, reason: str):

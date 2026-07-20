@@ -95,7 +95,7 @@ class TestPointCloudServices(TestCase):
 
     def test_database_service_list_success(self):
         mock_result = MagicMock()
-        mock_result.all.return_value = [("uuid-1",), ("uuid-2",)]
+        mock_result.scalars.return_value.all.return_value = ["uuid-1", "uuid-2"]
         
         mock_db = MagicMock()
         mock_db.execute = AsyncMock(return_value=mock_result)

@@ -186,7 +186,7 @@ async def test_pointcloud_database_flow(async_client):
         response = await async_client.get("/pointclouds/")
         assert response.status_code == 200
         pointclouds_list = response.json()
-        assert file_id in pointclouds_list
+        assert any(pc.get("id") == file_id for pc in pointclouds_list)
 
         # 4. Download the pointcloud from database stream
         from unittest.mock import patch, MagicMock

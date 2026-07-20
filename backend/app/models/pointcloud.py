@@ -10,7 +10,8 @@ class PointCloudMetadata(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     job_id = Column(UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True)
-    name = Column(String(255), nullable=False)
+    orig_filename = Column(String(255), nullable=False)
+    safe_filename = Column(String(255), nullable=True)
     number_of_points = Column(Integer, nullable=False, default=0)
     
     # 3D bounding box coordinates

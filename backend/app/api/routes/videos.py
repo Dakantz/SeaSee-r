@@ -29,7 +29,7 @@ async def get_videos(
     """
     Get a list of all videos.
     """
-    stmt = select(Video).options(selectinload(Video.metadata_files)).offset(skip).limit(limit)
+    stmt = select(Video).offset(skip).limit(limit)
     result = await db.execute(stmt)
     videos = result.scalars().all()
     return videos
@@ -43,7 +43,7 @@ async def get_video(
     """
     Get information about a specific video by ID.
     """
-    stmt = select(Video).options(selectinload(Video.metadata_files)).where(Video.id == video_id)
+    stmt = select(Video).where(Video.id == video_id)
     result = await db.execute(stmt)
     video = result.scalar_one_or_none()
     

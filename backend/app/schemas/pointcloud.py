@@ -6,7 +6,8 @@ from pydantic import BaseModel, ConfigDict
 class PointCloudMetadataResponse(BaseModel):
     id: UUID
     job_id: Optional[UUID] = None
-    name: str
+    orig_filename: str
+    safe_filename: Optional[str] = None
     number_of_points: int
     
     # 3D bounding box coordinates

@@ -6,7 +6,7 @@ from rq import Queue
 
 from app.core.config import settings
 from app.models.job import Job
-from app.services.tusd.base import WebhookPayload
+from app.services.tusd.base_upload_service import WebhookPayload
 from app.utils.file_manager import FileManager
 
 class PointCloudUploadService:
@@ -23,7 +23,9 @@ class PointCloudUploadService:
             raise HTTPException(status_code=400, detail="Invalid UUID format for file_id")
             
         uuid_str = str(file_uuid)
-        new_safe_filename = f"{uuid_str}.ply"
+        import pathlib
+        extension = pathlib.Path(payload.filename).suffix if payload.filename else ""
+        new_safe_filename = f"{uuid_str}{extension}"
 
         job_record = Job(
             name=f"Convert {payload.filename} to EPT",
@@ -46,6 +48,7 @@ class PointCloudUploadService:
                 dest_dir=settings.pointcloud_local_dir,
                 safe_filename=new_safe_filename
             )
+            FileManager.remove_file(f"{payload.original_file_path}.info")
         except Exception as e:
             await db.delete(job_record)
             await db.commit()
