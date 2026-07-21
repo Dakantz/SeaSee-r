@@ -7,6 +7,7 @@ import StatusBar from "./components/StatusBar";
 import ExampleDiagnostics from "./components/ExampleDiagnostics.tsx";
 import VideoUploadTestPage from "./components/VideoUploader/VideoUploadTestPage.tsx";
 import PointCloudUploadTestPage from "./components/PointCloudUploader/PointCloudUploadTestPage.tsx";
+import PointCloudEditorPage from "./components/PointCloudEditor/PointCloudEditorPage.tsx";
 
 function App() {
     return (
@@ -25,6 +26,7 @@ function App() {
                 <Route path="/example-diagnostics" element={<ExampleDiagnostics />} />
                 <Route path="/video-upload-test" element={<VideoUploadTestPage />} />
                 <Route path="/pointcloud-upload-test" element={<PointCloudUploadTestPage />} />
+                <Route path="/pointcloud-editor/:id" element={<PointCloudEditorPage />} />
             </Routes>
         </div>
     );

@@ -34,6 +34,6 @@ cd - > /dev/null
 conda deactivate
 
 echo "Installing pyslam fork..."
-bash /home/gsoc-thomas/Documents/GsoC/SeaSee-r/pyslam1/pyslam_core/scripts/install_all_conda.sh
+bash /home/gsoc-thomas/Documents/GsoC/SeaSee-r/pyslam/pyslam_core/scripts/install_all_conda.sh
 
 echo "Installation complete!"

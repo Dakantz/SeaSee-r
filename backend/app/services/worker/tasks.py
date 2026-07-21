@@ -30,7 +30,7 @@ async def _convert_to_ept_async(file_path: str, file_id: str, job_id: str, stora
     try:
         # Run entwine as a subprocess with progress logging
         process = await asyncio.create_subprocess_exec(
-            'entwine', 'build', '-i', file_path, '-o', output_dir, '--progress', '1',
+            'entwine', 'build', '-i', file_path, '-o', output_dir, '--scale', '0.000001', '--progress', '1',
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )

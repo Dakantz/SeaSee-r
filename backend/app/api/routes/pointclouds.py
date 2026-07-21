@@ -46,3 +46,13 @@ async def get_pointcloud(
     return await storage_service.get_pointcloud(filename_or_id)
 
 
+"""
+Retrieve the EPT json URL for a given pointcloud.
+"""
+@router.get("/{identifier}/ept")
+async def get_ept_metadata(identifier: str):
+    ept_path = os.path.join(settings.ept_dir, identifier, "ept.json")
+    if not os.path.isfile(ept_path):
+        raise HTTPException(status_code=404, detail="EPT pointcloud not found.")
+    
+    return {"url": f"/ept/{identifier}/ept.json"}
