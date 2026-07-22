@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useViewerContext } from '../ViewerContext';
 import * as THREE from 'three';
+import { listPointclouds } from '../../../client/sdk.gen';
 
 export const useLoadEPT = (url: string, enabled: boolean) => {
     const { viewer, setPointCloud } = useViewerContext();
@@ -16,10 +17,9 @@ export const useLoadEPT = (url: string, enabled: boolean) => {
             const uuidMatch = url.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
             if (uuidMatch) {
                 try {
-                    const res = await fetch('/api/v1/pointclouds/');
-                    if (res.ok) {
-                        const pointclouds = await res.json();
-                        metadata = pointclouds.find((p: any) => p.id === uuidMatch[0]) || null;
+                    const res = await listPointclouds();
+                    if (res.data) {
+                        metadata = res.data.find((p: any) => p.id === uuidMatch[0]) || null;
                     }
                 } catch (e) {
                     console.error('Failed to fetch pointclouds', e);

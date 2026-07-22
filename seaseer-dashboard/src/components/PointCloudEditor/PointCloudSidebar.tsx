@@ -7,11 +7,16 @@ export type PointCloudItem = PointCloudMetadataResponse | string;
 export interface PointCloudSidebarProps {
     onSelect?: (item: PointCloudItem) => void;
     selectedIds?: string[];
+    onEditSelect?: (id: string | null) => void;
+    editingId?: string | null;
+    refreshKey?: number;
+    onDelete?: (id: string) => void;
+    onDeleteAll?: (ids: string[]) => void;
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selectedIds = [] }) => {
+const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selectedIds = [], onEditSelect, editingId = null, refreshKey = 0, onDelete, onDeleteAll }) => {
     const [pointClouds, setPointClouds] = useState<PointCloudItem[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
@@ -36,7 +41,7 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
         };
 
         fetchPointClouds();
-    }, []);
+    }, [refreshKey]);
 
     const renderItemName = (item: PointCloudItem) => {
         if (typeof item === 'string') {
@@ -60,7 +65,17 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
                     </svg>
                     Point Clouds
                 </h2>
-                <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', marginBottom: 0 }}>Select datasets to view</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                    <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>Select datasets to view</p>
+                    {onDeleteAll && selectedIds && selectedIds.length > 1 && (
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onDeleteAll(selectedIds); }}
+                            style={{ background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', padding: '2px 6px', fontSize: '11px', cursor: 'pointer' }}
+                        >
+                            Delete All
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className="custom-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -128,7 +143,7 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
                                                     </svg>
                                                 )}
                                             </div>
-                                            <div style={{ overflow: 'hidden' }}>
+                                            <div style={{ overflow: 'hidden', flex: 1 }}>
                                                 <span style={{ display: 'block', fontSize: '14px', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: isSelected ? '#fff' : '#e2e8f0' }}>
                                                     {itemName}
                                                 </span>
@@ -139,6 +154,68 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
                                                 )}
                                             </div>
                                         </div>
+                                        {isSelected && idStr && (
+                                            <div style={{ display: 'flex', gap: '4px' }}>
+                                                <div 
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (onEditSelect) {
+                                                            onEditSelect(editingId === idStr ? null : idStr);
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        padding: '4px',
+                                                        borderRadius: '4px',
+                                                        backgroundColor: editingId === idStr ? '#3b82f6' : 'transparent',
+                                                        color: editingId === idStr ? 'white' : '#94a3b8',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        transition: 'all 0.2s',
+                                                    }}
+                                                    onMouseOver={(e) => {
+                                                        if (editingId !== idStr) {
+                                                            e.currentTarget.style.color = 'white';
+                                                        }
+                                                    }}
+                                                    onMouseOut={(e) => {
+                                                        if (editingId !== idStr) {
+                                                            e.currentTarget.style.color = '#94a3b8';
+                                                        }
+                                                    }}
+                                                    title={editingId === idStr ? "Stop editing" : "Edit Transform"}
+                                                >
+                                                    <svg style={{ width: '16px', height: '16px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                    </svg>
+                                                </div>
+                                                {onDelete && (
+                                                    <div 
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onDelete(idStr);
+                                                        }}
+                                                        style={{
+                                                            padding: '4px',
+                                                            borderRadius: '4px',
+                                                            backgroundColor: 'transparent',
+                                                            color: '#94a3b8',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            transition: 'all 0.2s',
+                                                        }}
+                                                        onMouseOver={(e) => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; }}
+                                                        onMouseOut={(e) => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                                        title="Delete Point Cloud"
+                                                    >
+                                                        <svg style={{ width: '16px', height: '16px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                        </svg>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </button>
                                 </li>
                             );

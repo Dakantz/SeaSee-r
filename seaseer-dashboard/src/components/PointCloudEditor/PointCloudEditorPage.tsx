@@ -14,6 +14,10 @@ const PointCloudEditorPage: React.FC = () => {
     const [pointSize, setPointSize] = useState<number>(1.0);
     const [navigationMode, setNavigationMode] = useState<'Orbit' | 'FirstPerson' | 'Earth'>('Earth');
 
+    const [gizmoMode, setGizmoMode] = useState<'translate' | 'rotate' | 'scale' | null>(null);
+    const [editingPointcloudId, setEditingPointcloudId] = useState<string | null>(null);
+    const [refreshSidebarKey, setRefreshSidebarKey] = useState<number>(0);
+
     // Load standard Potree dependencies
     const { loaded: scriptsLoaded, error: scriptsError } = usePotreeScripts();
 
@@ -47,6 +51,45 @@ const PointCloudEditorPage: React.FC = () => {
                 }
             });
             // We can optionally navigate if we wanted to change the URL, but keeping state is cleaner for multiselect.
+        }
+    };
+
+    const handleDeletePointCloud = async (id: string) => {
+        if (!window.confirm(`Delete point cloud ${id}? This cannot be undone.`)) return;
+        try {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+            const response = await fetch(`${API_BASE_URL}/pointclouds/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                setSelectedIds(prev => prev.filter(sid => sid !== id));
+                if (editingPointcloudId === id) setEditingPointcloudId(null);
+                setRefreshSidebarKey(prev => prev + 1);
+            } else {
+                alert('Failed to delete pointcloud');
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Error deleting pointcloud');
+        }
+    };
+
+    const handleDeleteAllSelected = async (ids: string[]) => {
+        if (!window.confirm(`Delete all ${ids.length} selected point clouds? This cannot be undone.`)) return;
+        try {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+            const promises = ids.map(id => fetch(`${API_BASE_URL}/pointclouds/${id}`, { method: 'DELETE' }));
+            const responses = await Promise.all(promises);
+            
+            const failed = responses.filter(r => !r.ok);
+            if (failed.length > 0) {
+                alert(`Failed to delete ${failed.length} pointcloud(s)`);
+            }
+            
+            setSelectedIds([]);
+            setEditingPointcloudId(null);
+            setRefreshSidebarKey(prev => prev + 1);
+        } catch (err) {
+            console.error(err);
+            alert('Error deleting pointclouds');
         }
     };
 
@@ -102,7 +145,7 @@ const PointCloudEditorPage: React.FC = () => {
     if (pointCloudUrls.length === 0) {
         return (
             <div style={{ width: '100%', height: '100vh', background: '#0f172a', position: 'relative' }}>
-                <PointCloudSidebar onSelect={handleSelect} selectedIds={selectedIds} />
+                <PointCloudSidebar onSelect={handleSelect} selectedIds={selectedIds} onEditSelect={setEditingPointcloudId} editingId={editingPointcloudId} refreshKey={refreshSidebarKey} onDelete={handleDeletePointCloud} onDeleteAll={handleDeleteAllSelected} />
                 <div style={{ marginLeft: '288px', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#64748b' }}>
                     <div style={{ textAlign: 'center' }}>
                         <svg style={{ width: '64px', height: '64px', margin: '0 auto 16px auto', opacity: 0.5 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -118,11 +161,11 @@ const PointCloudEditorPage: React.FC = () => {
 
     return (
         <div style={{ width: '100%', height: '100vh', background: '#000', position: 'relative' }}>
-            <PointCloudSidebar onSelect={handleSelect} selectedIds={selectedIds} />
+            <PointCloudSidebar onSelect={handleSelect} selectedIds={selectedIds} onEditSelect={setEditingPointcloudId} editingId={editingPointcloudId} refreshKey={refreshSidebarKey} onDelete={handleDeletePointCloud} onDeleteAll={handleDeleteAllSelected} />
             
             <div style={{ marginLeft: '288px', height: '100%', position: 'relative' }}>
                 {/* Native Potree DOM Container */}
-                <NativePotreeViewer eptUrls={pointCloudUrls} />
+                <NativePotreeViewer eptUrls={pointCloudUrls} gizmoMode={gizmoMode} editingPointcloudId={editingPointcloudId} />
                 
                 {/* Custom React Toolbar floating over the 3D Canvas */}
                 <div style={{
@@ -144,6 +187,19 @@ const PointCloudEditorPage: React.FC = () => {
                     minWidth: '220px'
                 }}>
                 <h3 style={{ margin: '0 0 5px 0', fontSize: '16px', fontWeight: '500' }}>Tools</h3>
+
+                {/* Gizmo Controls */}
+                {editingPointcloudId && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>
+                        <label style={{ fontSize: '12px', color: '#ccc' }}>Transform Mode:</label>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                            <button onClick={() => setGizmoMode('translate')} style={{ flex: 1, padding: '4px', background: gizmoMode === 'translate' ? '#3b82f6' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Move</button>
+                            <button onClick={() => setGizmoMode('rotate')} style={{ flex: 1, padding: '4px', background: gizmoMode === 'rotate' ? '#3b82f6' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Rotate</button>
+                            <button onClick={() => setGizmoMode('scale')} style={{ flex: 1, padding: '4px', background: gizmoMode === 'scale' ? '#3b82f6' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Scale</button>
+                            <button onClick={() => setGizmoMode(null)} style={{ flex: 1, padding: '4px', background: gizmoMode === null ? '#84312a' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Off</button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Point Budget Slider */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>

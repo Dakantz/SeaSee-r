@@ -3,9 +3,12 @@ import { ViewerProvider } from './ViewerContext';
 import { usePotreeViewer } from './hooks/usePotreeViewer';
 import { useLoadPLY } from './hooks/useLoadPLY';
 import { useLoadEPT } from './hooks/useLoadEPT';
+import { useTransformControls } from './hooks/useTransformControls';
 
 interface NativePotreeViewerProps {
     eptUrls: string[];
+    gizmoMode?: 'translate' | 'rotate' | 'scale' | null;
+    editingPointcloudId?: string | null;
 }
 
 const PointCloudLoader: React.FC<{ url: string }> = ({ url }) => {
@@ -15,11 +18,14 @@ const PointCloudLoader: React.FC<{ url: string }> = ({ url }) => {
     return null;
 };
 
-const ViewerInner: React.FC<NativePotreeViewerProps> = ({ eptUrls }) => {
+const ViewerInner: React.FC<NativePotreeViewerProps> = ({ eptUrls, gizmoMode = null, editingPointcloudId = null }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     
     // Initialize Potree
     usePotreeViewer(containerRef);
+
+    // Initialize TransformControls (Gizmo)
+    useTransformControls(gizmoMode, editingPointcloudId);
 
     return (
         <>
