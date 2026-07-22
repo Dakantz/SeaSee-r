@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Integer, Float, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, ARRAY
 
 from app.core.database import Base
 
@@ -24,3 +24,5 @@ class PointCloudMetadata(Base):
 
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     pcid = Column(Integer, nullable=False)  # pgPointcloud format format schema ID
+    
+    transform_matrix = Column(ARRAY(Float), nullable=False, default=[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0])

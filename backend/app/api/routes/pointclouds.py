@@ -10,12 +10,17 @@ from fastapi.responses import FileResponse
 from app.schemas.pointcloud import PointCloudMetadataResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from pydantic import BaseModel, conlist
 
 from app.services.pointcloud import PointCloudStorageService
 from app.api.dependencies.pointcloud import get_pointcloud_service
 from app.core.config import settings
 from app.core.database import get_db_session
 from app.models.job import Job
+from app.models.pointcloud import PointCloudMetadata
+
+class TransformUpdate(BaseModel):
+    matrix: conlist(float, min_length=16, max_length=16)
 
 router = APIRouter(
     prefix="/pointclouds",
@@ -84,3 +89,27 @@ async def delete_pointcloud(
         raise HTTPException(status_code=404, detail="Point cloud not found or could not be deleted.")
         
     return {"message": "Point cloud deleted successfully from available storages"}
+
+@router.patch("/{id}/transform")
+async def update_transform(
+    id: str,
+    transform: TransformUpdate,
+    db: AsyncSession = Depends(get_db_session)
+):
+    try:
+        pc_uuid = uuid.UUID(id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+        
+    query = select(PointCloudMetadata).where(PointCloudMetadata.id == pc_uuid)
+    result = await db.execute(query)
+    pointcloud = result.scalar_one_or_none()
+    
+    if not pointcloud:
+        raise HTTPException(status_code=404, detail="Point cloud not found")
+        
+    pointcloud.transform_matrix = transform.matrix
+    await db.commit()
+    await db.refresh(pointcloud)
+    
+    return {"transform_matrix": pointcloud.transform_matrix}

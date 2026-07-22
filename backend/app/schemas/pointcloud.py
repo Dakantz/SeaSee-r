@@ -1,6 +1,6 @@
 from datetime import datetime
 from uuid import UUID
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, ConfigDict
 
 class PointCloudMetadataResponse(BaseModel):
@@ -20,5 +20,6 @@ class PointCloudMetadataResponse(BaseModel):
     
     created_at: datetime
     pcid: int
+    transform_matrix: List[float]
 
     model_config = ConfigDict(from_attributes=True)

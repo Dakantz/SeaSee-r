@@ -12,6 +12,7 @@ const PointCloudEditorPage: React.FC = () => {
 
     const [pointBudget, setPointBudget] = useState<number>(2000000);
     const [pointSize, setPointSize] = useState<number>(1.0);
+    const [navigationMode, setNavigationMode] = useState<'Orbit' | 'FirstPerson' | 'Earth'>('Earth');
 
     // Load standard Potree dependencies
     const { loaded: scriptsLoaded, error: scriptsError } = usePotreeScripts();
@@ -76,6 +77,17 @@ const PointCloudEditorPage: React.FC = () => {
                     pc.material.size = val;
                 }
             });
+        }
+    };
+
+    const handleNavigationModeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const mode = e.target.value as 'Orbit' | 'FirstPerson' | 'Earth';
+        setNavigationMode(mode);
+        const viewer = (window as any).viewer;
+        if (viewer) {
+            if (mode === 'Orbit') viewer.setControls(viewer.orbitControls);
+            else if (mode === 'FirstPerson') viewer.setControls(viewer.fpControls);
+            else if (mode === 'Earth') viewer.setControls(viewer.earthControls);
         }
     };
 
@@ -169,6 +181,30 @@ const PointCloudEditorPage: React.FC = () => {
                         onChange={handlePointSizeChange} 
                         style={{ width: '100%', cursor: 'pointer', accentColor: '#2a5b84' }}
                     />
+                </div>
+                
+                {/* Navigation Mode Dropdown */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>
+                    <label style={{ fontSize: '12px', color: '#ccc' }}>
+                        Navigation Mode:
+                    </label>
+                    <select 
+                        value={navigationMode}
+                        onChange={handleNavigationModeChange}
+                        style={{
+                            background: '#333',
+                            color: 'white',
+                            border: '1px solid #444',
+                            padding: '6px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '13px'
+                        }}
+                    >
+                        <option value="Orbit">Orbit</option>
+                        <option value="FirstPerson">First Person (Fly)</option>
+                        <option value="Earth">Earth</option>
+                    </select>
                 </div>
                 
                 <button 

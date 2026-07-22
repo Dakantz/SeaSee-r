@@ -37,6 +37,7 @@ export const usePotreeViewer = (containerRef: RefObject<HTMLDivElement | null>) 
         viewer.setFOV(60);
         viewer.setPointBudget(2_000_000);
         viewer.setBackground("skybox");
+        viewer.setControls(viewer.earthControls);
 
         // Update Context
         setViewer(viewer);
