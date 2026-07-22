@@ -298,7 +298,23 @@ const PointCloudEditorPage: React.FC = () => {
                     onClick={() => {
                         const viewer = (window as any).viewer;
                         if (viewer) {
-                            viewer.measuringTool.scene.removeAllChildren();
+                            if (viewer.scene && typeof viewer.scene.removeAllMeasurements === 'function') {
+                                viewer.scene.removeAllMeasurements();
+                            } else if (viewer.scene && viewer.scene.measurements) {
+                                const measurements = [...viewer.scene.measurements];
+                                measurements.forEach((m: any) => viewer.scene.removeMeasurement(m));
+                            }
+                            
+                            // Fallback for visual clearing
+                            if (viewer.measuringTool && viewer.measuringTool.scene) {
+                                if (typeof viewer.measuringTool.scene.clear === 'function') {
+                                    viewer.measuringTool.scene.clear();
+                                } else {
+                                    while (viewer.measuringTool.scene.children.length > 0) {
+                                        viewer.measuringTool.scene.remove(viewer.measuringTool.scene.children[0]);
+                                    }
+                                }
+                            }
                         }
                     }}
                     style={{
