@@ -1,15 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useFrame, useThree } from '@react-three/fiber';
+import { useFrame, useThree, Canvas } from '@react-three/fiber';
 import { Potree, PointColorType, PointSizeType, PointShape } from 'potree-core';
 import * as THREE from 'three';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
+import PointCloudSidebar, { type PointCloudItem } from './PointCloudSidebar';
 
-interface PointCloudViewerProps {
+interface PointCloudSceneProps {
     eptUrl: string;
     isPly?: boolean;
 }
 
-const PointCloudViewer: React.FC<PointCloudViewerProps> = ({ eptUrl, isPly = false }) => {
+const PointCloudScene: React.FC<PointCloudSceneProps> = ({ eptUrl, isPly = false }) => {
     const potreeRef = useRef<any>(null);
     const pointcloudRef = useRef<any>(null);
     const { scene, camera, gl } = useThree();
@@ -37,7 +38,7 @@ const PointCloudViewer: React.FC<PointCloudViewerProps> = ({ eptUrl, isPly = fal
                         }
                         
                         if (geometry.index && geometry.index.array instanceof Uint32Array) {
-                            // Index might also be problematic depending on WebGL1 vs WebGL2, but usually position/normals are the issue.
+                            // Index handling
                         }
 
                         const material = new THREE.PointsMaterial({ size: 0.002, vertexColors: geometry.hasAttribute('color') });
@@ -113,6 +114,68 @@ const PointCloudViewer: React.FC<PointCloudViewerProps> = ({ eptUrl, isPly = fal
     });
 
     return null;
+};
+
+interface PointCloudViewerProps {
+    initialUrl?: string;
+    initialIsPly?: boolean;
+}
+
+const PointCloudViewer: React.FC<PointCloudViewerProps> = ({ initialUrl, initialIsPly = false }) => {
+    const [selectedUrl, setSelectedUrl] = useState<string | undefined>(initialUrl);
+    const [isPly, setIsPly] = useState<boolean>(initialIsPly);
+
+    const handleSelect = (item: PointCloudItem) => {
+        let newUrl = '';
+        if (typeof item === 'string') {
+            newUrl = item;
+        } else if (item && item.id) {
+            newUrl = item.id;
+        } else if (item && item.safe_filename) {
+            newUrl = item.safe_filename;
+        } else if (item && item.orig_filename) {
+            newUrl = item.orig_filename;
+        }
+        
+        if (newUrl) {
+            // Determine if PLY or EPT
+            const isPlyFile = newUrl.toLowerCase().endsWith('.ply');
+            setIsPly(isPlyFile);
+            
+            // Format URL if necessary
+            const formattedUrl = newUrl.startsWith('http://') || newUrl.startsWith('https://')
+                ? newUrl
+                : newUrl.includes('/ept/') || newUrl.endsWith('.json') || newUrl.endsWith('.ply')
+                ? \`http://localhost:8000/\${newUrl}\`
+                : \`http://localhost:8000/ept/\${newUrl}/ept.json\`;
+                
+            setSelectedUrl(formattedUrl);
+        }
+    };
+
+    return (
+        <div className="flex h-screen w-full bg-slate-950 overflow-hidden relative">
+            <PointCloudSidebar onSelect={handleSelect} />
+            
+            <div className="flex-1 ml-72 h-full w-full relative">
+                {selectedUrl ? (
+                    <Canvas className="w-full h-full">
+                        <PointCloudScene eptUrl={selectedUrl} isPly={isPly} />
+                    </Canvas>
+                ) : (
+                    <div className="flex items-center justify-center h-full text-slate-500">
+                        <div className="text-center">
+                            <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5" />
+                            </svg>
+                            <p className="text-lg font-medium">No point cloud selected</p>
+                            <p className="text-sm mt-2">Please select a dataset from the sidebar to view it.</p>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
 };
 
 export default PointCloudViewer;

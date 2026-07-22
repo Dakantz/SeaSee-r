@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import NativePotreeViewer from './NativePotreeViewer';
 import { usePotreeScripts } from '../../hooks/usePotreeScripts';
+import PointCloudSidebar, { type PointCloudItem } from './PointCloudSidebar';
 
 const PointCloudEditorPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
+    const navigate = useNavigate();
     const [pointCloudUrl, setPointCloudUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -17,7 +19,8 @@ const PointCloudEditorPage: React.FC = () => {
 
     useEffect(() => {
         if (!id) {
-            setError('No point cloud ID provided');
+            setPointCloudUrl(null);
+            setError(null);
             setLoading(false);
             return;
         }
@@ -31,6 +34,23 @@ const PointCloudEditorPage: React.FC = () => {
         setPointCloudUrl(url);
         setLoading(false);
     }, [id]);
+
+    const handleSelect = (item: PointCloudItem) => {
+        let newId = '';
+        if (typeof item === 'string') {
+            newId = item;
+        } else if (item && item.id) {
+            newId = item.id;
+        } else if (item && item.safe_filename) {
+            newId = item.safe_filename;
+        } else if (item && item.orig_filename) {
+            newId = item.orig_filename;
+        }
+        
+        if (newId) {
+            navigate(`/pointcloud-editor/${encodeURIComponent(newId)}`);
+        }
+    };
 
     const handlePointBudgetChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = Number(e.target.value);
@@ -58,35 +78,54 @@ const PointCloudEditorPage: React.FC = () => {
         return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'white', background: '#111' }}>Loading Point Cloud Engine...</div>;
     }
 
-    if (error || scriptsError || !pointCloudUrl) {
+    if (error || scriptsError) {
         return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'red', background: '#111' }}>Error: {error || scriptsError?.message || 'Failed to load'}</div>;
+    }
+
+    if (!pointCloudUrl) {
+        return (
+            <div style={{ width: '100%', height: '100vh', background: '#0f172a', position: 'relative' }}>
+                <PointCloudSidebar onSelect={handleSelect} />
+                <div style={{ marginLeft: '288px', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#64748b' }}>
+                    <div style={{ textAlign: 'center' }}>
+                        <svg style={{ width: '64px', height: '64px', margin: '0 auto 16px auto', opacity: 0.5 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5" />
+                        </svg>
+                        <p style={{ fontSize: '18px', fontWeight: 500 }}>No point cloud selected</p>
+                        <p style={{ fontSize: '14px', marginTop: '8px' }}>Please select a dataset from the sidebar to view it.</p>
+                    </div>
+                </div>
+            </div>
+        );
     }
 
     return (
         <div style={{ width: '100%', height: '100vh', background: '#000', position: 'relative' }}>
+            <PointCloudSidebar onSelect={handleSelect} />
             
-            {/* Native Potree DOM Container */}
-            <NativePotreeViewer eptUrl={pointCloudUrl} isPly={false} />
-            
-            {/* Custom React Toolbar floating over the 3D Canvas */}
-            <div style={{
-                position: 'absolute',
-                top: 20,
-                left: 20,
-                zIndex: 10,
-                background: 'rgba(20, 20, 25, 0.85)',
-                padding: '15px',
-                borderRadius: '8px',
-                border: '1px solid #333',
-                color: 'white',
-                fontFamily: 'sans-serif',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '10px',
-                boxShadow: '0 4px 15px rgba(0,0,0,0.5)',
-                backdropFilter: 'blur(10px)',
-                minWidth: '220px'
-            }}>
+            <div style={{ marginLeft: '288px', height: '100%', position: 'relative' }}>
+                {/* Native Potree DOM Container */}
+                <NativePotreeViewer eptUrl={pointCloudUrl} isPly={false} />
+                
+                {/* Custom React Toolbar floating over the 3D Canvas */}
+                <div style={{
+                    position: 'absolute',
+                    top: 20,
+                    left: 20,
+                    zIndex: 10,
+                    background: 'rgba(20, 20, 25, 0.85)',
+                    padding: '15px',
+                    borderRadius: '8px',
+                    border: '1px solid #333',
+                    color: 'white',
+                    fontFamily: 'sans-serif',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                    boxShadow: '0 4px 15px rgba(0,0,0,0.5)',
+                    backdropFilter: 'blur(10px)',
+                    minWidth: '220px'
+                }}>
                 <h3 style={{ margin: '0 0 5px 0', fontSize: '16px', fontWeight: '500' }}>Tools</h3>
 
                 {/* Point Budget Slider */}
@@ -181,7 +220,7 @@ const PointCloudEditorPage: React.FC = () => {
                     Clear Measurements
                 </button>
             </div>
-            
+            </div>
         </div>
     );
 };

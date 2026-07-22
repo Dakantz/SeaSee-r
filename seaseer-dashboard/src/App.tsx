@@ -26,6 +26,7 @@ function App() {
                 <Route path="/example-diagnostics" element={<ExampleDiagnostics />} />
                 <Route path="/video-upload-test" element={<VideoUploadTestPage />} />
                 <Route path="/pointcloud-upload-test" element={<PointCloudUploadTestPage />} />
+                <Route path="/pointcloud-editor" element={<PointCloudEditorPage />} />
                 <Route path="/pointcloud-editor/:id" element={<PointCloudEditorPage />} />
             </Routes>
         </div>
