@@ -12,3 +12,8 @@ class PointCloudStorageService(ABC):
     @abstractmethod
     async def list_pointclouds(self) -> list:
         pass
+
+    """Delete a point cloud and its associated data."""
+    @abstractmethod
+    async def delete_pointcloud(self, identifier: str) -> bool:
+        pass

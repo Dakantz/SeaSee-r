@@ -34,3 +34,15 @@ class LocalPointCloudStorageService(PointCloudStorageService):
             if filename.endswith(".ply"):
                 files.append(filename)
         return files
+
+    async def delete_pointcloud(self, identifier: str) -> bool:
+        safe_filename = os.path.basename(identifier)
+        if not safe_filename.endswith(".ply"):
+            safe_filename += ".ply"
+
+        file_path = os.path.join(self.base_dir, safe_filename)
+
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+            return True
+        return False

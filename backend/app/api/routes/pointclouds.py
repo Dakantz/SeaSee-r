@@ -56,3 +56,31 @@ async def get_ept_metadata(identifier: str):
         raise HTTPException(status_code=404, detail="EPT pointcloud not found.")
     
     return {"url": f"/ept/{identifier}/ept.json"}
+
+"""
+Delete a pointcloud and all related files (e.g. the saved pointcloud in the filesystem and EPT metadata).
+"""
+@router.delete("/{identifier}")
+async def delete_pointcloud(
+    identifier: str,
+    db: AsyncSession = Depends(get_db_session)
+):
+    import shutil
+    from app.services.pointcloud import LocalPointCloudStorageService, DatabasePointCloudStorageService
+    
+    local_service = LocalPointCloudStorageService(base_dir=settings.pointcloud_local_dir)
+    db_service = DatabasePointCloudStorageService(db_session=db)
+
+    deleted_local = await local_service.delete_pointcloud(identifier)
+    deleted_db = await db_service.delete_pointcloud(identifier)
+    
+    ept_dir_path = os.path.join(settings.ept_dir, identifier)
+    deleted_ept = False
+    if os.path.isdir(ept_dir_path):
+        shutil.rmtree(ept_dir_path)
+        deleted_ept = True
+
+    if not (deleted_local or deleted_db or deleted_ept):
+        raise HTTPException(status_code=404, detail="Point cloud not found or could not be deleted.")
+        
+    return {"message": "Point cloud deleted successfully from available storages"}

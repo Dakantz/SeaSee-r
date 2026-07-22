@@ -130,3 +130,40 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
             print(f"Error fetching pointclouds: {e}")
             # Fallback to empty list if DB is not setup or offline
             return []
+
+    async def delete_pointcloud(self, identifier: str) -> bool:
+        """Deletes point cloud metadata and all related dynamic tables."""
+        pointcloud_uuid = identifier
+        if "?" in identifier:
+            parts = identifier.split("?")
+            pointcloud_uuid = parts[0]
+
+        clean_uuid = re.sub(r'[^a-fA-F0-9\-]', '', pointcloud_uuid)
+        table_uuid = clean_uuid.replace("-", "")
+        if not table_uuid:
+            return False
+
+        try:
+            result = await self.db.execute(
+                text("DELETE FROM pointclouds WHERE id = :id RETURNING id"),
+                {"id": clean_uuid}
+            )
+            deleted = result.first()
+            if not deleted:
+                return False
+
+            tables_result = await self.db.execute(
+                text("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name LIKE :prefix"),
+                {"prefix": f"pc_{table_uuid}_lod%"}
+            )
+            tables = tables_result.scalars().all()
+            for table_name in tables:
+                await self.db.execute(text(f"DROP TABLE IF EXISTS {table_name}"))
+
+            await self.db.commit()
+            return True
+        except Exception as e:
+            print(f"Error deleting pointcloud from db: {e}")
+            await self.db.rollback()
+            return False
+
