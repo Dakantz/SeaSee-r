@@ -40,6 +40,7 @@ export const useLoadPLY = (url: string, enabled: boolean) => {
 
             const material = new THREE.PointsMaterial({ size, vertexColors: geometry.hasAttribute('color') });
             const mesh = new THREE.Points(geometry, material);
+            mesh.name = url; // Set name so TransformControls can find it
 
             loadedGeometry = geometry;
             loadedMaterial = material;

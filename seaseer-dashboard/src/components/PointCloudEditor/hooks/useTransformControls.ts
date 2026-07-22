@@ -5,8 +5,13 @@ import { useViewerContext } from '../ViewerContext';
 import { updateTransform } from '../../../client/sdk.gen';
 
 export const useTransformControls = (gizmoMode: 'translate' | 'rotate' | 'scale' | null, editingPointcloudId: string | null) => {
-    const { viewer } = useViewerContext();
+    const { viewer, pointCloud } = useViewerContext();
     const transformControlRef = useRef<TransformControls | null>(null);
+    const editingIdRef = useRef(editingPointcloudId);
+
+    useEffect(() => {
+        editingIdRef.current = editingPointcloudId;
+    }, [editingPointcloudId]);
 
     useEffect(() => {
         if (!viewer || !viewer.scene || !viewer.scene.scene || !viewer.renderer) return;
@@ -15,79 +20,47 @@ export const useTransformControls = (gizmoMode: 'translate' | 'rotate' | 'scale'
         if (!transformControlRef.current) {
             const camera = viewer.scene.getActiveCamera();
             const renderer = viewer.renderer;
-            const domElement = viewer.renderArea || renderer.domElement;
+            const domElement = renderer.domElement;
             const control = new TransformControls(camera, domElement);
-            
+
             // Potree's input handler uses bubbling events and often stops propagation.
             // We need TransformControls to intercept pointer events in the capture phase.
             domElement.removeEventListener('pointerdown', (control as any)._onPointerDown);
             domElement.removeEventListener('pointermove', (control as any)._onPointerHover);
             domElement.removeEventListener('pointerup', (control as any)._onPointerUp);
 
-            domElement.addEventListener('pointerdown', (e: Event) => {
-                const c = control as any;
-                if (c.object) {
-                    c.getHelper().updateMatrixWorld(true);
-                    c.camera.updateMatrixWorld(true);
-                }
-                c._onPointerDown(e);
-                console.log("[TransformControls Debug] pointerdown axis:", c.axis, "pointer:", c._getPointer ? c._getPointer(e) : "no _getPointer");
-                if (c.axis !== null) {
-                    e.stopPropagation();
-                }
-            }, { capture: true });
+            const capturePointerHover = (e: any) => {
+                if (!domElement.contains(e.target as Node)) return;
+                (control as any)._onPointerHover(e);
+            };
 
-            domElement.addEventListener('pointermove', (e: Event) => {
-                const c = control as any;
-                if (c.object) {
-                    c.getHelper().updateMatrixWorld(true);
-                    c.camera.updateMatrixWorld(true);
-                }
-                c._onPointerHover(e);
-                
-                if (c.dragging) {
-                    c._onPointerMove(e);
-                    e.stopPropagation();
-                }
-            }, { capture: true });
+            // Also proxy the dynamically added pointermove to see if it fires
+            const capturePointerMove = (e: any) => {
+                (control as any)._onPointerMove(e);
+            };
 
-            domElement.addEventListener('pointerup', (e: Event) => {
-                console.log("[TransformControls Debug] pointerup event", e);
+            const onPointerDownWrapper = (e: any) => {
+                if (!domElement.contains(e.target as Node)) return;
+                (control as any)._onPointerDown(e);
+                window.addEventListener('pointermove', capturePointerMove, { capture: true });
+            };
+
+            const onPointerUpWrapper = (e: any) => {
                 (control as any)._onPointerUp(e);
-            }, { capture: true });
+                window.removeEventListener('pointermove', capturePointerMove, { capture: true });
+            };
 
-            console.log("control", control);
-
-            control.addEventListener('dragging-changed', (event: any) => {
-                console.log("dragging-changed", event);
-                // Disable Potree controls when dragging gizmo
-                if (viewer.getControls()) {
-                    viewer.getControls().enabled = !event.value;
-                }
-                if (viewer.orbitControls) viewer.orbitControls.enabled = !event.value;
-                if (viewer.earthControls) viewer.earthControls.enabled = !event.value;
-                if (viewer.fpControls) viewer.fpControls.enabled = !event.value;
-
-                if (viewer.inputHandler) {
-                    viewer.inputHandler.enabled = !event.value;
-                }
-
-                // If dragging stopped, save the matrix
-                if (!event.value && control.object) {
-                    const pointcloud = control.object;
-                    pointcloud.updateMatrix();
-                    const matrixArray = pointcloud.matrix.toArray();
-
-                    if (editingPointcloudId) {
-                        updateTransform({
-                            path: { id: editingPointcloudId },
-                            body: { matrix: matrixArray }
-                        }).then((res: any) => {
-                            if (res.error) console.error('Failed to save transform', res.error);
-                        }).catch((err: any) => console.error('Error saving transform', err));
-                    }
-                }
-            });
+            window.addEventListener('pointerdown', onPointerDownWrapper, { capture: true });
+            window.addEventListener('pointermove', capturePointerHover, { capture: true });
+            window.addEventListener('pointerup', onPointerUpWrapper, { capture: true });
+            
+            // Store cleanup functions on the control so we can remove them later
+            (control as any)._cleanupWindowListeners = () => {
+                window.removeEventListener('pointerdown', onPointerDownWrapper, { capture: true });
+                window.removeEventListener('pointermove', capturePointerHover, { capture: true });
+                window.removeEventListener('pointerup', onPointerUpWrapper, { capture: true });
+                window.removeEventListener('pointermove', capturePointerMove, { capture: true });
+            };
 
             control.addEventListener('change', () => {
                 // TransformControls modifies object.position/rotation/scale.
@@ -98,6 +71,47 @@ export const useTransformControls = (gizmoMode: 'translate' | 'rotate' | 'scale'
                 // Force a render in Potree
                 if (viewer.setNeedsRedraw) {
                     viewer.setNeedsRedraw();
+                }
+            });
+
+            control.addEventListener('dragging-changed', (event: any) => {
+                const isDragging = event.value;
+
+                // Handle Camera Conflicts: Disable/enable Potree navigation
+                if (viewer.setControlsEnabled) {
+                    // Depends on exact Potree version, this might exist
+                    viewer.setControlsEnabled(!isDragging);
+                }
+                if (viewer.inputHandler) {
+                    // Usually this is how you disable interactions in Potree
+                    viewer.inputHandler.enabled = !isDragging;
+                }
+                if (viewer.controls) {
+                    // Sometimes controls are directly attached
+                    viewer.controls.enabled = !isDragging;
+                }
+
+                // Extract and Save the Matrix on Drag End
+                if (!isDragging && control.object) {
+                    const pointcloud = control.object;
+                    pointcloud.updateMatrix();
+                    const matrixArray = pointcloud.matrix.toArray();
+
+                    const currentEditingId = editingIdRef.current;
+                    if (currentEditingId) {
+                        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+                        fetch(`${API_BASE_URL}/pointclouds/${currentEditingId}/transform`, {
+                            method: 'PATCH',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ matrix: matrixArray })
+                        })
+                            .then(res => {
+                                if (!res.ok) console.error("Failed to save transform");
+                            })
+                            .catch(err => console.error("Error saving transform:", err));
+                    }
                 }
             });
 
@@ -113,12 +127,32 @@ export const useTransformControls = (gizmoMode: 'translate' | 'rotate' | 'scale'
 
             // Find the correct pointcloud in Potree scene
             let targetPc: any = null;
+            
+            // 1. Check Potree's managed pointclouds (EPT)
             const pcs = viewer.scene.pointclouds;
             for (let i = 0; i < pcs.length; i++) {
-                if (pcs[i].name === editingPointcloudId || (pcs[i].pcoGeometry && pcs[i].pcoGeometry.url && pcs[i].pcoGeometry.url.includes(editingPointcloudId))) {
-                    targetPc = pcs[i];
+                const pc = pcs[i];
+                if (pc.name && pc.name.includes(editingPointcloudId)) {
+                    targetPc = pc;
                     break;
                 }
+                if (pc.pcoGeometry && pc.pcoGeometry.url && pc.pcoGeometry.url.includes(editingPointcloudId)) {
+                    targetPc = pc;
+                    break;
+                }
+            }
+            
+            // 2. Check general Three.js scene (PLY)
+            if (!targetPc) {
+                viewer.scene.scene.children.forEach((child: any) => {
+                    if (child.name && child.name.includes(editingPointcloudId)) {
+                        targetPc = child;
+                    }
+                });
+            }
+
+            if (!targetPc && pointCloud) {
+                targetPc = pointCloud;
             }
 
             if (targetPc && control.object !== targetPc) {
@@ -151,12 +185,15 @@ export const useTransformControls = (gizmoMode: 'translate' | 'rotate' | 'scale'
             }
             // Internal cleanup if necessary
         };
-    }, [viewer, editingPointcloudId, gizmoMode]);
+    }, [viewer, editingPointcloudId, gizmoMode, pointCloud]);
 
     // Cleanup when component unmounts entirely
     useEffect(() => {
         return () => {
             if (transformControlRef.current) {
+                if ((transformControlRef.current as any)._cleanupWindowListeners) {
+                    (transformControlRef.current as any)._cleanupWindowListeners();
+                }
                 transformControlRef.current.detach();
                 const helper = transformControlRef.current.getHelper();
                 if (helper.parent) {

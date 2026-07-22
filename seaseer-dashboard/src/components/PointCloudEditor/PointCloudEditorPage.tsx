@@ -188,18 +188,6 @@ const PointCloudEditorPage: React.FC = () => {
                 }}>
                 <h3 style={{ margin: '0 0 5px 0', fontSize: '16px', fontWeight: '500' }}>Tools</h3>
 
-                {/* Gizmo Controls */}
-                {editingPointcloudId && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>
-                        <label style={{ fontSize: '12px', color: '#ccc' }}>Transform Mode:</label>
-                        <div style={{ display: 'flex', gap: '4px' }}>
-                            <button onClick={() => setGizmoMode('translate')} style={{ flex: 1, padding: '4px', background: gizmoMode === 'translate' ? '#3b82f6' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Move</button>
-                            <button onClick={() => setGizmoMode('rotate')} style={{ flex: 1, padding: '4px', background: gizmoMode === 'rotate' ? '#3b82f6' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Rotate</button>
-                            <button onClick={() => setGizmoMode('scale')} style={{ flex: 1, padding: '4px', background: gizmoMode === 'scale' ? '#3b82f6' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Scale</button>
-                            <button onClick={() => setGizmoMode(null)} style={{ flex: 1, padding: '4px', background: gizmoMode === null ? '#84312a' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Off</button>
-                        </div>
-                    </div>
-                )}
 
                 {/* Point Budget Slider */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>
@@ -333,6 +321,39 @@ const PointCloudEditorPage: React.FC = () => {
                     Clear Measurements
                 </button>
             </div>
+            
+            {/* New Gizmo Toolbar floating on top right */}
+            {editingPointcloudId && (
+                <div style={{
+                    position: 'absolute',
+                    top: 20,
+                    right: 20,
+                    zIndex: 10,
+                    background: 'rgba(20, 20, 25, 0.85)',
+                    padding: '15px',
+                    borderRadius: '8px',
+                    border: '1px solid #333',
+                    color: 'white',
+                    fontFamily: 'sans-serif',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                    boxShadow: '0 4px 15px rgba(0,0,0,0.5)',
+                    backdropFilter: 'blur(10px)',
+                    minWidth: '240px'
+                }}>
+                    <h3 style={{ margin: '0 0 5px 0', fontSize: '16px', fontWeight: '500' }}>Gizmo Controls</h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                        <label style={{ fontSize: '12px', color: '#ccc' }}>Transform Mode:</label>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                            <button onClick={() => setGizmoMode('translate')} style={{ flex: 1, padding: '6px', background: gizmoMode === 'translate' ? '#3b82f6' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', transition: 'background 0.2s' }}>Move</button>
+                            <button onClick={() => setGizmoMode('rotate')} style={{ flex: 1, padding: '6px', background: gizmoMode === 'rotate' ? '#3b82f6' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', transition: 'background 0.2s' }}>Rotate</button>
+                            <button onClick={() => setGizmoMode('scale')} style={{ flex: 1, padding: '6px', background: gizmoMode === 'scale' ? '#3b82f6' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', transition: 'background 0.2s' }}>Scale</button>
+                            <button onClick={() => setGizmoMode(null)} style={{ flex: 1, padding: '6px', background: gizmoMode === null ? '#84312a' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', transition: 'background 0.2s' }}>Off</button>
+                        </div>
+                    </div>
+                </div>
+            )}
             </div>
         </div>
     );
