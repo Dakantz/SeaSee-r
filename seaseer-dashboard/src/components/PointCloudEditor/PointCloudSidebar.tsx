@@ -6,11 +6,12 @@ export type PointCloudItem = PointCloudMetadataResponse | string;
 
 export interface PointCloudSidebarProps {
     onSelect?: (item: PointCloudItem) => void;
+    selectedIds?: string[];
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect }) => {
+const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selectedIds = [] }) => {
     const [pointClouds, setPointClouds] = useState<PointCloudItem[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
@@ -59,7 +60,7 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect }) => {
                     </svg>
                     Point Clouds
                 </h2>
-                <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', marginBottom: 0 }}>Select a dataset to view</p>
+                <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', marginBottom: 0 }}>Select datasets to view</p>
             </div>
 
             <div className="custom-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -90,6 +91,9 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect }) => {
                             const itemName = renderItemName(item);
                             // Generate a stable key if possible
                             const key = typeof item === 'string' ? item : item.id || index.toString();
+                            
+                            const idStr = typeof item === 'string' ? item : item.id || item.safe_filename || item.orig_filename;
+                            const isSelected = idStr ? selectedIds.includes(idStr) : false;
 
                             return (
                                 <li key={key}>
@@ -98,25 +102,43 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect }) => {
                                         className="sidebar-button"
                                         style={{
                                             width: '100%', textAlign: 'left', padding: '12px 16px', borderRadius: '12px',
-                                            backgroundColor: 'rgba(30, 41, 59, 0.4)', transition: 'all 0.2s', border: '1px solid transparent',
+                                            backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'rgba(30, 41, 59, 0.4)',
+                                            transition: 'all 0.2s', 
+                                            border: isSelected ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
                                             display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', color: '#e2e8f0'
                                         }}
-                                        onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#1e293b'; e.currentTarget.style.borderColor = '#334155'; }}
-                                        onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'rgba(30, 41, 59, 0.4)'; e.currentTarget.style.borderColor = 'transparent'; }}
+                                        onMouseOver={(e) => { 
+                                            if (!isSelected) {
+                                                e.currentTarget.style.backgroundColor = '#1e293b'; 
+                                                e.currentTarget.style.borderColor = '#334155'; 
+                                            }
+                                        }}
+                                        onMouseOut={(e) => { 
+                                            if (!isSelected) {
+                                                e.currentTarget.style.backgroundColor = 'rgba(30, 41, 59, 0.4)'; 
+                                                e.currentTarget.style.borderColor = 'transparent'; 
+                                            }
+                                        }}
                                     >
-                                        <div style={{ flex: 1, paddingRight: '12px', overflow: 'hidden' }}>
-                                            <span style={{ display: 'block', fontSize: '14px', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                {itemName}
-                                            </span>
-                                            {typeof item !== 'string' && (
-                                                <span style={{ display: 'block', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '2px' }}>
-                                                    {item.number_of_points?.toLocaleString()} points
+                                        <div style={{ flex: 1, paddingRight: '12px', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <div style={{ width: '16px', height: '16px', border: isSelected ? 'none' : '1px solid #64748b', borderRadius: '4px', backgroundColor: isSelected ? '#3b82f6' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                {isSelected && (
+                                                    <svg style={{ width: '12px', height: '12px', color: 'white' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                                    </svg>
+                                                )}
+                                            </div>
+                                            <div style={{ overflow: 'hidden' }}>
+                                                <span style={{ display: 'block', fontSize: '14px', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: isSelected ? '#fff' : '#e2e8f0' }}>
+                                                    {itemName}
                                                 </span>
-                                            )}
+                                                {typeof item !== 'string' && (
+                                                    <span style={{ display: 'block', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '2px' }}>
+                                                        {item.number_of_points?.toLocaleString()} points
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
-                                        <svg style={{ width: '16px', height: '16px', color: '#475569' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                        </svg>
                                     </button>
                                 </li>
                             );

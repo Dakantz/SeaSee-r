@@ -146,8 +146,8 @@ const PointCloudViewer: React.FC<PointCloudViewerProps> = ({ initialUrl, initial
             const formattedUrl = newUrl.startsWith('http://') || newUrl.startsWith('https://')
                 ? newUrl
                 : newUrl.includes('/ept/') || newUrl.endsWith('.json') || newUrl.endsWith('.ply')
-                ? \`http://localhost:8000/\${newUrl}\`
-                : \`http://localhost:8000/ept/\${newUrl}/ept.json\`;
+                ? `http://localhost:8000/${newUrl}`
+                : `http://localhost:8000/ept/${newUrl}/ept.json`;
                 
             setSelectedUrl(formattedUrl);
         }

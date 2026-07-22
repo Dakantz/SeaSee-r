@@ -5,22 +5,29 @@ import { useLoadPLY } from './hooks/useLoadPLY';
 import { useLoadEPT } from './hooks/useLoadEPT';
 
 interface NativePotreeViewerProps {
-    eptUrl: string;
-    isPly?: boolean;
+    eptUrls: string[];
 }
 
-const ViewerInner: React.FC<NativePotreeViewerProps> = ({ eptUrl, isPly = false }) => {
+const PointCloudLoader: React.FC<{ url: string }> = ({ url }) => {
+    const isPly = url.toLowerCase().endsWith('.ply');
+    useLoadPLY(url, isPly);
+    useLoadEPT(url, !isPly);
+    return null;
+};
+
+const ViewerInner: React.FC<NativePotreeViewerProps> = ({ eptUrls }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     
     // Initialize Potree
     usePotreeViewer(containerRef);
 
-    // Conditionally load point cloud based on type
-    useLoadPLY(eptUrl, isPly);
-    useLoadEPT(eptUrl, !isPly);
-
     return (
-        <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 0 }}></div>
+        <>
+            <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 0 }}></div>
+            {eptUrls.map((url, idx) => (
+                <PointCloudLoader key={`${url}-${idx}`} url={url} />
+            ))}
+        </>
     );
 };
 

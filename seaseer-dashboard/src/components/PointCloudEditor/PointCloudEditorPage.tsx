@@ -1,15 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import NativePotreeViewer from './NativePotreeViewer';
 import { usePotreeScripts } from '../../hooks/usePotreeScripts';
 import PointCloudSidebar, { type PointCloudItem } from './PointCloudSidebar';
 
 const PointCloudEditorPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
-    const navigate = useNavigate();
-    const [pointCloudUrl, setPointCloudUrl] = useState<string | null>(null);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const [error] = useState<string | null>(null);
 
     const [pointBudget, setPointBudget] = useState<number>(2000000);
     const [pointSize, setPointSize] = useState<number>(1.0);
@@ -18,20 +17,11 @@ const PointCloudEditorPage: React.FC = () => {
     const { loaded: scriptsLoaded, error: scriptsError } = usePotreeScripts();
 
     useEffect(() => {
-        if (!id) {
-            setPointCloudUrl(null);
-            setError(null);
-            setLoading(false);
-            return;
+        if (id && selectedIds.length === 0) {
+            setSelectedIds([id]);
+        } else if (!id && selectedIds.length === 0) {
+            // Nothing selected
         }
-        
-        const url = id.startsWith('http://') || id.startsWith('https://')
-            ? id
-            : id.includes('/ept/') || id.endsWith('.json')
-            ? `http://localhost:8000/${id}`
-            : `http://localhost:8000/ept/${id}/ept.json`;
-
-        setPointCloudUrl(url);
         setLoading(false);
     }, [id]);
 
@@ -48,9 +38,24 @@ const PointCloudEditorPage: React.FC = () => {
         }
         
         if (newId) {
-            navigate(`/pointcloud-editor/${encodeURIComponent(newId)}`);
+            setSelectedIds(prev => {
+                if (prev.includes(newId)) {
+                    return prev.filter(i => i !== newId);
+                } else {
+                    return [...prev, newId];
+                }
+            });
+            // We can optionally navigate if we wanted to change the URL, but keeping state is cleaner for multiselect.
         }
     };
+
+    const pointCloudUrls = selectedIds.map(selectedId => {
+        return selectedId.startsWith('http://') || selectedId.startsWith('https://')
+            ? selectedId
+            : selectedId.includes('/ept/') || selectedId.endsWith('.json') || selectedId.endsWith('.ply')
+            ? `http://localhost:8000/${selectedId}`
+            : `http://localhost:8000/ept/${selectedId}/ept.json`;
+    });
 
     const handlePointBudgetChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = Number(e.target.value);
@@ -82,17 +87,17 @@ const PointCloudEditorPage: React.FC = () => {
         return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'red', background: '#111' }}>Error: {error || scriptsError?.message || 'Failed to load'}</div>;
     }
 
-    if (!pointCloudUrl) {
+    if (pointCloudUrls.length === 0) {
         return (
             <div style={{ width: '100%', height: '100vh', background: '#0f172a', position: 'relative' }}>
-                <PointCloudSidebar onSelect={handleSelect} />
+                <PointCloudSidebar onSelect={handleSelect} selectedIds={selectedIds} />
                 <div style={{ marginLeft: '288px', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#64748b' }}>
                     <div style={{ textAlign: 'center' }}>
                         <svg style={{ width: '64px', height: '64px', margin: '0 auto 16px auto', opacity: 0.5 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5" />
                         </svg>
                         <p style={{ fontSize: '18px', fontWeight: 500 }}>No point cloud selected</p>
-                        <p style={{ fontSize: '14px', marginTop: '8px' }}>Please select a dataset from the sidebar to view it.</p>
+                        <p style={{ fontSize: '14px', marginTop: '8px' }}>Please select one or more datasets from the sidebar to view them.</p>
                     </div>
                 </div>
             </div>
@@ -101,11 +106,11 @@ const PointCloudEditorPage: React.FC = () => {
 
     return (
         <div style={{ width: '100%', height: '100vh', background: '#000', position: 'relative' }}>
-            <PointCloudSidebar onSelect={handleSelect} />
+            <PointCloudSidebar onSelect={handleSelect} selectedIds={selectedIds} />
             
             <div style={{ marginLeft: '288px', height: '100%', position: 'relative' }}>
                 {/* Native Potree DOM Container */}
-                <NativePotreeViewer eptUrl={pointCloudUrl} isPly={false} />
+                <NativePotreeViewer eptUrls={pointCloudUrls} />
                 
                 {/* Custom React Toolbar floating over the 3D Canvas */}
                 <div style={{
