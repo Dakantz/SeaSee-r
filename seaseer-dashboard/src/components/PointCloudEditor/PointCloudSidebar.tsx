@@ -2,10 +2,10 @@ import React, { useEffect, useState } from 'react';
 
 import type { PointCloudMetadataResponse } from '../../client';
 
-export type PointCloudItem = PointCloudMetadataResponse | string;
+export const routeParentMetadataCache: Record<string, any> = {};
 
 export interface PointCloudSidebarProps {
-    onSelect?: (item: PointCloudItem) => void;
+    onSelect?: (item: PointCloudMetadataResponse) => void;
     selectedIds?: string[];
     onEditSelect?: (id: string | null) => void;
     editingId?: string | null;
@@ -17,7 +17,7 @@ export interface PointCloudSidebarProps {
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selectedIds = [], onEditSelect, editingId = null, refreshKey = 0, onDelete, onDeleteAll }) => {
-    const [pointClouds, setPointClouds] = useState<PointCloudItem[]>([]);
+    const [pointClouds, setPointClouds] = useState<PointCloudMetadataResponse[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -43,60 +43,99 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
         fetchPointClouds();
     }, [refreshKey]);
 
-    const [fetchedRoutesFor, setFetchedRoutesFor] = useState<Set<string>>(new Set());
+    const fetchedRoutesRef = React.useRef<Set<string>>(new Set());
+    const routesMapRef = React.useRef<Record<string, string[]>>({});
+    const prevSelectedIdsRef = React.useRef<string[]>([]);
 
     useEffect(() => {
-        const fetchRoutesForSelected = async () => {
-            const newIdsToFetch = selectedIds.filter(id => !fetchedRoutesFor.has(id));
-            if (newIdsToFetch.length === 0) return;
+        const fetchAndSyncRoutes = async () => {
+            const currentlySelected = new Set(selectedIds);
+            const prevSelected = new Set(prevSelectedIdsRef.current);
 
-            let additionalPointClouds: any[] = [];
-            for (const pcId of newIdsToFetch) {
-                try {
-                    const routesRes = await fetch(`${API_BASE_URL}/pointclouds/${pcId}/camera-routes`);
-                    if (routesRes.ok) {
-                        const routes = await routesRes.json();
-                        additionalPointClouds.push(...routes);
+            // Helper to check if an ID is a camera route ID
+            const isRouteId = (idToCheck: string) => {
+                return Object.values(routesMapRef.current).some(routes => routes.includes(idToCheck));
+            };
+
+            // 1. Unselect routes for point clouds that were just unselected
+            const unselectedIds = prevSelectedIdsRef.current.filter(id => !currentlySelected.has(id));
+            if (unselectedIds.length > 0 && onSelect) {
+                unselectedIds.forEach(id => {
+                    const routes = routesMapRef.current[id];
+                    if (routes) {
+                        routes.forEach(routeId => {
+                            if (currentlySelected.has(routeId)) {
+                                onSelect({ id: routeId } as unknown as PointCloudMetadataResponse);
+                                currentlySelected.delete(routeId); // prevent multi-toggle
+                            }
+                        });
                     }
-                } catch (e) {
-                    console.error(`Failed to fetch camera routes for ${pcId}`, e);
-                }
-            }
-
-            if (additionalPointClouds.length > 0) {
-                setPointClouds(prev => {
-                    const existingIds = new Set(prev.map((item: any) => item.id || item.safe_filename || item.orig_filename || item));
-                    const toAdd = additionalPointClouds.filter(pc => !existingIds.has(pc.id));
-                    return [...prev, ...toAdd];
                 });
+            }
 
-                if (onSelect) {
-                    additionalPointClouds.forEach(pc => {
-                        if (!selectedIds.includes(pc.id)) {
-                            onSelect(pc);
+            // 2. Fetch routes for newly selected point clouds or restore them from cache
+            const newlySelectedIds = selectedIds.filter(id => !prevSelected.has(id) && !isRouteId(id));
+            if (newlySelectedIds.length > 0) {
+                for (const pcId of newlySelectedIds) {
+                    if (fetchedRoutesRef.current.has(pcId)) {
+                        // Already fetched, restore them
+                        const routeIds = routesMapRef.current[pcId];
+                        if (routeIds && onSelect) {
+                            routeIds.forEach(routeId => {
+                                if (!currentlySelected.has(routeId)) {
+                                    onSelect({ id: routeId } as unknown as PointCloudMetadataResponse);
+                                    currentlySelected.add(routeId);
+                                }
+                            });
                         }
-                    });
+                    } else {
+                        // Fetch from API
+                        fetchedRoutesRef.current.add(pcId); // mark as fetched immediately
+                        try {
+                            const routesRes = await fetch(`${API_BASE_URL}/pointclouds/${pcId}/camera-routes`);
+                            if (routesRes.ok) {
+                                const routes = await routesRes.json();
+                                if (routes && routes.length > 0) {
+                                    const routeIds = routes.map((r: any) => r.id);
+                                    routesMapRef.current[pcId] = routeIds;
+
+                                    // Store parent metadata in cache for useLoadEPT
+                                    const parentPc = pointClouds.find(p => p.id === pcId);
+                                    if (parentPc) {
+                                        routes.forEach((pc: any) => {
+                                            routeParentMetadataCache[pc.id] = parentPc;
+                                        });
+                                    }
+
+                                    if (onSelect) {
+                                        routes.forEach((pc: any) => {
+                                            // only select if not already selected
+                                            if (!currentlySelected.has(pc.id)) {
+                                                onSelect(pc);
+                                                currentlySelected.add(pc.id);
+                                            }
+                                        });
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            console.error(`Failed to fetch camera routes for ${pcId}`, e);
+                        }
+                    }
                 }
             }
 
-            setFetchedRoutesFor(prev => {
-                const newSet = new Set(prev);
-                newIdsToFetch.forEach(id => newSet.add(id));
-                return newSet;
-            });
+            prevSelectedIdsRef.current = selectedIds;
         };
 
-        fetchRoutesForSelected();
-    }, [selectedIds, fetchedRoutesFor, onSelect]);
+        fetchAndSyncRoutes();
+    }, [selectedIds, pointClouds]);
 
-    const renderItemName = (item: PointCloudItem) => {
-        if (typeof item === 'string') {
-            return item;
-        }
+    const renderItemName = (item: PointCloudMetadataResponse) => {
         return item.orig_filename || item.safe_filename || item.id || 'Unnamed Point Cloud';
     };
 
-    const handleItemClick = (item: PointCloudItem) => {
+    const handleItemClick = (item: PointCloudMetadataResponse) => {
         if (onSelect) {
             onSelect(item);
         }
@@ -114,7 +153,7 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
                     <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>Select datasets to view</p>
                     {onDeleteAll && selectedIds && selectedIds.length > 1 && (
-                        <button 
+                        <button
                             onClick={(e) => { e.stopPropagation(); onDeleteAll(selectedIds); }}
                             style={{ background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', padding: '2px 6px', fontSize: '11px', cursor: 'pointer' }}
                         >
@@ -151,9 +190,9 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
                         {pointClouds.map((item, index) => {
                             const itemName = renderItemName(item);
                             // Generate a stable key if possible
-                            const key = typeof item === 'string' ? item : item.id || index.toString();
-                            
-                            const idStr = typeof item === 'string' ? item : item.id || item.safe_filename || item.orig_filename;
+                            const key = item.id || index.toString();
+
+                            const idStr = item.id || item.safe_filename || item.orig_filename;
                             const isSelected = idStr ? selectedIds.includes(idStr) : false;
 
                             return (
@@ -164,20 +203,20 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
                                         style={{
                                             width: '100%', textAlign: 'left', padding: '12px 16px', borderRadius: '12px',
                                             backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'rgba(30, 41, 59, 0.4)',
-                                            transition: 'all 0.2s', 
+                                            transition: 'all 0.2s',
                                             border: isSelected ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid transparent',
                                             display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', color: '#e2e8f0'
                                         }}
-                                        onMouseOver={(e) => { 
+                                        onMouseOver={(e) => {
                                             if (!isSelected) {
-                                                e.currentTarget.style.backgroundColor = '#1e293b'; 
-                                                e.currentTarget.style.borderColor = '#334155'; 
+                                                e.currentTarget.style.backgroundColor = '#1e293b';
+                                                e.currentTarget.style.borderColor = '#334155';
                                             }
                                         }}
-                                        onMouseOut={(e) => { 
+                                        onMouseOut={(e) => {
                                             if (!isSelected) {
-                                                e.currentTarget.style.backgroundColor = 'rgba(30, 41, 59, 0.4)'; 
-                                                e.currentTarget.style.borderColor = 'transparent'; 
+                                                e.currentTarget.style.backgroundColor = 'rgba(30, 41, 59, 0.4)';
+                                                e.currentTarget.style.borderColor = 'transparent';
                                             }
                                         }}
                                     >
@@ -193,16 +232,14 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
                                                 <span style={{ display: 'block', fontSize: '14px', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: isSelected ? '#fff' : '#e2e8f0' }}>
                                                     {itemName}
                                                 </span>
-                                                {typeof item !== 'string' && (
-                                                    <span style={{ display: 'block', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '2px' }}>
-                                                        {item.number_of_points?.toLocaleString()} points
-                                                    </span>
-                                                )}
+                                                <span style={{ display: 'block', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '2px' }}>
+                                                    {item.number_of_points?.toLocaleString()} points
+                                                </span>
                                             </div>
                                         </div>
                                         {isSelected && idStr && (
                                             <div style={{ display: 'flex', gap: '4px' }}>
-                                                <div 
+                                                <div
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         if (onEditSelect) {
@@ -236,7 +273,7 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
                                                     </svg>
                                                 </div>
                                                 {onDelete && (
-                                                    <div 
+                                                    <div
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             onDelete(idStr);
@@ -269,9 +306,10 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
                     </ul>
                 )}
             </div>
-            
+
             {/* Add global styles for custom scrollbar within this component scope or in index.css */}
-            <style dangerouslySetInnerHTML={{__html: `
+            <style dangerouslySetInnerHTML={{
+                __html: `
                 .custom-scrollbar::-webkit-scrollbar {
                     width: 6px;
                 }

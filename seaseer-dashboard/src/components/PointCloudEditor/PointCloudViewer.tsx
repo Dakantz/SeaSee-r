@@ -3,7 +3,8 @@ import { useFrame, useThree, Canvas } from '@react-three/fiber';
 import { Potree, PointColorType, PointSizeType, PointShape } from 'potree-core';
 import * as THREE from 'three';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
-import PointCloudSidebar, { type PointCloudItem } from './PointCloudSidebar';
+import type {PointCloudMetadataResponse} from "../../client";
+import PointCloudSidebar from './PointCloudSidebar';
 
 interface PointCloudSceneProps {
     eptUrl: string;
@@ -28,7 +29,7 @@ const PointCloudScene: React.FC<PointCloudSceneProps> = ({ eptUrl, isPly = false
                     const loader = new PLYLoader();
                     loader.load(eptUrl, (geometry: any) => {
                         geometry.computeVertexNormals();
-                        
+
                         // Convert Float64Array to Float32Array for WebGL compatibility
                         for (const key in geometry.attributes) {
                             const attribute = geometry.attributes[key];
@@ -36,14 +37,14 @@ const PointCloudScene: React.FC<PointCloudSceneProps> = ({ eptUrl, isPly = false
                                 geometry.setAttribute(key, new THREE.Float32BufferAttribute(attribute.array, attribute.itemSize));
                             }
                         }
-                        
+
                         if (geometry.index && geometry.index.array instanceof Uint32Array) {
                             // Index handling
                         }
 
                         const material = new THREE.PointsMaterial({ size: 0.002, vertexColors: geometry.hasAttribute('color') });
                         const mesh = new THREE.Points(geometry, material);
-                        
+
                         scene.add(mesh);
                         pointcloudRef.current = mesh;
                         setLoaded(true);
@@ -53,7 +54,7 @@ const PointCloudScene: React.FC<PointCloudSceneProps> = ({ eptUrl, isPly = false
                         if (geometry.boundingBox) {
                             const center = geometry.boundingBox.getCenter(new THREE.Vector3());
                             mesh.position.sub(center);
-                            
+
                             const radius = geometry.boundingBox.getSize(new THREE.Vector3()).length() / 2;
                             camera.position.set(radius, radius, radius);
                             camera.lookAt(new THREE.Vector3(0, 0, 0));
@@ -67,19 +68,19 @@ const PointCloudScene: React.FC<PointCloudSceneProps> = ({ eptUrl, isPly = false
                     const baseUrl = eptUrl.substring(0, eptUrl.lastIndexOf('/') + 1);
 
                     const pointcloud = await potreeRef.current.loadPointCloud(filename, baseUrl);
-                    
+
                     const material = pointcloud.material;
                     material.size = 1;
                     material.pointColorType = PointColorType.RGB;
                     material.pointSizeType = PointSizeType.ADAPTIVE;
                     material.shape = PointShape.SQUARE;
-                    
+
                     potreeRef.current.pointBudget = 2_000_000;
 
                     scene.add(pointcloud);
                     pointcloudRef.current = pointcloud;
                     setLoaded(true);
-                    
+
                     const box = pointcloud.boundingBox;
                     if (box) {
                         const center = box.getCenter(new THREE.Vector3());
@@ -91,7 +92,7 @@ const PointCloudScene: React.FC<PointCloudSceneProps> = ({ eptUrl, isPly = false
                 console.error("Failed to load pointcloud", err);
             }
         };
-        
+
         loadCloud();
 
         return () => {
@@ -125,30 +126,21 @@ const PointCloudViewer: React.FC<PointCloudViewerProps> = ({ initialUrl, initial
     const [selectedUrl, setSelectedUrl] = useState<string | undefined>(initialUrl);
     const [isPly, setIsPly] = useState<boolean>(initialIsPly);
 
-    const handleSelect = (item: PointCloudItem) => {
-        let newUrl = '';
-        if (typeof item === 'string') {
-            newUrl = item;
-        } else if (item && item.id) {
-            newUrl = item.id;
-        } else if (item && item.safe_filename) {
-            newUrl = item.safe_filename;
-        } else if (item && item.orig_filename) {
-            newUrl = item.orig_filename;
-        }
-        
+    const handleSelect = (item: PointCloudMetadataResponse) => {
+        let newUrl = item.id;
+
         if (newUrl) {
             // Determine if PLY or EPT
             const isPlyFile = newUrl.toLowerCase().endsWith('.ply');
             setIsPly(isPlyFile);
-            
+
             // Format URL if necessary
             const formattedUrl = newUrl.startsWith('http://') || newUrl.startsWith('https://')
                 ? newUrl
                 : newUrl.includes('/ept/') || newUrl.endsWith('.json') || newUrl.endsWith('.ply')
-                ? `http://localhost:8000/${newUrl}`
-                : `http://localhost:8000/ept/${newUrl}/ept.json`;
-                
+                    ? `http://localhost:8000/${newUrl}`
+                    : `http://localhost:8000/ept/${newUrl}/ept.json`;
+
             setSelectedUrl(formattedUrl);
         }
     };
@@ -156,7 +148,7 @@ const PointCloudViewer: React.FC<PointCloudViewerProps> = ({ initialUrl, initial
     return (
         <div className="flex h-screen w-full bg-slate-950 overflow-hidden relative">
             <PointCloudSidebar onSelect={handleSelect} />
-            
+
             <div className="flex-1 ml-72 h-full w-full relative">
                 {selectedUrl ? (
                     <Canvas className="w-full h-full">

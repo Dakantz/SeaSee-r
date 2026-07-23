@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { useViewerContext } from '../ViewerContext';
-import { updateTransform } from '../../../client/sdk.gen';
 
 export const useTransformControls = (gizmoMode: 'translate' | 'rotate' | 'scale' | null, editingPointcloudId: string | null) => {
     const { viewer, pointCloud } = useViewerContext();
@@ -67,6 +66,20 @@ export const useTransformControls = (gizmoMode: 'translate' | 'rotate' | 'scale'
                 // We need to tell Potree to redraw the frame since the camera isn't moving.
                 if (control.object) {
                     control.object.updateMatrixWorld(true);
+                    
+                    // Synchronize associated camera routes while dragging
+                    const currentEditingId = editingIdRef.current;
+                    if (currentEditingId && viewer.scene && viewer.scene.pointclouds) {
+                        viewer.scene.pointclouds.forEach((pc: any) => {
+                            if (pc.isCameraRoute && pc.parentPointcloudId === currentEditingId) {
+                                pc.position.copy(control.object.position);
+                                pc.quaternion.copy(control.object.quaternion);
+                                pc.scale.copy(control.object.scale);
+                                pc.updateMatrix();
+                                pc.updateMatrixWorld(true);
+                            }
+                        });
+                    }
                 }
                 // Force a render in Potree
                 if (viewer.setNeedsRedraw) {
@@ -98,6 +111,23 @@ export const useTransformControls = (gizmoMode: 'translate' | 'rotate' | 'scale'
                     const matrixArray = pointcloud.matrix.toArray();
 
                     const currentEditingId = editingIdRef.current;
+                    
+                    // Finalize update of associated camera routes when drag ends
+                    if (currentEditingId && viewer.scene && viewer.scene.pointclouds) {
+                        viewer.scene.pointclouds.forEach((pc: any) => {
+                            if (pc.isCameraRoute && pc.parentPointcloudId === currentEditingId) {
+                                pc.position.copy(pointcloud.position);
+                                pc.quaternion.copy(pointcloud.quaternion);
+                                pc.scale.copy(pointcloud.scale);
+                                pc.updateMatrix();
+                                pc.updateMatrixWorld(true);
+                            }
+                        });
+                        if (viewer.setNeedsRedraw) {
+                            viewer.setNeedsRedraw();
+                        }
+                    }
+
                     if (currentEditingId) {
                         const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
                         fetch(`${API_BASE_URL}/pointclouds/${currentEditingId}/transform`, {

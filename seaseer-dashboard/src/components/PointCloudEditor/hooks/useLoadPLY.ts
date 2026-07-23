@@ -3,11 +3,14 @@ import * as THREE from 'three';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { useViewerContext } from '../ViewerContext';
 
-export const useLoadPLY = (url: string, enabled: boolean) => {
+export const useLoadPLY = (identifier: string, enabled: boolean) => {
     const { viewer, setPointCloud } = useViewerContext();
 
     useEffect(() => {
-        if (!viewer || !url || !enabled) return;
+        if (!viewer || !identifier || !enabled) return;
+
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        const url = `${API_BASE_URL}/pointclouds/${identifier}`;
 
         let isCancelled = false;
         let loadedMesh: THREE.Points | null = null;
@@ -78,5 +81,5 @@ export const useLoadPLY = (url: string, enabled: boolean) => {
             // Avoid setting to null if it has already been overwritten by a new load
             setPointCloud((prev: any) => (prev === loadedMesh ? null : prev));
         };
-    }, [url, enabled, viewer, setPointCloud]);
+    }, [identifier, enabled, viewer, setPointCloud]);
 };

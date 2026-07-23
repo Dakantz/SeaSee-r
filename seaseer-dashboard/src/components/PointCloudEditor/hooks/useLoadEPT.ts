@@ -2,28 +2,30 @@ import { useEffect } from 'react';
 import { useViewerContext } from '../ViewerContext';
 import * as THREE from 'three';
 import { listPointclouds } from '../../../client/sdk.gen';
+import { routeParentMetadataCache } from '../PointCloudSidebar';
 
-export const useLoadEPT = (url: string, enabled: boolean) => {
+export const useLoadEPT = (identifier: string, enabled: boolean) => {
     const { viewer, setPointCloud } = useViewerContext();
 
     useEffect(() => {
-        if (!viewer || !url || !enabled) return;
+        if (!viewer || !identifier || !enabled) return;
+
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        const url = `${API_BASE_URL}/ept/${identifier}/ept.json`;
 
         let isCancelled = false;
         let loadedPotreeCloud: any = null;
 
         const loadCloud = async () => {
             let metadata: any = null;
-            const uuidMatch = url.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
-            if (uuidMatch) {
-                try {
-                    const res = await listPointclouds();
-                    if (res.data) {
-                        metadata = res.data.find((p: any) => p.id === uuidMatch[0]) || null;
-                    }
-                } catch (e) {
-                    console.error('Failed to fetch pointclouds', e);
+
+            try {
+                const res = await listPointclouds();
+                if (res.data) {
+                    metadata = res.data.find((p: any) => p.id === identifier) || null;
                 }
+            } catch (e) {
+                console.error('Failed to fetch pointclouds', e);
             }
 
             if (isCancelled) return;
@@ -40,24 +42,20 @@ export const useLoadEPT = (url: string, enabled: boolean) => {
 
                 let material = pointcloud.material;
 
-                const hardcoded = [
-                    'pointcloud_0_entwine',
-                    'pointcloud_1_entwine',
-                    'pointcloud_2_entwine',
-                    'pointcloud_3_entwine',
-                    'pointcloud_4_entwine'
-                ];
-                const isHardcoded = hardcoded.some(id => url.includes(id));
-                const isCameraRoute = !isHardcoded && !!uuidMatch && !metadata;
+                const isCameraRoute = !metadata;
+                let transformMetadata = metadata || routeParentMetadataCache[identifier] || null;
 
                 pointcloud.isCameraRoute = isCameraRoute;
-                material.size = (isHardcoded || isCameraRoute) ? 10.0 : 1.0;
+                if (isCameraRoute && transformMetadata && transformMetadata.id) {
+                    pointcloud.parentPointcloudId = transformMetadata.id;
+                }
+                material.size = isCameraRoute ? 10.0 : 1.0;
                 material.pointSizeType = (window as any).Potree.PointSizeType.FIXED;
                 material.shape = (window as any).Potree.PointShape.SQUARE;
 
-                if (metadata && metadata.transform_matrix) {
+                if (transformMetadata && transformMetadata.transform_matrix) {
                     const matrix = new THREE.Matrix4();
-                    matrix.fromArray(metadata.transform_matrix);
+                    matrix.fromArray(transformMetadata.transform_matrix);
                     pointcloud.applyMatrix4(matrix);
                     pointcloud.matrix.decompose(pointcloud.position, pointcloud.quaternion, pointcloud.scale);
                 }
@@ -88,5 +86,5 @@ export const useLoadEPT = (url: string, enabled: boolean) => {
             // Avoid setting to null if it has already been overwritten by a new load
             setPointCloud((prev: any) => (prev === loadedPotreeCloud ? null : prev));
         };
-    }, [url, enabled, viewer, setPointCloud]);
+    }, [identifier, enabled, viewer, setPointCloud]);
 };

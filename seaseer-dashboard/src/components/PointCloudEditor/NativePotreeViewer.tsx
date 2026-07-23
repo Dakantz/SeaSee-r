@@ -6,19 +6,19 @@ import { useLoadEPT } from './hooks/useLoadEPT';
 import { useTransformControls } from './hooks/useTransformControls';
 
 interface NativePotreeViewerProps {
-    eptUrls: string[];
+    pointCloudIds: string[];
     gizmoMode?: 'translate' | 'rotate' | 'scale' | null;
     editingPointcloudId?: string | null;
 }
 
-const PointCloudLoader: React.FC<{ url: string }> = ({ url }) => {
-    const isPly = url.toLowerCase().endsWith('.ply');
-    useLoadPLY(url, isPly);
-    useLoadEPT(url, !isPly);
+const PointCloudLoader: React.FC<{ identifier: string }> = ({ identifier }) => {
+    const isPly = identifier.toLowerCase().endsWith('.ply');
+    useLoadPLY(identifier, isPly);
+    useLoadEPT(identifier, !isPly);
     return null;
 };
 
-const ViewerInner: React.FC<NativePotreeViewerProps> = ({ eptUrls, gizmoMode = null, editingPointcloudId = null }) => {
+const ViewerInner: React.FC<NativePotreeViewerProps> = ({ pointCloudIds, gizmoMode = null, editingPointcloudId = null }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     
     // Initialize Potree
@@ -30,8 +30,8 @@ const ViewerInner: React.FC<NativePotreeViewerProps> = ({ eptUrls, gizmoMode = n
     return (
         <>
             <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 0 }}></div>
-            {eptUrls.map((url, idx) => (
-                <PointCloudLoader key={`${url}-${idx}`} url={url} />
+            {pointCloudIds.map((identifier, idx) => (
+                <PointCloudLoader key={`${identifier}-${idx}`} identifier={identifier} />
             ))}
         </>
     );

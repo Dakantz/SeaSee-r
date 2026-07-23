@@ -2,15 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import NativePotreeViewer from './NativePotreeViewer';
 import { usePotreeScripts } from '../../hooks/usePotreeScripts';
-import PointCloudSidebar, { type PointCloudItem } from './PointCloudSidebar';
+import type {PointCloudMetadataResponse} from "../../client";
+import PointCloudSidebar from './PointCloudSidebar';
 
 const PointCloudEditorPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
     const [error] = useState<string | null>(null);
-    const [pointCloudUrls, setPointCloudUrls] = useState<string[]>([]);
-    const [urlsLoading, setUrlsLoading] = useState(true);
 
     const [pointBudget, setPointBudget] = useState<number>(2000000);
     const [pointSize, setPointSize] = useState<number>(1.0);
@@ -32,17 +31,8 @@ const PointCloudEditorPage: React.FC = () => {
         setLoading(false);
     }, [id]);
 
-    const handleSelect = (item: PointCloudItem) => {
-        let newId = '';
-        if (typeof item === 'string') {
-            newId = item;
-        } else if (item && item.id) {
-            newId = item.id;
-        } else if (item && item.safe_filename) {
-            newId = item.safe_filename;
-        } else if (item && item.orig_filename) {
-            newId = item.orig_filename;
-        }
+    const handleSelect = (item: PointCloudMetadataResponse) => {
+        let newId = item.id;
         
         if (newId) {
             setSelectedIds(prev => {
@@ -95,40 +85,6 @@ const PointCloudEditorPage: React.FC = () => {
         }
     };
 
-    useEffect(() => {
-        const fetchUrls = async () => {
-            setUrlsLoading(true);
-            const urls = await Promise.all(selectedIds.map(async (selectedId) => {
-                if (selectedId.startsWith('http://') || selectedId.startsWith('https://')) {
-                    return selectedId;
-                }
-                if (selectedId.includes('/ept/') || selectedId.endsWith('.json') || selectedId.endsWith('.ply')) {
-                    return `http://localhost:8000/${selectedId}`;
-                }
-                
-                try {
-                    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-                    const response = await fetch(`${API_BASE_URL}/pointclouds/${selectedId}/ept`);
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data && data.url) {
-                            return `${API_BASE_URL}${data.url}`;
-                        }
-                    }
-                } catch (e) {
-                    console.error('Failed to fetch EPT url for', selectedId, e);
-                }
-                
-                return `http://localhost:8000/ept/${selectedId}/ept.json`;
-            }));
-            
-            setPointCloudUrls(urls.filter(Boolean) as string[]);
-            setUrlsLoading(false);
-        };
-        
-        fetchUrls();
-    }, [selectedIds]);
-
     const handlePointBudgetChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = Number(e.target.value);
         setPointBudget(val);
@@ -163,29 +119,12 @@ const PointCloudEditorPage: React.FC = () => {
         }
     };
 
-    if (loading || urlsLoading || !scriptsLoaded) {
+    if (loading || !scriptsLoaded) {
         return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'white', background: '#111' }}>Loading Point Cloud Engine...</div>;
     }
 
     if (error || scriptsError) {
         return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'red', background: '#111' }}>Error: {error || scriptsError?.message || 'Failed to load'}</div>;
-    }
-
-    if (pointCloudUrls.length === 0) {
-        return (
-            <div style={{ width: '100%', height: '100vh', background: '#0f172a', position: 'relative' }}>
-                <PointCloudSidebar onSelect={handleSelect} selectedIds={selectedIds} onEditSelect={setEditingPointcloudId} editingId={editingPointcloudId} refreshKey={refreshSidebarKey} onDelete={handleDeletePointCloud} onDeleteAll={handleDeleteAllSelected} />
-                <div style={{ marginLeft: '288px', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#64748b' }}>
-                    <div style={{ textAlign: 'center' }}>
-                        <svg style={{ width: '64px', height: '64px', margin: '0 auto 16px auto', opacity: 0.5 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5" />
-                        </svg>
-                        <p style={{ fontSize: '18px', fontWeight: 500 }}>No point cloud selected</p>
-                        <p style={{ fontSize: '14px', marginTop: '8px' }}>Please select one or more datasets from the sidebar to view them.</p>
-                    </div>
-                </div>
-            </div>
-        );
     }
 
     return (
@@ -194,10 +133,25 @@ const PointCloudEditorPage: React.FC = () => {
             
             <div style={{ marginLeft: '288px', height: '100%', position: 'relative' }}>
                 {/* Native Potree DOM Container */}
-                <NativePotreeViewer eptUrls={pointCloudUrls} gizmoMode={gizmoMode} editingPointcloudId={editingPointcloudId} />
+                <NativePotreeViewer pointCloudIds={selectedIds} gizmoMode={gizmoMode} editingPointcloudId={editingPointcloudId} />
                 
+                {/* Overlay for no point clouds selected */}
+                {selectedIds.length === 0 && (
+                    <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a', zIndex: 5, color: '#64748b' }}>
+                        <div style={{ textAlign: 'center' }}>
+                            <svg style={{ width: '64px', height: '64px', margin: '0 auto 16px auto', opacity: 0.5 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5" />
+                            </svg>
+                            <p style={{ fontSize: '18px', fontWeight: 500 }}>No point cloud selected</p>
+                            <p style={{ fontSize: '14px', marginTop: '8px' }}>Please select one or more datasets from the sidebar to view them.</p>
+                        </div>
+                    </div>
+                )}
+
                 {/* Custom React Toolbar floating over the 3D Canvas */}
-                <div style={{
+                {selectedIds.length > 0 && (
+                    <>
+                        <div style={{
                     position: 'absolute',
                     top: 20,
                     left: 20,
@@ -382,6 +336,8 @@ const PointCloudEditorPage: React.FC = () => {
                         </div>
                     </div>
                 </div>
+            )}
+            </>
             )}
             </div>
         </div>
