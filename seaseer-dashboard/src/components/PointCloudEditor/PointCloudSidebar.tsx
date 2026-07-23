@@ -31,29 +31,9 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
                     throw new Error(`Failed to fetch point clouds: ${response.status} ${response.statusText}`);
                 }
                 const data = await response.json();
-                
-                const hardcoded = [
-                    'pointcloud_0_entwine',
-                    'pointcloud_1_entwine',
-                    'pointcloud_2_entwine',
-                    'pointcloud_3_entwine',
-                    'pointcloud_4_entwine'
-                ];
-                const existingIds = new Set(data.map((item: any) => item.id || item.safe_filename || item.orig_filename || item));
-                const toAdd = hardcoded.filter(id => !existingIds.has(id));
-                
-                setPointClouds([...data, ...toAdd]);
+                setPointClouds(data);
             } catch (err: any) {
                 console.error('Error fetching point clouds:', err);
-                
-                const hardcoded = [
-                    'pointcloud_0_entwine',
-                    'pointcloud_1_entwine',
-                    'pointcloud_2_entwine',
-                    'pointcloud_3_entwine',
-                    'pointcloud_4_entwine'
-                ];
-                setPointClouds(hardcoded);
                 setError(err.message || 'An unexpected error occurred while fetching point clouds.');
             } finally {
                 setLoading(false);
@@ -62,6 +42,52 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
 
         fetchPointClouds();
     }, [refreshKey]);
+
+    const [fetchedRoutesFor, setFetchedRoutesFor] = useState<Set<string>>(new Set());
+
+    useEffect(() => {
+        const fetchRoutesForSelected = async () => {
+            const newIdsToFetch = selectedIds.filter(id => !fetchedRoutesFor.has(id));
+            if (newIdsToFetch.length === 0) return;
+
+            let additionalPointClouds: any[] = [];
+            for (const pcId of newIdsToFetch) {
+                try {
+                    const routesRes = await fetch(`${API_BASE_URL}/pointclouds/${pcId}/camera-routes`);
+                    if (routesRes.ok) {
+                        const routes = await routesRes.json();
+                        additionalPointClouds.push(...routes);
+                    }
+                } catch (e) {
+                    console.error(`Failed to fetch camera routes for ${pcId}`, e);
+                }
+            }
+
+            if (additionalPointClouds.length > 0) {
+                setPointClouds(prev => {
+                    const existingIds = new Set(prev.map((item: any) => item.id || item.safe_filename || item.orig_filename || item));
+                    const toAdd = additionalPointClouds.filter(pc => !existingIds.has(pc.id));
+                    return [...prev, ...toAdd];
+                });
+
+                if (onSelect) {
+                    additionalPointClouds.forEach(pc => {
+                        if (!selectedIds.includes(pc.id)) {
+                            onSelect(pc);
+                        }
+                    });
+                }
+            }
+
+            setFetchedRoutesFor(prev => {
+                const newSet = new Set(prev);
+                newIdsToFetch.forEach(id => newSet.add(id));
+                return newSet;
+            });
+        };
+
+        fetchRoutesForSelected();
+    }, [selectedIds, fetchedRoutesFor, onSelect]);
 
     const renderItemName = (item: PointCloudItem) => {
         if (typeof item === 'string') {

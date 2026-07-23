@@ -4,10 +4,10 @@ import aiofiles
 from redis import Redis
 from rq import Queue
 
-from typing import List, Union
+from typing import List, Union, Optional
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
-from app.schemas.pointcloud import PointCloudMetadataResponse
+from app.schemas.pointcloud import PointCloudMetadataResponse, PointCloudCameraRouteResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, conlist
@@ -17,7 +17,7 @@ from app.api.dependencies.pointcloud import get_pointcloud_service
 from app.core.config import settings
 from app.core.database import get_db_session
 from app.models.job import Job
-from app.models.pointcloud import PointCloud
+from app.models.pointcloud import PointCloud, PointCloudCameraRoute
 
 class TransformUpdate(BaseModel):
     matrix: conlist(float, min_length=16, max_length=16)
@@ -90,6 +90,22 @@ async def delete_pointcloud(
         
     return {"message": "Point cloud deleted successfully from available storages"}
 
+@router.get("/{identifier}/camera-routes", response_model=List[PointCloudCameraRouteResponse])
+async def get_camera_routes(
+    identifier: str,
+    db: AsyncSession = Depends(get_db_session)
+):
+    try:
+        pc_uuid = uuid.UUID(identifier)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+        
+    query = select(PointCloudCameraRoute).where(PointCloudCameraRoute.pointcloud_id == pc_uuid)
+    result = await db.execute(query)
+    routes = result.scalars().all()
+    
+    return list(routes)
+
 @router.patch("/{id}/transform")
 async def update_transform(
     id: str,
@@ -115,7 +131,10 @@ async def update_transform(
     return {"transform_matrix": pointcloud.transform_matrix}
 
 @router.post("/ingest-opensfm")
-async def ingest_opensfm(db: AsyncSession = Depends(get_db_session)):
+async def ingest_opensfm(
+    folder_name: Optional[str] = None,
+    db: AsyncSession = Depends(get_db_session)
+):
     import os
     import uuid
     from redis import Redis
@@ -132,20 +151,24 @@ async def ingest_opensfm(db: AsyncSession = Depends(get_db_session)):
 
     jobs_created = []
 
-    for folder_name in os.listdir(ingestion_dir):
-        folder_path = os.path.join(ingestion_dir, folder_name)
+    for f_name in os.listdir(ingestion_dir):
+        if folder_name and f_name != folder_name:
+            continue
+            
+        folder_path = os.path.join(ingestion_dir, f_name)
         if os.path.isdir(folder_path):
             fused_ply_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.ply")
             if os.path.isfile(fused_ply_path):
                 file_uuid_str = str(uuid.uuid4())
                 
                 job_record = Job(
-                    name=f"Ingest OpenSfM {folder_name}",
+                    name=f"Ingest OpenSfM {f_name}",
                     payload={
-                        "filename": folder_name, # orig_filename will be the folder name
+                        "filename": f_name, # orig_filename will be the folder name
                         "safe_filename": f"{file_uuid_str}.ply",
                         "total_bytes": os.path.getsize(fused_ply_path),
-                        "file_id": file_uuid_str
+                        "file_id": file_uuid_str,
+                        "folder_path": folder_path
                     },
                     status="PENDING",
                     progress=0.0
@@ -159,11 +182,12 @@ async def ingest_opensfm(db: AsyncSession = Depends(get_db_session)):
                     fused_ply_path,
                     file_uuid_str,
                     job_id=str(job_record.id),
-                    storage_type=settings.pointcloud_storage_type.value
+                    storage_type=settings.pointcloud_storage_type.value,
+                    folder_path=folder_path
                 )
                 
                 jobs_created.append({
-                    "folder": folder_name,
+                    "folder": f_name,
                     "job_id": str(job_record.id),
                     "file_id": file_uuid_str
                 })

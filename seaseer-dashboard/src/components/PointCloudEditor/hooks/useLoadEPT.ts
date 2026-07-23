@@ -33,13 +33,13 @@ export const useLoadEPT = (url: string, enabled: boolean) => {
 
                 let scene = viewer.scene;
                 let pointcloud = e.pointcloud;
-                
+
                 pointcloud.customUrl = url;
 
                 loadedPotreeCloud = pointcloud;
 
                 let material = pointcloud.material;
-                
+
                 const hardcoded = [
                     'pointcloud_0_entwine',
                     'pointcloud_1_entwine',
@@ -48,8 +48,10 @@ export const useLoadEPT = (url: string, enabled: boolean) => {
                     'pointcloud_4_entwine'
                 ];
                 const isHardcoded = hardcoded.some(id => url.includes(id));
-                
-                material.size = isHardcoded ? 10.0 : 1.0;
+                const isCameraRoute = !isHardcoded && !!uuidMatch && !metadata;
+
+                pointcloud.isCameraRoute = isCameraRoute;
+                material.size = (isHardcoded || isCameraRoute) ? 10.0 : 1.0;
                 material.pointSizeType = (window as any).Potree.PointSizeType.FIXED;
                 material.shape = (window as any).Potree.PointShape.SQUARE;
 
@@ -78,7 +80,7 @@ export const useLoadEPT = (url: string, enabled: boolean) => {
                     pointclouds.splice(index, 1);
                 }
                 viewer.scene.scenePointCloud.remove(loadedPotreeCloud);
-                
+
                 if (loadedPotreeCloud.dispose) {
                     loadedPotreeCloud.dispose();
                 }

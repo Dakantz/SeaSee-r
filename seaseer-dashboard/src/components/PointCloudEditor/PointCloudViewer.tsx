@@ -69,17 +69,7 @@ const PointCloudScene: React.FC<PointCloudSceneProps> = ({ eptUrl, isPly = false
                     const pointcloud = await potreeRef.current.loadPointCloud(filename, baseUrl);
                     
                     const material = pointcloud.material;
-                    
-                    const hardcoded = [
-                        'pointcloud_0_entwine',
-                        'pointcloud_1_entwine',
-                        'pointcloud_2_entwine',
-                        'pointcloud_3_entwine',
-                        'pointcloud_4_entwine'
-                    ];
-                    const isHardcoded = hardcoded.some(id => eptUrl.includes(id));
-                    
-                    material.size = isHardcoded ? 10 : 1;
+                    material.size = 1;
                     material.pointColorType = PointColorType.RGB;
                     material.pointSizeType = PointSizeType.ADAPTIVE;
                     material.shape = PointShape.SQUARE;

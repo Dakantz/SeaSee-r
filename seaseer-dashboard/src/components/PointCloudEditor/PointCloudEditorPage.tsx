@@ -145,18 +145,8 @@ const PointCloudEditorPage: React.FC = () => {
         if (viewer && viewer.scene && viewer.scene.pointclouds) {
             viewer.scene.pointclouds.forEach((pc: any) => {
                 if (pc.material) {
-                    const hardcoded = [
-                        'pointcloud_0_entwine',
-                        'pointcloud_1_entwine',
-                        'pointcloud_2_entwine',
-                        'pointcloud_3_entwine',
-                        'pointcloud_4_entwine'
-                    ];
-                    
-                    const urlToCheck = pc.customUrl || pc.name || '';
-                    const isHardcoded = hardcoded.some(id => urlToCheck.includes(id));
-                    
-                    pc.material.size = isHardcoded ? val * 10 : val;
+                    const isCameraRoute = pc.isCameraRoute;
+                    pc.material.size = isCameraRoute ? val * 10 : val;
                 }
             });
         }

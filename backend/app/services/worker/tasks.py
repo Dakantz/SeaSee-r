@@ -20,7 +20,7 @@ async def _update_job_status(job_id_str: str, status: str, progress: float = 0.0
         await session.execute(stmt)
         await session.commit()
 
-async def _convert_to_ept_async(file_path: str, file_id: str, job_id: str, storage_type: str = None):
+async def _convert_to_ept_async(file_path: str, file_id: str, job_id: str, storage_type: str = None, mark_completed: bool = True):
     if job_id:
         await _update_job_status(job_id, "RUNNING", 0.0)
 
@@ -214,7 +214,7 @@ async def _convert_to_ept_async(file_path: str, file_id: str, job_id: str, stora
                 await session.commit()
             print(f"Successfully ingested pointcloud {file_id} metadata and data to database.")
 
-        if job_id:
+        if job_id and mark_completed:
             await _update_job_status(job_id, "COMPLETED", 100.0)
         return {"status": "success", "file_id": file_id, "ept_dir": output_dir}
     except Exception as e:
@@ -233,7 +233,7 @@ def convert_to_ept(file_path: str, file_id: str, storage_type: str = None):
 
     return asyncio.run(_convert_to_ept_async(file_path, file_id, job_id, storage_type))
 
-def process_opensfm(file_path: str, file_id: str, storage_type: str = None):
+def process_opensfm(file_path: str, file_id: str, storage_type: str = None, folder_path: str = None):
     """
     Background task to process an OpenSfM pointcloud output.
     Delegates to _convert_to_ept_async for .ply processing and db insertion.
@@ -241,5 +241,106 @@ def process_opensfm(file_path: str, file_id: str, storage_type: str = None):
     current_job = get_current_job()
     job_id = current_job.id if current_job else None
 
-    return asyncio.run(_convert_to_ept_async(file_path, file_id, job_id, storage_type))
+    return asyncio.run(_process_opensfm_async(file_path, file_id, job_id, storage_type, folder_path))
+
+async def _process_opensfm_async(file_path: str, file_id: str, job_id: str, storage_type: str = None, folder_path: str = None):
+    # 1. Process fused.ply
+    await _convert_to_ept_async(file_path, file_id, job_id, storage_type, mark_completed=False)
+
+    # 2. Process camera path from reconstruction.json
+    if not folder_path:
+        print("No folder_path provided, skipping camera processing.")
+        if job_id:
+            await _update_job_status(job_id, "COMPLETED", 100.0)
+        return {"status": "success", "file_id": file_id}
+
+    reconstruction_json_path = os.path.join(folder_path, "reconstruction.json")
+    if not os.path.exists(reconstruction_json_path):
+        print(f"No reconstruction.json found at {reconstruction_json_path}, skipping camera processing.")
+        if job_id:
+            await _update_job_status(job_id, "COMPLETED", 100.0)
+        return {"status": "success", "file_id": file_id}
+
+    import numpy as np
+    from app.models.pointcloud import PointCloudCameraRoute
+
+    def rotvec_to_matrix(r):
+        r = np.array(r, dtype=float)
+        theta = np.linalg.norm(r)
+        if theta < 1e-8:
+            return np.eye(3)
+        k = r / theta
+        K = np.array([
+            [0, -k[2], k[1]],
+            [k[2], 0, -k[0]],
+            [-k[1], k[0], 0]
+        ])
+        R = np.eye(3) + np.sin(theta) * K + (1 - np.cos(theta)) * np.dot(K, K)
+        return R
+
+    def get_camera_center(rotation, translation):
+        R = rotvec_to_matrix(rotation)
+        t = np.array(translation, dtype=float)
+        center = -np.dot(R.T, t)
+        return center
+
+    with open(reconstruction_json_path, "r") as f:
+        reconstructions = json.load(f)
+        if isinstance(reconstructions, dict):
+            print("Error: The provided JSON is a dictionary. Skipping camera processing.")
+            if job_id:
+                await _update_job_status(job_id, "COMPLETED", 100.0)
+            return {"status": "success", "file_id": file_id}
+
+    for idx, data in enumerate(reconstructions):
+        camera_file_id = str(uuid.uuid4())
+        csv_file_path = os.path.join(folder_path, f"pointcloud_{idx}.csv")
+        
+        shots = data.get("shots", {})
+        if not shots:
+            continue
+            
+        with open(csv_file_path, "w") as out_f:
+            out_f.write("X,Y,Z,Red,Green,Blue\n")
+            for shot_id, sdata in shots.items():
+                if "rotation" not in sdata or "translation" not in sdata:
+                    continue
+                rotation = sdata["rotation"]
+                translation = sdata["translation"]
+                center = get_camera_center(rotation, translation)
+                x, y, z = center[0], center[1], center[2]
+                r, g, b = 255, 0, 0
+                out_f.write(f"{x},{y},{z},{int(r)},{int(g)},{int(b)}\n")
+
+        # Call entwine for csv
+        camera_output_dir = os.path.join(settings.ept_dir, camera_file_id)
+        os.makedirs(camera_output_dir, exist_ok=True)
+        
+        process = await asyncio.create_subprocess_exec(
+            'entwine', 'build', '-i', csv_file_path, '-o', camera_output_dir, '--scale', '0.001',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        await process.wait()
+        
+        if process.returncode != 0:
+            err_msg = await process.stderr.read()
+            print(f"Error entwining camera csv: {err_msg}")
+            continue
+
+        async with async_session() as session:
+            camera_route = PointCloudCameraRoute(
+                id=uuid.UUID(camera_file_id),
+                pointcloud_id=uuid.UUID(file_id),
+                orig_filename=f"reconstruction_{idx}",
+                safe_filename=f"pointcloud_{idx}.csv",
+                number_of_points=len(shots),
+                pcid=1
+            )
+            session.add(camera_route)
+            await session.commit()
+
+    if job_id:
+        await _update_job_status(job_id, "COMPLETED", 100.0)
+    return {"status": "success", "file_id": file_id}
 
