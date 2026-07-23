@@ -8,7 +8,7 @@ from sqlalchemy import update, text, select
 from app.core.config import settings, StorageType
 from app.core.database import async_session
 from app.models.job import Job
-from app.models.pointcloud import PointCloudMetadata
+from app.models.pointcloud import PointCloud
 
 async def _update_job_status(job_id_str: str, status: str, progress: float = 0.0, error_message: str = None):
     async with async_session() as session:
@@ -30,7 +30,7 @@ async def _convert_to_ept_async(file_path: str, file_id: str, job_id: str, stora
     try:
         # Run entwine as a subprocess with progress logging
         process = await asyncio.create_subprocess_exec(
-            'entwine', 'build', '-i', file_path, '-o', output_dir, '--scale', '0.000001', '--progress', '1',
+            'entwine', 'build', '-i', file_path, '-o', output_dir, '--scale', '0.001', '--progress', '1',
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -196,7 +196,7 @@ async def _convert_to_ept_async(file_path: str, file_id: str, job_id: str, stora
                         safe_filename = job_record.payload.get("safe_filename", safe_filename)
 
                 # 7. Insert metadata into pointclouds table
-                metadata_record = PointCloudMetadata(
+                metadata_record = PointCloud(
                     id=uuid.UUID(file_id),
                     job_id=uuid.UUID(job_id) if job_id else None,
                     orig_filename=orig_filename,
@@ -232,3 +232,14 @@ def convert_to_ept(file_path: str, file_id: str, storage_type: str = None):
     job_id = current_job.id if current_job else None
 
     return asyncio.run(_convert_to_ept_async(file_path, file_id, job_id, storage_type))
+
+def process_opensfm(file_path: str, file_id: str, storage_type: str = None):
+    """
+    Background task to process an OpenSfM pointcloud output.
+    Delegates to _convert_to_ept_async for .ply processing and db insertion.
+    """
+    current_job = get_current_job()
+    job_id = current_job.id if current_job else None
+
+    return asyncio.run(_convert_to_ept_async(file_path, file_id, job_id, storage_type))
+

@@ -9,6 +9,8 @@ const PointCloudEditorPage: React.FC = () => {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
     const [error] = useState<string | null>(null);
+    const [pointCloudUrls, setPointCloudUrls] = useState<string[]>([]);
+    const [urlsLoading, setUrlsLoading] = useState(true);
 
     const [pointBudget, setPointBudget] = useState<number>(2000000);
     const [pointSize, setPointSize] = useState<number>(1.0);
@@ -93,13 +95,39 @@ const PointCloudEditorPage: React.FC = () => {
         }
     };
 
-    const pointCloudUrls = selectedIds.map(selectedId => {
-        return selectedId.startsWith('http://') || selectedId.startsWith('https://')
-            ? selectedId
-            : selectedId.includes('/ept/') || selectedId.endsWith('.json') || selectedId.endsWith('.ply')
-            ? `http://localhost:8000/${selectedId}`
-            : `http://localhost:8000/ept/${selectedId}/ept.json`;
-    });
+    useEffect(() => {
+        const fetchUrls = async () => {
+            setUrlsLoading(true);
+            const urls = await Promise.all(selectedIds.map(async (selectedId) => {
+                if (selectedId.startsWith('http://') || selectedId.startsWith('https://')) {
+                    return selectedId;
+                }
+                if (selectedId.includes('/ept/') || selectedId.endsWith('.json') || selectedId.endsWith('.ply')) {
+                    return `http://localhost:8000/${selectedId}`;
+                }
+                
+                try {
+                    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+                    const response = await fetch(`${API_BASE_URL}/pointclouds/${selectedId}/ept`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data && data.url) {
+                            return `${API_BASE_URL}${data.url}`;
+                        }
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch EPT url for', selectedId, e);
+                }
+                
+                return `http://localhost:8000/ept/${selectedId}/ept.json`;
+            }));
+            
+            setPointCloudUrls(urls.filter(Boolean) as string[]);
+            setUrlsLoading(false);
+        };
+        
+        fetchUrls();
+    }, [selectedIds]);
 
     const handlePointBudgetChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = Number(e.target.value);
@@ -117,7 +145,18 @@ const PointCloudEditorPage: React.FC = () => {
         if (viewer && viewer.scene && viewer.scene.pointclouds) {
             viewer.scene.pointclouds.forEach((pc: any) => {
                 if (pc.material) {
-                    pc.material.size = val;
+                    const hardcoded = [
+                        'pointcloud_0_entwine',
+                        'pointcloud_1_entwine',
+                        'pointcloud_2_entwine',
+                        'pointcloud_3_entwine',
+                        'pointcloud_4_entwine'
+                    ];
+                    
+                    const urlToCheck = pc.customUrl || pc.name || '';
+                    const isHardcoded = hardcoded.some(id => urlToCheck.includes(id));
+                    
+                    pc.material.size = isHardcoded ? val * 10 : val;
                 }
             });
         }
@@ -134,7 +173,7 @@ const PointCloudEditorPage: React.FC = () => {
         }
     };
 
-    if (loading || !scriptsLoaded) {
+    if (loading || urlsLoading || !scriptsLoaded) {
         return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'white', background: '#111' }}>Loading Point Cloud Engine...</div>;
     }
 

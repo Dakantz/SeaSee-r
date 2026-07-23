@@ -28,16 +28,28 @@ export const useLoadEPT = (url: string, enabled: boolean) => {
 
             if (isCancelled) return;
 
-            (window as any).Potree.loadPointCloud(url, "Point Cloud", (e: any) => {
+            (window as any).Potree.loadPointCloud(url, url, (e: any) => {
                 if (isCancelled) return;
 
                 let scene = viewer.scene;
                 let pointcloud = e.pointcloud;
+                
+                pointcloud.customUrl = url;
 
                 loadedPotreeCloud = pointcloud;
 
                 let material = pointcloud.material;
-                material.size = 1.0;
+                
+                const hardcoded = [
+                    'pointcloud_0_entwine',
+                    'pointcloud_1_entwine',
+                    'pointcloud_2_entwine',
+                    'pointcloud_3_entwine',
+                    'pointcloud_4_entwine'
+                ];
+                const isHardcoded = hardcoded.some(id => url.includes(id));
+                
+                material.size = isHardcoded ? 10.0 : 1.0;
                 material.pointSizeType = (window as any).Potree.PointSizeType.FIXED;
                 material.shape = (window as any).Potree.PointShape.SQUARE;
 

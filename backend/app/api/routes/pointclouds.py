@@ -17,7 +17,7 @@ from app.api.dependencies.pointcloud import get_pointcloud_service
 from app.core.config import settings
 from app.core.database import get_db_session
 from app.models.job import Job
-from app.models.pointcloud import PointCloudMetadata
+from app.models.pointcloud import PointCloud
 
 class TransformUpdate(BaseModel):
     matrix: conlist(float, min_length=16, max_length=16)
@@ -101,7 +101,7 @@ async def update_transform(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid UUID format")
         
-    query = select(PointCloudMetadata).where(PointCloudMetadata.id == pc_uuid)
+    query = select(PointCloud).where(PointCloud.id == pc_uuid)
     result = await db.execute(query)
     pointcloud = result.scalar_one_or_none()
     
@@ -113,3 +113,59 @@ async def update_transform(
     await db.refresh(pointcloud)
     
     return {"transform_matrix": pointcloud.transform_matrix}
+
+@router.post("/ingest-opensfm")
+async def ingest_opensfm(db: AsyncSession = Depends(get_db_session)):
+    import os
+    import uuid
+    from redis import Redis
+    from rq import Queue
+    from app.core.config import settings
+    from app.models.job import Job
+
+    ingestion_dir = settings.opensfm_ingestion_dir
+    if not os.path.exists(ingestion_dir) or not os.path.isdir(ingestion_dir):
+        raise HTTPException(status_code=404, detail="OpenSfM ingestion directory not found.")
+
+    redis_conn = Redis.from_url(settings.redis_url)
+    q = Queue("pointcloud_tasks", connection=redis_conn)
+
+    jobs_created = []
+
+    for folder_name in os.listdir(ingestion_dir):
+        folder_path = os.path.join(ingestion_dir, folder_name)
+        if os.path.isdir(folder_path):
+            fused_ply_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.ply")
+            if os.path.isfile(fused_ply_path):
+                file_uuid_str = str(uuid.uuid4())
+                
+                job_record = Job(
+                    name=f"Ingest OpenSfM {folder_name}",
+                    payload={
+                        "filename": folder_name, # orig_filename will be the folder name
+                        "safe_filename": f"{file_uuid_str}.ply",
+                        "total_bytes": os.path.getsize(fused_ply_path),
+                        "file_id": file_uuid_str
+                    },
+                    status="PENDING",
+                    progress=0.0
+                )
+                db.add(job_record)
+                await db.commit()
+                await db.refresh(job_record)
+                
+                q.enqueue(
+                    "app.services.worker.tasks.process_opensfm",
+                    fused_ply_path,
+                    file_uuid_str,
+                    job_id=str(job_record.id),
+                    storage_type=settings.pointcloud_storage_type.value
+                )
+                
+                jobs_created.append({
+                    "folder": folder_name,
+                    "job_id": str(job_record.id),
+                    "file_id": file_uuid_str
+                })
+
+    return {"message": f"Started {len(jobs_created)} ingestion jobs", "jobs": jobs_created}

@@ -31,9 +31,29 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
                     throw new Error(`Failed to fetch point clouds: ${response.status} ${response.statusText}`);
                 }
                 const data = await response.json();
-                setPointClouds(data);
+                
+                const hardcoded = [
+                    'pointcloud_0_entwine',
+                    'pointcloud_1_entwine',
+                    'pointcloud_2_entwine',
+                    'pointcloud_3_entwine',
+                    'pointcloud_4_entwine'
+                ];
+                const existingIds = new Set(data.map((item: any) => item.id || item.safe_filename || item.orig_filename || item));
+                const toAdd = hardcoded.filter(id => !existingIds.has(id));
+                
+                setPointClouds([...data, ...toAdd]);
             } catch (err: any) {
                 console.error('Error fetching point clouds:', err);
+                
+                const hardcoded = [
+                    'pointcloud_0_entwine',
+                    'pointcloud_1_entwine',
+                    'pointcloud_2_entwine',
+                    'pointcloud_3_entwine',
+                    'pointcloud_4_entwine'
+                ];
+                setPointClouds(hardcoded);
                 setError(err.message || 'An unexpected error occurred while fetching point clouds.');
             } finally {
                 setLoading(false);

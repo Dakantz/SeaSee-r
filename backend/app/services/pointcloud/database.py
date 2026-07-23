@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db_session
 from urllib.parse import urlparse
 from app.core.config import settings
-from app.models import PointCloudMetadata
+from app.models import PointCloud
 from app.models.video import Video, VideoMetadata
 from app.services.pointcloud.base import PointCloudStorageService
 
@@ -121,9 +121,9 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
     async def list_pointclouds(self) -> list:
         """Queries the pointclouds metadata table for available point cloud IDs."""
         try:
-            from app.models import PointCloudMetadata
+            from app.models import PointCloud
             from sqlalchemy import select
-            stmt = select(PointCloudMetadata)
+            stmt = select(PointCloud)
             result = await self.db.execute(stmt)
             return list(result.scalars().all())
         except Exception as e:

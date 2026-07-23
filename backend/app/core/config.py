@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     video_dir: str = "./data/videos"
     # directory for metadata uploads
     metadata_dir: str = "./data/metadata"
+    # directory for ingesting the pointclouds from opensfm
+    opensfm_ingestion_dir: str = "./data/opensfm_ingestion"
     
     # Database and Redis connections (with localhost fallback for local runs)
     database_url: str = "postgresql+asyncpg://postgres:postgres_secure_password@localhost:5432/seaseer"
