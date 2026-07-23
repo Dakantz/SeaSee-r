@@ -33,6 +33,7 @@ interface RoverRendererProps {
     name: string;
     rotationUrl: string;
     positionUrl: string;
+    initialPosition?: [number, number, number];
 }
 
 export function RoverRenderer({
@@ -40,6 +41,7 @@ export function RoverRenderer({
     name,
     rotationUrl,
     positionUrl,
+    initialPosition = [0, 0, 0],
 }: RoverRendererProps) {
     const rover = useRoverStore(
         (state) => state.rovers[roverId]
@@ -55,6 +57,11 @@ export function RoverRenderer({
 
     const { scene } =
         useGLTF(MODEL_URL);
+
+    const roverScene = useMemo(
+        () => scene.clone(true),
+        [scene]
+    );
 
     // Instantiate telemetry attitude reader for this rover.
     const attitudeReader = useMemo(
@@ -103,7 +110,7 @@ export function RoverRenderer({
             id: roverId,
             name,
 
-            position: [0, 0, 0],
+            position: initialPosition,
 
             yaw: 0,
             pitch: 0,
@@ -439,7 +446,7 @@ export function RoverRenderer({
 
     return (
         <primitive
-            object={scene}
+            object={roverScene}
             position={rover.position}
             rotation={[
                 THREE.MathUtils.degToRad(

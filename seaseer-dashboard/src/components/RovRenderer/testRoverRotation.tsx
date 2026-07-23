@@ -6,10 +6,14 @@ import { RoverRenderer } from "./rovRenderer";
 import { useRoverStore } from "../../store/roverStore";
 import { useTimelineStore } from "../../store/timelineStore";
 
-const ROVER_ID = "test-rover";
+const ROVER_LEFT_ID = "test-rover-left";
+const ROVER_RIGHT_ID = "test-rover-right";
 
-const ROTATION_URL =
+const ROTATION_URL_1 =
     "/test_jsons/rover_3/ROV-Log-2026-05-02-2026-05-05-0505205315.json";
+
+const ROTATION_URL_2 =
+    "/test_jsons/rover_4/ROV-Log-2026-05-02-2026-05-05-0505214749.json";
 
 const POSITION_URL = "";
 
@@ -30,8 +34,12 @@ export default function TestRoverRotation() {
         (state) => state.reset
     );
 
-    const rover = useRoverStore(
-        (state) => state.rovers[ROVER_ID]
+    const leftRover = useRoverStore(
+        (state) => state.rovers[ROVER_LEFT_ID]
+    );
+
+    const rightRover = useRoverStore(
+        (state) => state.rovers[ROVER_RIGHT_ID]
     );
 
     useEffect(() => {
@@ -91,21 +99,19 @@ export default function TestRoverRotation() {
                     Time: {currentTime.toFixed(2)}s
                 </div>
 
-                {rover && (
-                    <>
-                        <div>
-                            Yaw: {rover.yaw.toFixed(2)}
-                        </div>
+                <div>
+                    Left ROV:{" "}
+                    {leftRover
+                        ? leftRover.yaw.toFixed(2)
+                        : "Loading"}
+                </div>
 
-                        <div>
-                            Pitch: {rover.pitch.toFixed(2)}
-                        </div>
-
-                        <div>
-                            Roll: {rover.roll.toFixed(2)}
-                        </div>
-                    </>
-                )}
+                <div>
+                    Right ROV:{" "}
+                    {rightRover
+                        ? rightRover.yaw.toFixed(2)
+                        : "Loading"}
+                </div>
 
                 <button onClick={togglePlay}>
                     {isPlaying ? "Pause" : "Play"}
@@ -118,7 +124,7 @@ export default function TestRoverRotation() {
 
             <Canvas
                 camera={{
-                    position: [0, 1, 5],
+                    position: [0, 3, 12],
                     fov: 50,
                 }}
             >
@@ -130,12 +136,20 @@ export default function TestRoverRotation() {
                 />
 
                 <RoverRenderer
-                    roverId={ROVER_ID}
-                    name="Test Rover"
-                    rotationUrl={ROTATION_URL}
+                    roverId={ROVER_LEFT_ID}
+                    name="Left Test Rover"
+                    rotationUrl={ROTATION_URL_1}
                     positionUrl={POSITION_URL}
+                    initialPosition={[-5, 0, 0]}
                 />
 
+                <RoverRenderer
+                    roverId={ROVER_RIGHT_ID}
+                    name="Right Test Rover"
+                    rotationUrl={ROTATION_URL_2}
+                    positionUrl={POSITION_URL}
+                    initialPosition={[5, 0, 0]}
+                />
             </Canvas>
         </div>
     );
