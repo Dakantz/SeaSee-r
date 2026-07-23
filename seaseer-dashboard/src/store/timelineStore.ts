@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-type TimelineStore = {
+interface TimelineStore {
     currentTime: number;
     isPlaying: boolean;
 
