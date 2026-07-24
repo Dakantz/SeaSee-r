@@ -5,6 +5,7 @@
     "build": "npm --prefix seaseer-dashboard run build",
     "lint": "npm --prefix seaseer-dashboard run lint",
     "preview": "npm --prefix seaseer-dashboard run preview",
-    "generate-client": "npm --prefix seaseer-dashboard run generate-client"
+    "generate-client": "npm --prefix seaseer-dashboard run generate-client",
+    "install": "npm --prefix seaseer-dashboard install && npm --prefix seaseer-dashboard/public/potree install"
   }
 }
