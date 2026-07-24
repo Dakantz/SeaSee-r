@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 from pyslam.config import Config
 from pyslam.config_parameters import Parameters
 from pyslam.local_features.feature_tracker_configs import FeatureTrackerConfigs
@@ -12,6 +13,20 @@ class Configuration:
     def __init__(self):
         self.args = self._parse_args()
         self.config = Config(self.args.config_path) if self.args.config_path else Config()
+        
+        if self.args.video_file:
+            self.config.config["DATASET"]["type"] = "COMMANDLINE_VIDEO_DATASET"
+            self.config.config["COMMANDLINE_VIDEO_DATASET"] = {
+                "type": "video",
+                "sensor_type": "mono",
+                "base_path": os.path.dirname(os.path.abspath(self.args.video_file)),
+                "name": os.path.basename(self.args.video_file),
+                "settings": self.args.settings_file,
+                "groundtruth_file": "auto"
+            }
+            self.config.get_dataset_settings()
+            self.config.get_general_system_settings()
+
         self.feature_tracker_config = None
         self.loop_detection_config = None
         self.semantic_mapping_config = None
@@ -21,6 +36,8 @@ class Configuration:
         parser.add_argument("-c", "--config_path", type=str, default=None, help="Optional path for custom configuration file")
         parser.add_argument("--no_output_date", action="store_true", help="Do not append date to output directory")
         parser.add_argument("--headless", action="store_true", help="Run in headless mode")
+        parser.add_argument("--video_file", type=str, default=None, help="Path to video file")
+        parser.add_argument("--settings_file", type=str, default="settings/FIFISH-E-MASTER-1080.yaml", help="Path to settings file")
         return parser.parse_args()
 
     def setup_slam_configs(self, dataset_type):

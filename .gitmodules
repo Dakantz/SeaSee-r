@@ -4,3 +4,6 @@
 [submodule "openSfM/openSfM_core"]
 	path = openSfM/openSfM_core
 	url = https://github.com/Cott3r/OpenSfM-ocean.git
+[submodule "seaseer-dashboard/public/potree"]
+	path = seaseer-dashboard/public/potree
+	url = https://github.com/potree/potree.git

@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+pydantic
+pydantic-settings
+sqlalchemy
+asyncpg
+psycopg2-binary
+alembic
+rq
+redis
+python-multipart
+aiofiles
+pytest
+httpx
+psutil

@@ -1,0 +1,10 @@
+{
+  "name": "seaseer",
+  "scripts": {
+    "dev": "npm --prefix seaseer-dashboard run dev",
+    "build": "npm --prefix seaseer-dashboard run build",
+    "lint": "npm --prefix seaseer-dashboard run lint",
+    "preview": "npm --prefix seaseer-dashboard run preview",
+    "generate-client": "npm --prefix seaseer-dashboard run generate-client"
+  }
+}

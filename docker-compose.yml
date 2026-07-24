@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database
+  db:
+    image: pgpointcloud/pointcloud:latest
+    container_name: seasee-r-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432" # Keeps host access available via localhost:5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: seasee-r-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: seasee-r-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # RQ Worker
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: seasee-r-worker
+    volumes:
+      - ./backend:/app
+    # Instead of hardcoding the URL in command, reference the env variable
+    command: ["rq", "worker", "pointcloud_tasks", "--url", "${REDIS_URL}"]
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "rq info -u $${REDIS_URL} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # TUSD Resumable Upload Server
+  tusd:
+    image: tusproject/tusd:latest
+    container_name: seaseer-r-tusd
+    ports:
+      - "8080:8080"
+    environment:
+      - TUSD_UPLOAD_DIR=/srv/tusd-data
+    command: >
+      -upload-dir /srv/tusd-data
+      -hooks-http http://backend:8000/webhooks/tusd
+      -hooks-http-forward-headers Cookie,Authorization
+      -hooks-enabled-events post-create,post-finish,post-terminate
+    volumes:
+      - ./backend/data/uploads:/srv/tusd-data
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:

@@ -1,0 +1,1256 @@
+[
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:29",
+        "timestamp": 1777974509954,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 0.0
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:29",
+        "timestamp": 1777974509954,
+        "payload": {
+            "yaw": 0.0,
+            "roll": 15.0,
+            "pitch": 0.0
+        },
+        "relative_time": 0.0
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:29",
+        "timestamp": 1777974509954,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 0.0
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:30",
+        "timestamp": 1777974510472,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 0.518
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:30",
+        "timestamp": 1777974510472,
+        "payload": {
+            "yaw": 12.950000000000001,
+            "roll": 13.730371045761233,
+            "pitch": 5.122280670696407
+        },
+        "relative_time": 0.518
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:30",
+        "timestamp": 1777974510472,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 0.518
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:31",
+        "timestamp": 1777974511110,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 1.156
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:31",
+        "timestamp": 1777974511110,
+        "payload": {
+            "yaw": 28.9,
+            "roll": 9.029914567454936,
+            "pitch": 10.926998331196366
+        },
+        "relative_time": 1.156
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:31",
+        "timestamp": 1777974511110,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 1.156
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:31",
+        "timestamp": 1777974511638,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 1.684
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:31",
+        "timestamp": 1777974511638,
+        "payload": {
+            "yaw": 42.1,
+            "roll": 3.3260677562918795,
+            "pitch": 14.919531108936964
+        },
+        "relative_time": 1.684
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:31",
+        "timestamp": 1777974511638,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 1.684
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:32",
+        "timestamp": 1777974512168,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 2.214
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:32",
+        "timestamp": 1777974512168,
+        "payload": {
+            "yaw": 55.35,
+            "roll": -2.985974118213311,
+            "pitch": 17.887213449794718
+        },
+        "relative_time": 2.214
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:32",
+        "timestamp": 1777974512168,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 2.214
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:32",
+        "timestamp": 1777974512701,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 2.747
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:32",
+        "timestamp": 1777974512701,
+        "payload": {
+            "yaw": 68.675,
+            "roll": -8.798385492998246,
+            "pitch": 19.612002641322462
+        },
+        "relative_time": 2.747
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:32",
+        "timestamp": 1777974512701,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 2.747
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:33",
+        "timestamp": 1777974513342,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 3.388
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:33",
+        "timestamp": 1777974513342,
+        "payload": {
+            "yaw": 84.7,
+            "roll": -13.62701881300689,
+            "pitch": 19.8484004573362
+        },
+        "relative_time": 3.388
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:33",
+        "timestamp": 1777974513342,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 3.388
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:33",
+        "timestamp": 1777974513865,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 3.911
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:33",
+        "timestamp": 1777974513865,
+        "payload": {
+            "yaw": 97.775,
+            "roll": -14.998772626844628,
+            "pitch": 18.538193604319144
+        },
+        "relative_time": 3.911
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:33",
+        "timestamp": 1777974513865,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 3.911
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:34",
+        "timestamp": 1777974514406,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 4.452
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:34",
+        "timestamp": 1777974514406,
+        "payload": {
+            "yaw": 111.3,
+            "roll": -13.696289170681716,
+            "pitch": 15.858476844761917
+        },
+        "relative_time": 4.452
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:34",
+        "timestamp": 1777974514406,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 4.452
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:34",
+        "timestamp": 1777974514934,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 4.98
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:34",
+        "timestamp": 1777974514934,
+        "payload": {
+            "yaw": 124.50000000000001,
+            "roll": -9.985024193290675,
+            "pitch": 12.129070467566294
+        },
+        "relative_time": 4.98
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:34",
+        "timestamp": 1777974514934,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 4.98
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:35",
+        "timestamp": 1777974515566,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 5.612
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:35",
+        "timestamp": 1777974515566,
+        "payload": {
+            "yaw": 140.3,
+            "roll": -3.3142579448499716,
+            "pitch": 6.586576405264454
+        },
+        "relative_time": 5.612
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:35",
+        "timestamp": 1777974515566,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 5.612
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:36",
+        "timestamp": 1777974516099,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 6.145
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:36",
+        "timestamp": 1777974516099,
+        "payload": {
+            "yaw": 153.625,
+            "roll": 3.0331060120726843,
+            "pitch": 1.3807538870293037
+        },
+        "relative_time": 6.145
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:36",
+        "timestamp": 1777974516099,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 6.145
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:36",
+        "timestamp": 1777974516646,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 6.692
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:36",
+        "timestamp": 1777974516646,
+        "payload": {
+            "yaw": 167.3,
+            "roll": 8.972495353607409,
+            "pitch": -4.059737603627102
+        },
+        "relative_time": 6.692
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:36",
+        "timestamp": 1777974516646,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 6.692
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:37",
+        "timestamp": 1777974517172,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 7.218
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:37",
+        "timestamp": 1777974517172,
+        "payload": {
+            "yaw": 180.45,
+            "roll": 13.100052735584136,
+            "pitch": -9.011464762583474
+        },
+        "relative_time": 7.218
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:37",
+        "timestamp": 1777974517172,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 7.218
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:37",
+        "timestamp": 1777974517701,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 7.747
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:37",
+        "timestamp": 1777974517701,
+        "payload": {
+            "yaw": 193.675,
+            "roll": 14.945097189120474,
+            "pitch": -13.365794536752112
+        },
+        "relative_time": 7.747
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:37",
+        "timestamp": 1777974517701,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 7.747
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:38",
+        "timestamp": 1777974518227,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 8.273
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:38",
+        "timestamp": 1777974518227,
+        "payload": {
+            "yaw": 206.825,
+            "roll": 14.165095552312266,
+            "pitch": -16.774170248438168
+        },
+        "relative_time": 8.273
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:38",
+        "timestamp": 1777974518227,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 8.273
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:38",
+        "timestamp": 1777974518757,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 8.803
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:38",
+        "timestamp": 1777974518757,
+        "payload": {
+            "yaw": 220.07500000000002,
+            "roll": 10.880652032047065,
+            "pitch": -19.041240049389533
+        },
+        "relative_time": 8.803
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:38",
+        "timestamp": 1777974518757,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 8.803
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:39",
+        "timestamp": 1777974519286,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 9.332
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:39",
+        "timestamp": 1777974519286,
+        "payload": {
+            "yaw": 233.3,
+            "roll": 5.680366147501936,
+            "pitch": -19.978484483741063
+        },
+        "relative_time": 9.332
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:39",
+        "timestamp": 1777974519286,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 9.332
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:39",
+        "timestamp": 1777974519814,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 9.86
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:39",
+        "timestamp": 1777974519814,
+        "payload": {
+            "yaw": 246.5,
+            "roll": -0.5101770767579081,
+            "pitch": -19.528320205812996
+        },
+        "relative_time": 9.86
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:39",
+        "timestamp": 1777974519814,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 9.86
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:40",
+        "timestamp": 1777974520347,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 10.393
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:40",
+        "timestamp": 1777974520347,
+        "payload": {
+            "yaw": 259.82500000000005,
+            "roll": -6.664844190367228,
+            "pitch": -17.70178099135044
+        },
+        "relative_time": 10.393
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:40",
+        "timestamp": 1777974520347,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 10.393
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:40",
+        "timestamp": 1777974520913,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 10.959
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:40",
+        "timestamp": 1777974520913,
+        "payload": {
+            "yaw": 273.97499999999997,
+            "roll": -11.872123589393688,
+            "pitch": -14.398375838984183
+        },
+        "relative_time": 10.959
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:40",
+        "timestamp": 1777974520913,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 10.959
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:41",
+        "timestamp": 1777974521406,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 11.452
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:41",
+        "timestamp": 1777974521406,
+        "payload": {
+            "yaw": 286.3,
+            "roll": -14.483521614136688,
+            "pitch": -10.575986680658895
+        },
+        "relative_time": 11.452
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:41",
+        "timestamp": 1777974521406,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 11.452
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:41",
+        "timestamp": 1777974521931,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 11.977
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:41",
+        "timestamp": 1777974521931,
+        "payload": {
+            "yaw": 299.425,
+            "roll": -14.815929064790067,
+            "pitch": -5.8087747393531135
+        },
+        "relative_time": 11.977
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:41",
+        "timestamp": 1777974521931,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 11.977
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:42",
+        "timestamp": 1777974522464,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 12.51
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:42",
+        "timestamp": 1777974522464,
+        "payload": {
+            "yaw": 312.75,
+            "roll": -12.52038834699891,
+            "pitch": -0.5636315107785695
+        },
+        "relative_time": 12.51
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:42",
+        "timestamp": 1777974522464,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 12.51
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:42",
+        "timestamp": 1777974522990,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 13.036
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:42",
+        "timestamp": 1777974522990,
+        "payload": {
+            "yaw": 325.9,
+            "roll": -8.05370273258271,
+            "pitch": 4.653255352519592
+        },
+        "relative_time": 13.036
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:42",
+        "timestamp": 1777974522990,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 13.036
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:43",
+        "timestamp": 1777974523532,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 13.578
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:43",
+        "timestamp": 1777974523532,
+        "payload": {
+            "yaw": 339.45,
+            "roll": -1.9917148022928413,
+            "pitch": 9.690405560972422
+        },
+        "relative_time": 13.578
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:43",
+        "timestamp": 1777974523532,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 13.578
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:44",
+        "timestamp": 1777974524043,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 14.089
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:44",
+        "timestamp": 1777974524043,
+        "payload": {
+            "yaw": 352.225,
+            "roll": 4.082236277609057,
+            "pitch": 13.797475723271635
+        },
+        "relative_time": 14.089
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:44",
+        "timestamp": 1777974524043,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 14.089
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:44",
+        "timestamp": 1777974524572,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 14.618
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:44",
+        "timestamp": 1777974524572,
+        "payload": {
+            "yaw": 5.449999999999989,
+            "roll": 9.649786479038912,
+            "pitch": 17.102736238323743
+        },
+        "relative_time": 14.618
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:44",
+        "timestamp": 1777974524572,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 14.618
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:45",
+        "timestamp": 1777974525103,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 15.149
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:45",
+        "timestamp": 1777974525103,
+        "payload": {
+            "yaw": 18.724999999999966,
+            "roll": 13.525112725792589,
+            "pitch": 19.223971251282645
+        },
+        "relative_time": 15.149
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:45",
+        "timestamp": 1777974525103,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 15.149
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:45",
+        "timestamp": 1777974525628,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 15.674
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:45",
+        "timestamp": 1777974525628,
+        "payload": {
+            "yaw": 31.849999999999966,
+            "roll": 14.99446352348275,
+            "pitch": 19.997116310375446
+        },
+        "relative_time": 15.674
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:45",
+        "timestamp": 1777974525628,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 15.674
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:46",
+        "timestamp": 1777974526157,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 16.203
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:46",
+        "timestamp": 1777974526157,
+        "payload": {
+            "yaw": 45.07499999999999,
+            "roll": 13.838999390841689,
+            "pitch": 19.39046807251287
+        },
+        "relative_time": 16.203
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:46",
+        "timestamp": 1777974526157,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 16.203
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:46",
+        "timestamp": 1777974526702,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 16.748
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:46",
+        "timestamp": 1777974526702,
+        "payload": {
+            "yaw": 58.700000000000045,
+            "roll": 10.10065236097496,
+            "pitch": 17.356201076359945
+        },
+        "relative_time": 16.748
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:46",
+        "timestamp": 1777974526702,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 16.748
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:47",
+        "timestamp": 1777974527268,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 17.314
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:47",
+        "timestamp": 1777974527268,
+        "payload": {
+            "yaw": 72.85000000000002,
+            "roll": 4.231278840885295,
+            "pitch": 13.890765913989263
+        },
+        "relative_time": 17.314
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:47",
+        "timestamp": 1777974527268,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 17.314
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:47",
+        "timestamp": 1777974527757,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 17.803
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:47",
+        "timestamp": 1777974527757,
+        "payload": {
+            "yaw": 85.07500000000005,
+            "roll": -1.5755841190405677,
+            "pitch": 9.994442809649447
+        },
+        "relative_time": 17.803
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:47",
+        "timestamp": 1777974527757,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 17.803
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:48",
+        "timestamp": 1777974528285,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 18.331
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:48",
+        "timestamp": 1777974528285,
+        "payload": {
+            "yaw": 98.27499999999998,
+            "roll": -7.552345701698087,
+            "pitch": 5.127654269264505
+        },
+        "relative_time": 18.331
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:48",
+        "timestamp": 1777974528285,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 18.331
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:48",
+        "timestamp": 1777974528814,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 18.86
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:48",
+        "timestamp": 1777974528814,
+        "payload": {
+            "yaw": 111.5,
+            "roll": -12.208496980899582,
+            "pitch": -0.10444030993501241
+        },
+        "relative_time": 18.86
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:48",
+        "timestamp": 1777974528814,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 18.86
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:49",
+        "timestamp": 1777974529339,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 19.385
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:49",
+        "timestamp": 1777974529339,
+        "payload": {
+            "yaw": 124.62500000000006,
+            "roll": -14.701108120680958,
+            "pitch": -5.290706284930185
+        },
+        "relative_time": 19.385
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:49",
+        "timestamp": 1777974529339,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 19.385
+    },
+    {
+        "type": "depth",
+        "time": "2026-05-05 11:48:49",
+        "timestamp": 1777974529868,
+        "payload": {
+            "depth": 0,
+            "temperature": 23.37
+        },
+        "relative_time": 19.914
+    },
+    {
+        "type": "attitude",
+        "time": "2026-05-05 11:48:49",
+        "timestamp": 1777974529868,
+        "payload": {
+            "yaw": 137.85000000000002,
+            "roll": -14.627789816851593,
+            "pitch": -10.148985655238402
+        },
+        "relative_time": 19.914
+    },
+    {
+        "type": "sonar",
+        "time": "2026-05-05 11:48:49",
+        "timestamp": 1777974529868,
+        "payload": {
+            "distance": 0,
+            "altitude": -1,
+            "left": 0,
+            "right": 0
+        },
+        "relative_time": 19.914
+    }
+]

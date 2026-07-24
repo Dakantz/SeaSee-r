@@ -1,0 +1,67 @@
+{
+  "bounds": [
+    8.338625775650144e-06,
+    9.590962690708693e-06,
+    1.1848565009131562e-06,
+    0.9999897480010986,
+    0.9999870657920837,
+    0.9999945759773254
+  ],
+  "metadata": {
+    "readers.ply": {}
+  },
+  "path": "/app/scratch/large.ply",
+  "pipeline": [
+    {
+      "filename": "/app/scratch/large.ply"
+    }
+  ],
+  "points": 98565,
+  "schema": [
+    {
+      "count": 98565,
+      "maximum": 0.9999897749710969,
+      "mean": 0.4993003352879204,
+      "minimum": 8.338625338333294e-06,
+      "name": "X",
+      "size": 8,
+      "stddev": 0.28888352368825354,
+      "type": "float",
+      "variance": 0.08345369025854174
+    },
+    {
+      "count": 98565,
+      "maximum": 0.9999870879902332,
+      "mean": 0.4986700660624888,
+      "minimum": 9.590962963823557e-06,
+      "name": "Y",
+      "size": 8,
+      "stddev": 0.2882864523878154,
+      "type": "float",
+      "variance": 0.08310907863035216
+    },
+    {
+      "count": 98565,
+      "maximum": 0.9999945847598629,
+      "mean": 0.5000622214908123,
+      "minimum": 1.1848564686056662e-06,
+      "name": "Z",
+      "size": 8,
+      "stddev": 0.28804009044505474,
+      "type": "float",
+      "variance": 0.08296709370359531
+    },
+    {
+      "count": 98565,
+      "maximum": 0,
+      "mean": 0,
+      "minimum": 0,
+      "name": "OriginId",
+      "size": 4,
+      "stddev": 0,
+      "type": "unsigned",
+      "variance": 0
+    }
+  ],
+  "srs": {}
+}
