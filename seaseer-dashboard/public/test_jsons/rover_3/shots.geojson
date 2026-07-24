@@ -1,0 +1,1145 @@
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_0.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974509.954,
+                "translation": [
+                    4.0,
+                    0.0,
+                    10.0
+                ],
+                "rotation": [
+                    0.0,
+                    0.0,
+                    0.2617993877991494
+                ],
+                "relative_time": 0.0
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464054144310614,
+                    -0.0668248035774848,
+                    10.0
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_1.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974510.472,
+                "translation": [
+                    3.866586301794439,
+                    1.0244561341392813,
+                    9.7928
+                ],
+                "rotation": [
+                    0.1156324429297449,
+                    0.21407572117237564,
+                    0.2283568321588342
+                ],
+                "relative_time": 0.5179998874664307
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464055478447596,
+                    -0.0668145590161434,
+                    9.7928
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_2.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974511.11,
+                "translation": [
+                    3.3502280965333204,
+                    2.185399666239273,
+                    9.5376
+                ],
+                "rotation": [
+                    0.22573780496292975,
+                    0.48678925142035273,
+                    0.10570826738572275
+                ],
+                "relative_time": 1.1559998989105225
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464060642029649,
+                    -0.0668029495808224,
+                    9.5376
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_3.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974511.638,
+                "translation": [
+                    2.663888822676068,
+                    2.9839062217873926,
+                    9.3264
+                ],
+                "rotation": [
+                    0.26955374004432897,
+                    0.7227897249058842,
+                    -0.04051500260682947
+                ],
+                "relative_time": 1.684000015258789
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.4640675054223875,
+                    -0.06679496451526692,
+                    9.3264
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_4.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974512.168,
+                "translation": [
+                    1.7893864311711205,
+                    3.5774426899589433,
+                    9.1144
+                ],
+                "rotation": [
+                    0.2625967806013189,
+                    0.9658388544195717,
+                    -0.19844601553438326
+                ],
+                "relative_time": 2.2139999866485596
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464076250446302,
+                    -0.06678902915058521,
+                    9.1144
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_5.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974512.701,
+                "translation": [
+                    0.7840753126265569,
+                    3.9224005282644923,
+                    8.9012
+                ],
+                "rotation": [
+                    0.20901682400700855,
+                    1.2101390889863635,
+                    -0.3388470834465202
+                ],
+                "relative_time": 2.746999979019165
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.4640863035574885,
+                    -0.06678557957220216,
+                    8.9012
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_6.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974513.342,
+                "translation": [
+                    -0.49156888775495605,
+                    3.96968009146724,
+                    8.6448
+                ],
+                "rotation": [
+                    0.10598338074629841,
+                    1.4961215588089682,
+                    -0.4476107587420351
+                ],
+                "relative_time": 3.388000011444092
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464099059999492,
+                    -0.06678510677657012,
+                    8.6448
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_7.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974513.865,
+                "translation": [
+                    -1.5011379402144334,
+                    3.707638720863829,
+                    8.4356
+                ],
+                "rotation": [
+                    0.01823778972197705,
+                    1.721665794416963,
+                    -0.4699684304711309
+                ],
+                "relative_time": 3.9110000133514404
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464109155690016,
+                    -0.06678772719027616,
+                    8.4356
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_8.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974514.406,
+                "translation": [
+                    -2.4372830132272294,
+                    3.1716953689523835,
+                    8.2192
+                ],
+                "rotation": [
+                    -0.04803901577216405,
+                    1.9509103177063671,
+                    -0.42696977281686843
+                ],
+                "relative_time": 4.45199990272522
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464118517140746,
+                    -0.06679308662379528,
+                    8.2192
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_9.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974514.934,
+                "translation": [
+                    -3.1804757480151373,
+                    2.425814093513259,
+                    8.008
+                ],
+                "rotation": [
+                    -0.06809917885727107,
+                    2.175215123835343,
+                    -0.3294674185809034
+                ],
+                "relative_time": 4.980000019073486
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.4641259490680945,
+                    -0.06680054543654966,
+                    8.008
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_10.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974515.566,
+                "translation": [
+                    -3.7768611902351594,
+                    1.3173152810528908,
+                    7.7552
+                ],
+                "rotation": [
+                    -0.01995521228959583,
+                    2.4477863935727213,
+                    -0.16631580943626292
+                ],
+                "relative_time": 5.611999988555908
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464131912922516,
+                    -0.06681163042467426,
+                    7.7552
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_11.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974516.099,
+                "translation": [
+                    -3.9904562080216013,
+                    0.27615077740586075,
+                    7.542
+                ],
+                "rotation": [
+                    0.07851501568924882,
+                    2.6796266296052007,
+                    -0.015667249039035915
+                ],
+                "relative_time": 6.144999980926514
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464134048872695,
+                    -0.06682204206971074,
+                    7.542
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_12.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974516.646,
+                "translation": [
+                    -3.916725829514729,
+                    -0.8119475207254205,
+                    7.3232
+                ],
+                "rotation": [
+                    0.21717561238466274,
+                    2.915385727123288,
+                    0.12874476062207343
+                ],
+                "relative_time": 6.691999912261963
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.46413331156891,
+                    -0.06683292305269205,
+                    7.3232
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_13.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974517.172,
+                "translation": [
+                    -3.5709578705591944,
+                    -1.8022929525166946,
+                    7.1128
+                ],
+                "rotation": [
+                    -0.3553149238234903,
+                    -3.08610693704324,
+                    -0.24180962629680103
+                ],
+                "relative_time": 7.2179999351501465
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.46412985388932,
+                    -0.06684282650700997,
+                    7.1128
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_14.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974517.701,
+                "translation": [
+                    -2.9756043850036744,
+                    -2.6731589073504223,
+                    6.901199999999999
+                ],
+                "rotation": [
+                    -0.41201136212616685,
+                    -2.8320297288387644,
+                    -0.287819496819934
+                ],
+                "relative_time": 7.746999979019165
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464123900354465,
+                    -0.0668515351665583,
+                    6.901199999999999
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_15.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974518.227,
+                "translation": [
+                    -2.178322404754739,
+                    -3.354834049687634,
+                    6.690799999999999
+                ],
+                "rotation": [
+                    -0.4154991476974176,
+                    -2.5951655137139737,
+                    -0.30707347947640856
+                ],
+                "relative_time": 8.273000001907349
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464115927534662,
+                    -0.06685835191798167,
+                    6.690799999999999
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_16.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974518.757,
+                "translation": [
+                    -1.223620486613789,
+                    -3.8082480098779063,
+                    6.4788
+                ],
+                "rotation": [
+                    -0.3734742311308221,
+                    -2.3739602804172852,
+                    -0.31753472127821997
+                ],
+                "relative_time": 8.80299997329712
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464106380515481,
+                    -0.06686288605758357,
+                    6.4788
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_17.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974519.286,
+                "translation": [
+                    -0.18548937790802886,
+                    -3.9956968967482123,
+                    6.267199999999999
+                ],
+                "rotation": [
+                    -0.3001324689328871,
+                    -2.1652640481220744,
+                    -0.32890776640047537
+                ],
+                "relative_time": 9.332000017166138
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464095999204393,
+                    -0.06686476054645228,
+                    6.267199999999999
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_18.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974519.814,
+                "translation": [
+                    0.8635904107674166,
+                    -3.905664041162599,
+                    6.056
+                ],
+                "rotation": [
+                    -0.21233971796307113,
+                    -1.9603387535576575,
+                    -0.34289653237295487
+                ],
+                "relative_time": 9.859999895095825
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464085508406507,
+                    -0.06686386021789642,
+                    6.056
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_19.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974520.347,
+                "translation": [
+                    1.8616868666267612,
+                    -3.540356198270088,
+                    5.8427999999999995
+                ],
+                "rotation": [
+                    -0.12500831217998362,
+                    -1.748651647597258,
+                    -0.35477737265440173
+                ],
+                "relative_time": 10.39299988746643
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464075527441948,
+                    -0.0668602071394675,
+                    5.8427999999999995
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_20.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974520.913,
+                "translation": [
+                    2.776233226509304,
+                    -2.8796751677968366,
+                    5.6164
+                ],
+                "rotation": [
+                    -0.04688426527384045,
+                    -1.5131431896939556,
+                    -0.3547808093156154
+                ],
+                "relative_time": 10.95900011062622
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464066381978349,
+                    -0.06685360032916277,
+                    5.6164
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_21.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974521.406,
+                "translation": [
+                    3.394987515326238,
+                    -2.115197336131779,
+                    5.4192
+                ],
+                "rotation": [
+                    0.0045678298401048666,
+                    -1.298554209413636,
+                    -0.3350990057104417
+                ],
+                "relative_time": 11.45199990272522
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464060194435461,
+                    -0.06684595555084612,
+                    5.4192
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_22.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974521.931,
+                "translation": [
+                    3.827574354744546,
+                    -1.1617549478706226,
+                    5.2092
+                ],
+                "rotation": [
+                    0.04537182137452737,
+                    -1.0632839660410163,
+                    -0.28739888954204346
+                ],
+                "relative_time": 11.976999998092651
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464055868567067,
+                    -0.0668364211269635,
+                    5.2092
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_23.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974522.464,
+                "translation": [
+                    3.9984112820972153,
+                    -0.1127263021557139,
+                    4.9959999999999996
+                ],
+                "rotation": [
+                    0.0808655080863702,
+                    -0.8223755928424913,
+                    -0.21002961343837137
+                ],
+                "relative_time": 12.509999990463257
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464054160197794,
+                    -0.06682593084050635,
+                    4.9959999999999996
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_24.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974522.99,
+                "translation": [
+                    3.8902298884474567,
+                    0.9306510705039184,
+                    4.7856
+                ],
+                "rotation": [
+                    0.12044151306058305,
+                    -0.5881287537276693,
+                    -0.11215196894412416
+                ],
+                "relative_time": 13.03600001335144
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.46405524201173,
+                    -0.06681549706677976,
+                    4.7856
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_25.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974523.532,
+                "translation": [
+                    3.4991201183376073,
+                    1.9380811121944843,
+                    4.5687999999999995
+                ],
+                "rotation": [
+                    0.17349758650397712,
+                    -0.35483060929221644,
+                    -0.003978751228946815
+                ],
+                "relative_time": 13.57800006866455
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464059153109431,
+                    -0.06680542276636285,
+                    4.5687999999999995
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_26.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974524.043,
+                "translation": [
+                    2.895718658058686,
+                    2.759495144654327,
+                    4.3644
+                ],
+                "rotation": [
+                    0.23555113904616717,
+                    -0.143564730998085,
+                    0.0871351573697801
+                ],
+                "relative_time": 14.08899998664856
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464065187124033,
+                    -0.06679720862603826,
+                    4.3644
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_27.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974524.572,
+                "translation": [
+                    2.073609540509764,
+                    3.4205472476647483,
+                    4.152799999999999
+                ],
+                "rotation": [
+                    0.3054550760098124,
+                    0.06905762102150337,
+                    0.1528469208072279
+                ],
+                "relative_time": 14.618000030517578
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464073408215209,
+                    -0.06679059810500815,
+                    4.152799999999999
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_28.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974525.103,
+                "translation": [
+                    1.1034297318788975,
+                    3.844794250256529,
+                    3.9404000000000003
+                ],
+                "rotation": [
+                    0.3687707119082053,
+                    0.2826630189180868,
+                    0.17697878864836303
+                ],
+                "relative_time": 15.1489999294281
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464083110013296,
+                    -0.06678635563498224,
+                    3.9404000000000003
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_29.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974525.628,
+                "translation": [
+                    0.06792327121577152,
+                    3.9994232620750894,
+                    3.7303999999999995
+                ],
+                "rotation": [
+                    0.40908795555302496,
+                    0.5014380797940753,
+                    0.1555222785960051
+                ],
+                "relative_time": 15.674000024795532
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.4640934650779025,
+                    -0.06678480934486404,
+                    3.7303999999999995
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_30.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974526.157,
+                "translation": [
+                    -0.9799948556774971,
+                    3.8780936145025744,
+                    3.5187999999999997
+                ],
+                "rotation": [
+                    0.4120780994818776,
+                    0.7344206364366759,
+                    0.09399959346721959
+                ],
+                "relative_time": 16.20300006866455
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464103944259171,
+                    -0.06678602264133977,
+                    3.5187999999999997
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_31.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974526.702,
+                "translation": [
+                    -1.9875843045965311,
+                    3.471240215271989,
+                    3.300799999999999
+                ],
+                "rotation": [
+                    0.36386561645205323,
+                    0.9870342065279203,
+                    0.004579545824296733
+                ],
+                "relative_time": 16.747999906539917
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.46411402015366,
+                    -0.06679009117533208,
+                    3.300799999999999
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_32.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974527.268,
+                "translation": [
+                    -2.877822943287193,
+                    2.7781531827978525,
+                    3.0744
+                ],
+                "rotation": [
+                    0.2551591427255096,
+                    1.255340119017557,
+                    -0.09063131304112927
+                ],
+                "relative_time": 17.313999891281128
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464122922540048,
+                    -0.06679702204565682,
+                    3.0744
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_33.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974527.757,
+                "translation": [
+                    -3.464743066518188,
+                    1.9988885619298895,
+                    2.878799999999999
+                ],
+                "rotation": [
+                    0.12078313071453477,
+                    1.4830689689703278,
+                    -0.1517061106721708
+                ],
+                "relative_time": 17.80299997329712
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464128791741279,
+                    -0.0668048146918655,
+                    2.878799999999999
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_34.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974528.285,
+                "translation": [
+                    -3.8663013938124045,
+                    1.0255308538529009,
+                    2.6676
+                ],
+                "rotation": [
+                    -0.04669958480308068,
+                    1.7170970903330411,
+                    -0.1744822829255236
+                ],
+                "relative_time": 18.331000089645386
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464132807324552,
+                    -0.06681454826894627,
+                    2.6676
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_35.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974528.814,
+                "translation": [
+                    -3.999945460736487,
+                    -0.020888061987002483,
+                    2.4559999999999995
+                ],
+                "rotation": [
+                    -0.20841069866794645,
+                    1.9374089603488396,
+                    -0.1393172390926043
+                ],
+                "relative_time": 18.859999895095825
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.4641341437652216,
+                    -0.06682501245810467,
+                    2.4559999999999995
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_36.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974529.339,
+                "translation": [
+                    -3.8575039961436217,
+                    -1.0581412569860371,
+                    2.2459999999999987
+                ],
+                "rotation": [
+                    -0.3300969882575222,
+                    2.147323070562295,
+                    -0.046285561376983364
+                ],
+                "relative_time": 19.384999990463257
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464132719350576,
+                    -0.06683538499005466,
+                    2.2459999999999987
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "shot_37.jpg",
+                "camera": "v2 unknown unknown 3840 2160 brown 0.85",
+                "focal": 0.48455320009205993,
+                "width": 3840,
+                "height": 2160,
+                "capture_time": 1777974529.868,
+                "translation": [
+                    -3.446726505945983,
+                    -2.0297971310476806,
+                    2.034399999999999
+                ],
+                "rotation": [
+                    -0.3852913832827223,
+                    2.359599488618278,
+                    0.09322977066040228
+                ],
+                "relative_time": 19.914000034332275
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    -7.464128611575674,
+                    -0.06684510154879528,
+                    2.034399999999999
+                ]
+            }
+        }
+    ]
+}

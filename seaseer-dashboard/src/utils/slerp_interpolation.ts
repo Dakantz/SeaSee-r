@@ -2,7 +2,7 @@ import * as THREE from "three";
 
 import type {
     AttitudeSample,
-} from "../components/TelemetoryPanel/TelemetryReader";
+} from "../components/TelemetoryPanel/TelemetryRotationReader";
 
 export function slerpAttitude(
     previous: AttitudeSample,
@@ -18,7 +18,7 @@ export function slerpAttitude(
 
     const alpha = THREE.MathUtils.clamp(
         (currentTime - previous.relativeTime) /
-            timeRange,
+        timeRange,
         0,
         1
     );
@@ -26,7 +26,7 @@ export function slerpAttitude(
     const previousEuler = new THREE.Euler(
         THREE.MathUtils.degToRad(previous.pitch),
         THREE.MathUtils.degToRad(previous.yaw),
-        THREE.MathUtils.degToRad(previous.roll),    
+        THREE.MathUtils.degToRad(previous.roll),
         "YXZ"
     );
 
