@@ -29,6 +29,7 @@ os.makedirs(settings.upload_dir, exist_ok=True)
 os.makedirs(settings.video_dir, exist_ok=True)
 os.makedirs(settings.metadata_dir, exist_ok=True)
 os.makedirs(settings.pointcloud_local_dir, exist_ok=True)
+os.makedirs(settings.opensfm_ingestion_dir, exist_ok=True)
 
 # Add CORS middleware to allow the frontend to communicate with the backend
 app.add_middleware(

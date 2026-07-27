@@ -164,11 +164,13 @@ async def ingest_opensfm(
                 job_record = Job(
                     name=f"Ingest OpenSfM {f_name}",
                     payload={
+                        "task_type": "opensfm_ingest",
                         "filename": f_name, # orig_filename will be the folder name
                         "safe_filename": f"{file_uuid_str}.ply",
                         "total_bytes": os.path.getsize(fused_ply_path),
                         "file_id": file_uuid_str,
-                        "folder_path": folder_path
+                        "folder_path": folder_path,
+                        "storage_type": settings.pointcloud_storage_type.value
                     },
                     status="PENDING",
                     progress=0.0
@@ -178,12 +180,9 @@ async def ingest_opensfm(
                 await db.refresh(job_record)
                 
                 q.enqueue(
-                    "app.services.worker.tasks.process_opensfm",
-                    fused_ply_path,
-                    file_uuid_str,
-                    job_id=str(job_record.id),
-                    storage_type=settings.pointcloud_storage_type.value,
-                    folder_path=folder_path
+                    "app.services.worker.tasks.run_background_job",
+                    str(job_record.id),
+                    job_id=str(job_record.id)
                 )
                 
                 jobs_created.append({

@@ -7,6 +7,15 @@ export interface TusUploadConfig {
   fingerprintPrefix?: string;
 }
 
+export function formatUuid(id: string): string {
+  if (!id) return id;
+  const clean = id.replace(/-/g, '');
+  if (clean.length === 32) {
+    return `${clean.slice(0, 8)}-${clean.slice(8, 12)}-${clean.slice(12, 16)}-${clean.slice(16, 20)}-${clean.slice(20)}`;
+  }
+  return id;
+}
+
 export interface UseTusUploadOptions {
   tusEndpoint: string;
   chunkSize: number;
@@ -126,7 +135,7 @@ export const useTusUpload = ({
             if (upload.url) {
               const parts = upload.url.split('/');
               const id = parts[parts.length - 1];
-              fileIdsRef.current[file.name] = id;
+              fileIdsRef.current[file.name] = formatUuid(id);
             }
             resolve();
           }

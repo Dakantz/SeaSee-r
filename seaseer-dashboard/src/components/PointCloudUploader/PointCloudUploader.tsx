@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
 import { BaseUploader } from '../common/BaseUploader';
-import { useTusUpload } from '../common/useTusUpload';
+import { useTusUpload, formatUuid } from '../common/useTusUpload';
 import type { TusUploadConfig } from '../common/useTusUpload';
+import { JobProgress } from '../JobProgress';
+import { createJob } from '../../client';
 
 export interface PointCloudUploaderProps {
   onUploadSuccess?: (fileIds: string[]) => void;
   onUploadError?: (error: Error) => void;
   onProgress?: (percentage: number) => void;
+  onJobCreated?: (jobId: string) => void;
+  jobId?: string;
   chunkSize?: number; // In bytes, default 5MB. Note: tus handles chunking natively, but can be configured.
   apiUrl?: string;
   tusEndpoint?: string;
@@ -18,10 +22,14 @@ export const PointCloudUploader: React.FC<PointCloudUploaderProps> = ({
   onUploadSuccess,
   onUploadError,
   onProgress,
+  onJobCreated,
+  jobId: initialJobId,
   chunkSize = DEFAULT_CHUNK_SIZE,
   tusEndpoint = import.meta.env.VITE_TUS_URL || 'http://localhost:8080/files/'
 }) => {
   const [pointCloudFiles, setPointCloudFiles] = useState<File[]>([]);
+  const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
+  const [jobFileMap, setJobFileMap] = useState<Record<string, string>>({});
 
   const {
     isUploading,
@@ -34,9 +42,49 @@ export const PointCloudUploader: React.FC<PointCloudUploaderProps> = ({
   } = useTusUpload({
     tusEndpoint,
     chunkSize,
-    onUploadSuccess: (fileIds) => {
-      if (onUploadSuccess && Object.keys(fileIds).length > 0) {
-        onUploadSuccess(Object.values(fileIds));
+    onUploadSuccess: async (fileIdsMap) => {
+      const fileIds = Object.values(fileIdsMap);
+      if (onUploadSuccess && fileIds.length > 0) {
+        onUploadSuccess(fileIds);
+      }
+
+      // Automatically create a job for each uploaded pointcloud file
+      try {
+        const createdJobIds: string[] = [];
+        const newJobFileMap: Record<string, string> = {};
+        for (const file of pointCloudFiles) {
+          const rawFileId = fileIdsMap[file.name];
+          const fileId = formatUuid(rawFileId);
+          const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
+          const safeFilename = fileId ? `${fileId}${ext}` : file.name;
+
+          const jobRes = await createJob({
+            body: {
+              name: `PointCloud Ingestion: ${file.name}`,
+              payload: {
+                task_type: 'pointcloud_upload',
+                filename: file.name,
+                safe_filename: safeFilename,
+                total_bytes: file.size,
+                file_id: fileId
+              }
+            }
+          });
+
+          if (jobRes.data?.id) {
+            createdJobIds.push(jobRes.data.id);
+            newJobFileMap[jobRes.data.id] = file.name;
+            if (onJobCreated) {
+              onJobCreated(jobRes.data.id);
+            }
+          }
+        }
+        if (createdJobIds.length > 0) {
+          setActiveJobIds(prev => Array.from(new Set([...prev, ...createdJobIds])));
+          setJobFileMap(prev => ({ ...prev, ...newJobFileMap }));
+        }
+      } catch (err) {
+        console.warn('Could not auto-create background job:', err);
       }
     },
     onUploadError,
@@ -76,6 +124,8 @@ export const PointCloudUploader: React.FC<PointCloudUploaderProps> = ({
   const handleReset = (cancel: boolean) => {
     tusResetState(cancel);
     setPointCloudFiles([]);
+    setActiveJobIds([]);
+    setJobFileMap({});
   };
 
   const handleStartUpload = (isResume: boolean) => {
@@ -90,27 +140,51 @@ export const PointCloudUploader: React.FC<PointCloudUploaderProps> = ({
     tusStartUpload(configs, isResume);
   };
 
+  const allJobIds = Array.from(
+    new Set([...(initialJobId ? [initialJobId] : []), ...activeJobIds])
+  );
+
   return (
-    <BaseUploader
-      onFilesAdded={handleFilesAdded}
-      fileGroups={[
-        {
-          label: 'PointClouds:',
-          files: pointCloudFiles,
-          onRemove: handleRemoveFile
-        }
-      ]}
-      isUploading={isUploading}
-      progress={progress}
-      fileProgress={fileProgress}
-      uploadFailed={uploadFailed}
-      onStartUpload={handleStartUpload}
-      onReset={handleReset}
-      accept=".las,.laz,.ply"
-      dropzoneText="Drag and drop your PointClouds here"
-      dropzoneSubtext="or click to browse (.las, .laz, .ply), or add a full folder"
-    />
+    <div style={{ width: '100%' }}>
+      <BaseUploader
+        onFilesAdded={handleFilesAdded}
+        fileGroups={[
+          {
+            label: 'PointClouds:',
+            files: pointCloudFiles,
+            onRemove: handleRemoveFile
+          }
+        ]}
+        isUploading={isUploading}
+        progress={progress}
+        fileProgress={fileProgress}
+        uploadFailed={uploadFailed}
+        onStartUpload={handleStartUpload}
+        onReset={handleReset}
+        accept=".las,.laz,.ply"
+        dropzoneText="Drag and drop your PointClouds here"
+        dropzoneSubtext="or click to browse (.las, .laz, .ply), or add a full folder"
+      />
+
+      {allJobIds.length > 0 && (
+        <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {allJobIds.map(id => {
+            const fileName = jobFileMap[id];
+            const title = fileName ? `Point Cloud Processing Job (${fileName})` : undefined;
+            return (
+              <JobProgress
+                key={id}
+                jobId={id}
+                onClose={() => setActiveJobIds(prev => prev.filter(jobId => jobId !== id))}
+                title={title}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 };
 
 export default PointCloudUploader;
+

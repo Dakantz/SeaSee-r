@@ -26,21 +26,6 @@ class PointCloudUploadService:
         import pathlib
         extension = pathlib.Path(payload.filename).suffix if payload.filename else ""
         new_safe_filename = f"{uuid_str}{extension}"
-
-        job_record = Job(
-            name=f"Convert {payload.filename} to EPT",
-            payload={
-                "filename": payload.filename, 
-                "safe_filename": new_safe_filename, 
-                "total_bytes": payload.total_bytes, 
-                "file_id": uuid_str
-            },
-            status="PENDING", 
-            progress=0.0
-        )
-        db.add(job_record)
-        await db.commit()
-        await db.refresh(job_record)
             
         try:
             new_file_path = FileManager.move_file(
@@ -50,20 +35,10 @@ class PointCloudUploadService:
             )
             FileManager.remove_file(f"{payload.original_file_path}.info")
         except Exception as e:
-            await db.delete(job_record)
-            await db.commit()
             raise HTTPException(status_code=500, detail="Failed to move uploaded file")
-            
-        redis_conn = Redis.from_url(settings.redis_url)
-        q = Queue("pointcloud_tasks", connection=redis_conn)
-        q.enqueue(
-            "app.services.worker.tasks.convert_to_ept", 
-            new_file_path, 
-            uuid_str, 
-            job_id=str(job_record.id), 
-            storage_type=settings.pointcloud_storage_type.value
-        )
+
         return {"status": "ok", "type": "pointcloud"}
+
 
     @staticmethod
     async def handle_terminate(payload: WebhookPayload, db: AsyncSession) -> dict:

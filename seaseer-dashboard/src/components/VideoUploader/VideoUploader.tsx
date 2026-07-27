@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
 import { BaseUploader } from '../common/BaseUploader';
-import { useTusUpload } from '../common/useTusUpload';
+import { useTusUpload, formatUuid } from '../common/useTusUpload';
 import type { TusUploadConfig } from '../common/useTusUpload';
+import { JobProgress } from '../JobProgress';
+import { createJob } from '../../client';
 
 export interface VideoUploaderProps {
   onUploadSuccess?: (fileIds: string[]) => void;
   onUploadError?: (error: Error) => void;
   onProgress?: (percentage: number) => void;
+  onJobCreated?: (jobId: string) => void;
+  jobId?: string;
   chunkSize?: number; // In bytes, default 5MB
   apiUrl?: string;
   tusEndpoint?: string;
@@ -18,13 +22,16 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
   onUploadSuccess,
   onUploadError,
   onProgress,
+  onJobCreated,
+  jobId: initialJobId,
   chunkSize = DEFAULT_CHUNK_SIZE,
   tusEndpoint = import.meta.env.VITE_TUS_URL || 'http://localhost:8080/files/'
 }) => {
   const [videoFiles, setVideoFiles] = useState<File[]>([]);
   const [metadataFiles, setMetadataFiles] = useState<File[]>([]);
-
   const [batchId, setBatchId] = useState<string>('');
+  const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
+  const [jobFileMap, setJobFileMap] = useState<Record<string, string>>({});
 
   const {
     isUploading,
@@ -37,10 +44,53 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
   } = useTusUpload({
     tusEndpoint,
     chunkSize,
-    onUploadSuccess: (fileIds) => {
-      const videoIds = videoFiles.map(v => fileIds[v.name]).filter(Boolean);
+    onUploadSuccess: async (fileIdsMap) => {
+      const videoIds = videoFiles.map(v => formatUuid(fileIdsMap[v.name])).filter(Boolean);
       if (onUploadSuccess && videoIds.length > 0) {
         onUploadSuccess(videoIds);
+      }
+
+      // Automatically create a job for each uploaded video file
+      try {
+        const createdJobIds: string[] = [];
+        const newJobFileMap: Record<string, string> = {};
+        for (const file of videoFiles) {
+          const rawFileId = fileIdsMap[file.name];
+          const fileId = formatUuid(rawFileId);
+          const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
+          const safeFilename = fileId ? `${fileId}${ext}` : file.name;
+
+          const jobRes = await createJob({
+            body: {
+              name: `Video Reconstruction (PySLAM): ${file.name}`,
+              payload: {
+                task_type: 'video_reconstruction',
+                filename: file.name,
+                safe_filename: safeFilename,
+                total_bytes: file.size,
+                file_id: fileId,
+                batch_id: batchId,
+                video_ids: videoIds,
+                video_files: videoFiles.map(v => v.name),
+                metadata_files: metadataFiles.map(m => m.name)
+              }
+            }
+          });
+
+          if (jobRes.data?.id) {
+            createdJobIds.push(jobRes.data.id);
+            newJobFileMap[jobRes.data.id] = file.name;
+            if (onJobCreated) {
+              onJobCreated(jobRes.data.id);
+            }
+          }
+        }
+        if (createdJobIds.length > 0) {
+          setActiveJobIds(prev => Array.from(new Set([...prev, ...createdJobIds])));
+          setJobFileMap(prev => ({ ...prev, ...newJobFileMap }));
+        }
+      } catch (err) {
+        console.warn('Could not auto-create background job:', err);
       }
     },
     onUploadError,
@@ -97,6 +147,8 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
     setVideoFiles([]);
     setMetadataFiles([]);
     setBatchId('');
+    setActiveJobIds([]);
+    setJobFileMap({});
   };
 
   const handleStartUpload = (isResume: boolean) => {
@@ -135,32 +187,56 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
     tusStartUpload(configs, isResume);
   };
 
+  const allJobIds = Array.from(
+    new Set([...(initialJobId ? [initialJobId] : []), ...activeJobIds])
+  );
+
   return (
-    <BaseUploader
-      onFilesAdded={handleFilesAdded}
-      fileGroups={[
-        {
-          label: 'Videos:',
-          files: videoFiles,
-          onRemove: handleRemoveVideo
-        },
-        {
-          label: 'Metadata Files:',
-          files: metadataFiles,
-          onRemove: handleRemoveMetadata,
-          showIcon: false
-        }
-      ]}
-      isUploading={isUploading}
-      progress={progress}
-      fileProgress={fileProgress}
-      uploadFailed={uploadFailed}
-      onStartUpload={handleStartUpload}
-      onReset={handleReset}
-      dropzoneText="Drag and drop your videos & metadata here"
-      dropzoneSubtext="or click to browse files, or add a full folder"
-    />
+    <div style={{ width: '100%' }}>
+      <BaseUploader
+        onFilesAdded={handleFilesAdded}
+        fileGroups={[
+          {
+            label: 'Videos:',
+            files: videoFiles,
+            onRemove: handleRemoveVideo
+          },
+          {
+            label: 'Metadata Files:',
+            files: metadataFiles,
+            onRemove: handleRemoveMetadata,
+            showIcon: false
+          }
+        ]}
+        isUploading={isUploading}
+        progress={progress}
+        fileProgress={fileProgress}
+        uploadFailed={uploadFailed}
+        onStartUpload={handleStartUpload}
+        onReset={handleReset}
+        dropzoneText="Drag and drop your videos & metadata here"
+        dropzoneSubtext="or click to browse files, or add a full folder"
+      />
+
+      {allJobIds.length > 0 && (
+        <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {allJobIds.map(id => {
+            const fileName = jobFileMap[id];
+            const title = fileName ? `Video Reconstruction Job (${fileName})` : undefined;
+            return (
+              <JobProgress
+                key={id}
+                jobId={id}
+                onClose={() => setActiveJobIds(prev => prev.filter(jobId => jobId !== id))}
+                title={title}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 };
 
 export default VideoUploader;
+

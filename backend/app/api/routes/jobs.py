@@ -3,7 +3,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from redis import Redis
+from rq import Queue
 
+from app.core.config import settings
 from app.core.database import get_db_session
 from app.models.job import Job
 from app.schemas.job import JobCreate, JobResponse
@@ -31,10 +34,21 @@ async def create_job(
     await db.commit()
     await db.refresh(job)
     
-    # In the future, enqueueing to Celery/ARQ would happen here:
-    # await redis.enqueue_job("run_pyslam", job.id)
+    # Auto-enqueue created job to Redis Queue (rq) for worker execution
+    try:
+        redis_conn = Redis.from_url(settings.redis_url)
+        q = Queue("pointcloud_tasks", connection=redis_conn)
+        q.enqueue(
+            "app.services.worker.tasks.run_background_job",
+            str(job.id),
+            job_id=str(job.id)
+        )
+    except Exception as e:
+        print(f"Warning: Could not enqueue job {job.id} to Redis Queue: {e}")
+
     
     return job
+
 
 @router.get("", response_model=List[JobResponse])
 async def list_jobs(
@@ -59,3 +73,49 @@ async def get_job(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
     return job
+
+
+@router.delete("/pending", status_code=200)
+async def delete_pending_jobs(
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Delete all jobs currently in PENDING status.
+    """
+    result = await db.execute(select(Job).where(Job.status == "PENDING"))
+    pending_jobs = result.scalars().all()
+    deleted_count = len(pending_jobs)
+
+    for job in pending_jobs:
+        await db.delete(job)
+    await db.commit()
+
+    # Clear pending jobs from Redis Queues
+    try:
+        redis_conn = Redis.from_url(settings.redis_url)
+        for queue_name in ["pointcloud_tasks", "job_tasks", "default"]:
+            q = Queue(queue_name, connection=redis_conn)
+            q.empty()
+    except Exception as e:
+        print(f"Warning: Could not clear Redis queues: {e}")
+
+    return {"message": f"Deleted {deleted_count} pending job(s)", "deleted_count": deleted_count}
+
+
+@router.delete("/{job_id}", status_code=204)
+async def delete_job(
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Delete a specific job by ID.
+    """
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    await db.delete(job)
+    await db.commit()
+    return None
+
