@@ -18,6 +18,7 @@ interface RoverStore {
     rovers: Record<string, Rover>;
 
     addRover: (rover: Rover) => void;
+    removeRover: (id: string) => void;
 
     setPosition: (
         id: string,
@@ -36,20 +37,19 @@ export const useRoverStore = create<RoverStore>((set) => ({
     rovers: {},
 
     addRover: (rover) =>
-        set((state) => {
-            if (state.rovers[rover.id]) {
-                console.warn(
-                    `Rover with id "${rover.id}" already exists`
-                );
-                return state;
-            }
+        set((state) => ({
+            rovers: {
+                ...state.rovers,
+                [rover.id]: state.rovers[rover.id]
+                    ? { ...state.rovers[rover.id], ...rover }
+                    : rover,
+            },
+        })),
 
-            return {
-                rovers: {
-                    ...state.rovers,
-                    [rover.id]: rover,
-                },
-            };
+    removeRover: (id) =>
+        set((state) => {
+            const { [id]: _, ...rest } = state.rovers;
+            return { rovers: rest };
         }),
 
     setPosition: (id, position) =>

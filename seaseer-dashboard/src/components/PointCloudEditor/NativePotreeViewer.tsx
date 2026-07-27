@@ -4,6 +4,8 @@ import { usePotreeViewer } from './hooks/usePotreeViewer';
 import { useLoadPLY } from './hooks/useLoadPLY';
 import { useLoadEPT } from './hooks/useLoadEPT';
 import { useTransformControls } from './hooks/useTransformControls';
+import { useYellowSphere } from './hooks/useYellowSphere';
+import { usePotreeRovRenderer } from './hooks/usePotreeRovRenderer';
 
 interface NativePotreeViewerProps {
     pointCloudIds: string[];
@@ -26,6 +28,12 @@ const ViewerInner: React.FC<NativePotreeViewerProps> = ({ pointCloudIds, gizmoMo
 
     // Initialize TransformControls (Gizmo)
     useTransformControls(gizmoMode, editingPointcloudId);
+
+    // Add yellow sphere at coordinates (0, 0, 0)
+    useYellowSphere([0, 0, 0], 1.0);
+
+    // Add ROV 3D model & Trajectory Path into Potree scene
+    usePotreeRovRenderer();
 
     return (
         <>

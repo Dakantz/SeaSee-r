@@ -39,6 +39,10 @@ export const usePotreeViewer = (containerRef: RefObject<HTMLDivElement | null>) 
         viewer.setBackground("skybox");
         viewer.setControls(viewer.earthControls);
 
+        if (viewer.renderer) {
+            viewer.renderer.outputEncoding = (window as any).THREE?.LinearEncoding ?? 3000;
+        }
+
         // Update Context
         setViewer(viewer);
         setScene(viewer.scene);

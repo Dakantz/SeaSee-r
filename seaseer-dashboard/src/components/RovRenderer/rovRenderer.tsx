@@ -53,6 +53,9 @@ export function RovRenderer({
     const addRover = useRoverStore(
         (state) => state.addRover
     );
+    const removeRover = useRoverStore(
+        (state) => state.removeRover
+    );
 
     const defaultPosition = useMemo(
         () => toVector3(positionOffset),
@@ -75,8 +78,13 @@ export function RovRenderer({
             rotationUrl,
             positionUrl,
         });
+
+        return () => {
+            removeRover(roverId);
+        };
     }, [
         addRover,
+        removeRover,
         defaultOrientation,
         defaultPosition,
         name,

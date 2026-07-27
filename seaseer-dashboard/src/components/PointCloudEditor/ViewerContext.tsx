@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, type ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { useTimelineStore } from '../../store/timelineStore';
 
 export type MeasurementType = 'distance' | 'area' | 'volume' | 'none';
 
@@ -7,6 +8,12 @@ interface ViewerContextState {
     scene: any | null; // Potree.Scene instance
     pointCloud: any | null; // THREE.Points (PLY) or Potree.PointCloud (EPT)
     
+    // Timeline animation state & actions (similar to testRover.tsx)
+    currentTime: number;
+    isPlaying: boolean;
+    togglePlay: () => void;
+    reset: () => void;
+
     // Setters for state
     setViewer: (viewer: any) => void;
     setScene: (scene: any) => void;
@@ -38,6 +45,38 @@ export const ViewerProvider: React.FC<ViewerProviderProps> = ({ children }) => {
     const [scene, setScene] = useState<any | null>(null);
     const [pointCloud, setPointCloud] = useState<any | null>(null);
 
+    // Timeline store integration (similar to testRover.tsx)
+    const currentTime = useTimelineStore((state) => state.currentTime);
+    const isPlaying = useTimelineStore((state) => state.isPlaying);
+    const togglePlay = useTimelineStore((state) => state.togglePlay);
+    const reset = useTimelineStore((state) => state.reset);
+
+    // Animation frame loop driven by timelineStore (similar to testRover.tsx)
+    useEffect(() => {
+        if (!isPlaying) {
+            return;
+        }
+
+        let frameId: number;
+        let previousTime = performance.now();
+
+        const update = (time: number) => {
+            const delta = (time - previousTime) / 1000;
+            previousTime = time;
+
+            const timeline = useTimelineStore.getState();
+            timeline.setCurrentTime(timeline.currentTime + delta);
+
+            frameId = requestAnimationFrame(update);
+        };
+
+        frameId = requestAnimationFrame(update);
+
+        return () => {
+            cancelAnimationFrame(frameId);
+        };
+    }, [isPlaying]);
+
     // --- Tool API Implementations (Placeholders) ---
 
     const setTranslation = (x: number, y: number, z: number) => {
@@ -46,7 +85,6 @@ export const ViewerProvider: React.FC<ViewerProviderProps> = ({ children }) => {
             return;
         }
         console.log(`Setting translation to X:${x}, Y:${y}, Z:${z}`);
-        // If it's a THREE.Points (PLY) or Potree.PointCloud, they both inherit from Object3D
         pointCloud.position.set(x, y, z);
     };
 
@@ -56,8 +94,6 @@ export const ViewerProvider: React.FC<ViewerProviderProps> = ({ children }) => {
             return;
         }
         console.log(`Setting rotation to X:${x}, Y:${y}, Z:${z}`);
-        // Conversion from degrees to radians might be needed based on UI input, 
-        // assuming radians here for Three.js native rotation.
         pointCloud.rotation.set(x, y, z);
     };
 
@@ -67,8 +103,6 @@ export const ViewerProvider: React.FC<ViewerProviderProps> = ({ children }) => {
             return;
         }
         console.log(`Enabling measurement tool: ${type}`);
-        // Example integration for Potree native tools:
-        // if (type === 'distance') viewer.scene.addMeasurement(new Potree.Measure());
     };
 
     const enableClippingTool = (enabled: boolean) => {
@@ -77,18 +111,16 @@ export const ViewerProvider: React.FC<ViewerProviderProps> = ({ children }) => {
             return;
         }
         console.log(`Clipping tool enabled: ${enabled}`);
-        // Example integration:
-        // if (enabled) {
-        //     viewer.setTool(new Potree.VolumeTool(viewer));
-        // } else {
-        //     viewer.setTool(null);
-        // }
     };
 
     const value: ViewerContextState = {
         viewer,
         scene,
         pointCloud,
+        currentTime,
+        isPlaying,
+        togglePlay,
+        reset,
         setViewer,
         setScene,
         setPointCloud,
