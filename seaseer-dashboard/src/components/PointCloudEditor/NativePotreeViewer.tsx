@@ -1,5 +1,4 @@
 import React, { useRef } from 'react';
-import { ViewerProvider } from './ViewerContext';
 import { usePotreeViewer } from './hooks/usePotreeViewer';
 import { useLoadPLY } from './hooks/useLoadPLY';
 import { useLoadEPT } from './hooks/useLoadEPT';
@@ -20,11 +19,12 @@ const PointCloudLoader: React.FC<{ identifier: string }> = ({ identifier }) => {
     return null;
 };
 
-const ViewerInner: React.FC<NativePotreeViewerProps> = ({ pointCloudIds, gizmoMode = null, editingPointcloudId = null }) => {
+const NativePotreeViewer: React.FC<NativePotreeViewerProps> = ({ pointCloudIds, gizmoMode = null, editingPointcloudId = null }) => {
     const containerRef = useRef<HTMLDivElement>(null);
+    const renderAreaRef = useRef<HTMLDivElement>(null);
     
     // Initialize Potree
-    usePotreeViewer(containerRef);
+    usePotreeViewer(containerRef, renderAreaRef);
 
     // Initialize TransformControls (Gizmo)
     useTransformControls(gizmoMode, editingPointcloudId);
@@ -36,20 +36,13 @@ const ViewerInner: React.FC<NativePotreeViewerProps> = ({ pointCloudIds, gizmoMo
     usePotreeRovRenderer();
 
     return (
-        <>
-            <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 0 }}></div>
+        <div ref={containerRef} className="potree_container" style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 0 }}>
+            <div id="potree_render_area" ref={renderAreaRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}></div>
+            <div id="potree_sidebar_container"></div>
             {pointCloudIds.map((identifier, idx) => (
                 <PointCloudLoader key={`${identifier}-${idx}`} identifier={identifier} />
             ))}
-        </>
-    );
-};
-
-const NativePotreeViewer: React.FC<NativePotreeViewerProps> = (props) => {
-    return (
-        <ViewerProvider>
-            <ViewerInner {...props} />
-        </ViewerProvider>
+        </div>
     );
 };
 

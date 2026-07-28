@@ -1,7 +1,5 @@
-import * as THREE from 'three';
 import {
     usePotreeTransformRenderer,
-    type UsePotreeTransformRendererProps,
 } from './usePotreeTransformRenderer';
 import {
     usePotreeTrajectoryRenderer,

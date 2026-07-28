@@ -5,8 +5,9 @@ import { usePotreeScripts } from '../../hooks/usePotreeScripts';
 import type {PointCloudMetadataResponse} from "../../client";
 import PointCloudSidebar from './PointCloudSidebar';
 import { useTimelineStore } from '../../store/timelineStore';
+import { ViewerProvider } from './ViewerContext';
 
-const PointCloudEditorPage: React.FC = () => {
+const PointCloudEditorPageContent: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
@@ -154,240 +155,252 @@ const PointCloudEditorPage: React.FC = () => {
                     </div>
                 )}
 
-                {/* Custom React Toolbar floating over the 3D Canvas */}
+                {/* Custom React Toolbar floating on top right over 3D Canvas */}
                 {selectedIds.length > 0 && (
-                    <>
+                    <div style={{
+                        position: 'absolute',
+                        top: 20,
+                        right: 20,
+                        zIndex: 10,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        alignItems: 'flex-end',
+                        pointerEvents: 'none'
+                    }}>
+                        {/* Gizmo Toolbar */}
+                        {editingPointcloudId && (
+                            <div style={{
+                                pointerEvents: 'auto',
+                                background: 'rgba(20, 20, 25, 0.85)',
+                                padding: '15px',
+                                borderRadius: '8px',
+                                border: '1px solid #333',
+                                color: 'white',
+                                fontFamily: 'sans-serif',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '10px',
+                                boxShadow: '0 4px 15px rgba(0,0,0,0.5)',
+                                backdropFilter: 'blur(10px)',
+                                minWidth: '240px'
+                            }}>
+                                <h3 style={{ margin: '0 0 5px 0', fontSize: '16px', fontWeight: '500' }}>Gizmo Controls</h3>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                    <label style={{ fontSize: '12px', color: '#ccc' }}>Transform Mode:</label>
+                                    <div style={{ display: 'flex', gap: '4px' }}>
+                                        <button onClick={() => setGizmoMode('translate')} style={{ flex: 1, padding: '6px', background: gizmoMode === 'translate' ? '#3b82f6' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', transition: 'background 0.2s' }}>Move</button>
+                                        <button onClick={() => setGizmoMode('rotate')} style={{ flex: 1, padding: '6px', background: gizmoMode === 'rotate' ? '#3b82f6' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', transition: 'background 0.2s' }}>Rotate</button>
+                                        <button onClick={() => setGizmoMode('scale')} style={{ flex: 1, padding: '6px', background: gizmoMode === 'scale' ? '#3b82f6' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', transition: 'background 0.2s' }}>Scale</button>
+                                        <button onClick={() => setGizmoMode(null)} style={{ flex: 1, padding: '6px', background: gizmoMode === null ? '#84312a' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', transition: 'background 0.2s' }}>Off</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Tools (ViewerContext) Panel */}
                         <div style={{
-                    position: 'absolute',
-                    top: 20,
-                    left: 20,
-                    zIndex: 10,
-                    background: 'rgba(20, 20, 25, 0.85)',
-                    padding: '15px',
-                    borderRadius: '8px',
-                    border: '1px solid #333',
-                    color: 'white',
-                    fontFamily: 'sans-serif',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                    boxShadow: '0 4px 15px rgba(0,0,0,0.5)',
-                    backdropFilter: 'blur(10px)',
-                    minWidth: '220px'
-                }}>
-                <h3 style={{ margin: '0 0 5px 0', fontSize: '16px', fontWeight: '500' }}>Tools</h3>
-
-
-                {/* Point Budget Slider */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>
-                    <label style={{ fontSize: '12px', color: '#ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span>Point Budget:</span>
-                        <span style={{ fontWeight: 'bold', color: '#4caf50' }}>
-                            {pointBudget >= 1000000 ? `${(pointBudget / 1000000).toFixed(1)}M` : `${(pointBudget / 1000).toFixed(0)}k`} pts
-                        </span>
-                    </label>
-                    <input 
-                        type="range" 
-                        min={100000} 
-                        max={10000000} 
-                        step={100000} 
-                        value={pointBudget} 
-                        onChange={handlePointBudgetChange} 
-                        style={{ width: '100%', cursor: 'pointer', accentColor: '#2a5b84' }}
-                    />
-                </div>
-
-                {/* Point Size Slider */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>
-                    <label style={{ fontSize: '12px', color: '#ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span>Point Size:</span>
-                        <span style={{ fontWeight: 'bold', color: '#64b5f6' }}>
-                            {pointSize.toFixed(1)}
-                        </span>
-                    </label>
-                    <input 
-                        type="range" 
-                        min={0.1} 
-                        max={5.0} 
-                        step={0.1} 
-                        value={pointSize} 
-                        onChange={handlePointSizeChange} 
-                        style={{ width: '100%', cursor: 'pointer', accentColor: '#2a5b84' }}
-                    />
-                </div>
-                
-                {/* Navigation Mode Dropdown */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>
-                    <label style={{ fontSize: '12px', color: '#ccc' }}>
-                        Navigation Mode:
-                    </label>
-                    <select 
-                        value={navigationMode}
-                        onChange={handleNavigationModeChange}
-                        style={{
-                            background: '#333',
+                            pointerEvents: 'auto',
+                            background: 'rgba(20, 20, 25, 0.85)',
+                            padding: '15px',
+                            borderRadius: '8px',
+                            border: '1px solid #333',
                             color: 'white',
-                            border: '1px solid #444',
-                            padding: '6px',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '13px'
-                        }}
-                    >
-                        <option value="Orbit">Orbit</option>
-                        <option value="FirstPerson">First Person (Fly)</option>
-                        <option value="Earth">Earth</option>
-                    </select>
-                </div>
+                            fontFamily: 'sans-serif',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '10px',
+                            boxShadow: '0 4px 15px rgba(0,0,0,0.5)',
+                            backdropFilter: 'blur(10px)',
+                            minWidth: '240px'
+                        }}>
+                            <h3 style={{ margin: '0 0 5px 0', fontSize: '16px', fontWeight: '500' }}>Tools</h3>
 
-                {/* Timeline ROV Animation Controls */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px', paddingTop: '5px', borderTop: '1px solid #333' }}>
-                    <label style={{ fontSize: '12px', color: '#ccc', display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Timeline:</span>
-                        <span style={{ color: '#4caf50', fontWeight: 'bold' }}>{currentTime.toFixed(2)}s</span>
-                    </label>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                        <button
-                            onClick={togglePlay}
-                            style={{
-                                flex: 1,
-                                background: isPlaying ? '#e53935' : '#2e7d32',
-                                color: 'white',
-                                border: 'none',
-                                padding: '6px',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '13px',
-                                fontWeight: 500,
-                            }}
-                        >
-                            {isPlaying ? 'Pause' : 'Play'}
-                        </button>
-                        <button
-                            onClick={reset}
-                            style={{
-                                flex: 1,
-                                background: '#555',
-                                color: 'white',
-                                border: 'none',
-                                padding: '6px',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '13px',
-                            }}
-                        >
-                            Reset
-                        </button>
-                    </div>
-                </div>
-                
-                <button 
-                    onClick={() => {
-                        const viewer = (window as any).viewer;
-                        if (viewer) {
-                            viewer.measuringTool.startInsertion({
-                                showDistances: true,
-                                showAngles: false,
-                                showCoordinates: false,
-                                showArea: false,
-                                closed: false,
-                                maxMarkers: 2,
-                                name: 'Distance'
-                            });
-                        }
-                    }}
-                    style={{
-                        background: '#2a5b84',
-                        color: 'white',
-                        border: 'none',
-                        padding: '8px 12px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '13px',
-                        transition: 'background 0.2s'
-                    }}
-                    onMouseOver={(e) => e.currentTarget.style.background = '#3672a3'}
-                    onMouseOut={(e) => e.currentTarget.style.background = '#2a5b84'}
-                >
-                    Measure Distance
-                </button>
-                
-                <button 
-                    onClick={() => {
-                        const viewer = (window as any).viewer;
-                        if (viewer) {
-                            if (viewer.scene && typeof viewer.scene.removeAllMeasurements === 'function') {
-                                viewer.scene.removeAllMeasurements();
-                            } else if (viewer.scene && viewer.scene.measurements) {
-                                const measurements = [...viewer.scene.measurements];
-                                measurements.forEach((m: any) => viewer.scene.removeMeasurement(m));
-                            }
+                            {/* Point Budget Slider */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>
+                                <label style={{ fontSize: '12px', color: '#ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span>Point Budget:</span>
+                                    <span style={{ fontWeight: 'bold', color: '#4caf50' }}>
+                                        {pointBudget >= 1000000 ? `${(pointBudget / 1000000).toFixed(1)}M` : `${(pointBudget / 1000).toFixed(0)}k`} pts
+                                    </span>
+                                </label>
+                                <input 
+                                    type="range" 
+                                    min={100000} 
+                                    max={10000000} 
+                                    step={100000} 
+                                    value={pointBudget} 
+                                    onChange={handlePointBudgetChange} 
+                                    style={{ width: '100%', cursor: 'pointer', accentColor: '#2a5b84' }}
+                                />
+                            </div>
+
+                            {/* Point Size Slider */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>
+                                <label style={{ fontSize: '12px', color: '#ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span>Point Size:</span>
+                                    <span style={{ fontWeight: 'bold', color: '#64b5f6' }}>
+                                        {pointSize.toFixed(1)}
+                                    </span>
+                                </label>
+                                <input 
+                                    type="range" 
+                                    min={0.1} 
+                                    max={5.0} 
+                                    step={0.1} 
+                                    value={pointSize} 
+                                    onChange={handlePointSizeChange} 
+                                    style={{ width: '100%', cursor: 'pointer', accentColor: '#2a5b84' }}
+                                />
+                            </div>
                             
-                            // Fallback for visual clearing
-                            if (viewer.measuringTool && viewer.measuringTool.scene) {
-                                if (typeof viewer.measuringTool.scene.clear === 'function') {
-                                    viewer.measuringTool.scene.clear();
-                                } else {
-                                    while (viewer.measuringTool.scene.children.length > 0) {
-                                        viewer.measuringTool.scene.remove(viewer.measuringTool.scene.children[0]);
+                            {/* Navigation Mode Dropdown */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>
+                                <label style={{ fontSize: '12px', color: '#ccc' }}>
+                                    Navigation Mode:
+                                </label>
+                                <select 
+                                    value={navigationMode}
+                                    onChange={handleNavigationModeChange}
+                                    style={{
+                                        background: '#333',
+                                        color: 'white',
+                                        border: '1px solid #444',
+                                        padding: '6px',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        fontSize: '13px'
+                                    }}
+                                >
+                                    <option value="Orbit">Orbit</option>
+                                    <option value="FirstPerson">First Person (Fly)</option>
+                                    <option value="Earth">Earth</option>
+                                </select>
+                            </div>
+
+                            {/* Timeline ROV Animation Controls */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px', paddingTop: '5px', borderTop: '1px solid #333' }}>
+                                <label style={{ fontSize: '12px', color: '#ccc', display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>Timeline:</span>
+                                    <span style={{ color: '#4caf50', fontWeight: 'bold' }}>{currentTime.toFixed(2)}s</span>
+                                </label>
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                    <button
+                                        onClick={togglePlay}
+                                        style={{
+                                            flex: 1,
+                                            background: isPlaying ? '#e53935' : '#2e7d32',
+                                            color: 'white',
+                                            border: 'none',
+                                            padding: '6px',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer',
+                                            fontSize: '13px',
+                                            fontWeight: 500,
+                                        }}
+                                    >
+                                        {isPlaying ? 'Pause' : 'Play'}
+                                    </button>
+                                    <button
+                                        onClick={reset}
+                                        style={{
+                                            flex: 1,
+                                            background: '#555',
+                                            color: 'white',
+                                            border: 'none',
+                                            padding: '6px',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer',
+                                            fontSize: '13px',
+                                        }}
+                                    >
+                                        Reset
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <button 
+                                onClick={() => {
+                                    const viewer = (window as any).viewer;
+                                    if (viewer) {
+                                        viewer.measuringTool.startInsertion({
+                                            showDistances: true,
+                                            showAngles: false,
+                                            showCoordinates: false,
+                                            showArea: false,
+                                            closed: false,
+                                            maxMarkers: 2,
+                                            name: 'Distance'
+                                        });
                                     }
-                                }
-                            }
-                        }
-                    }}
-                    style={{
-                        background: '#84312a',
-                        color: 'white',
-                        border: 'none',
-                        padding: '8px 12px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '13px',
-                        transition: 'background 0.2s'
-                    }}
-                    onMouseOver={(e) => e.currentTarget.style.background = '#a33b32'}
-                    onMouseOut={(e) => e.currentTarget.style.background = '#84312a'}
-                >
-                    Clear Measurements
-                </button>
-            </div>
-            
-            {/* New Gizmo Toolbar floating on top right */}
-            {editingPointcloudId && (
-                <div style={{
-                    position: 'absolute',
-                    top: 20,
-                    right: 20,
-                    zIndex: 10,
-                    background: 'rgba(20, 20, 25, 0.85)',
-                    padding: '15px',
-                    borderRadius: '8px',
-                    border: '1px solid #333',
-                    color: 'white',
-                    fontFamily: 'sans-serif',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                    boxShadow: '0 4px 15px rgba(0,0,0,0.5)',
-                    backdropFilter: 'blur(10px)',
-                    minWidth: '240px'
-                }}>
-                    <h3 style={{ margin: '0 0 5px 0', fontSize: '16px', fontWeight: '500' }}>Gizmo Controls</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                        <label style={{ fontSize: '12px', color: '#ccc' }}>Transform Mode:</label>
-                        <div style={{ display: 'flex', gap: '4px' }}>
-                            <button onClick={() => setGizmoMode('translate')} style={{ flex: 1, padding: '6px', background: gizmoMode === 'translate' ? '#3b82f6' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', transition: 'background 0.2s' }}>Move</button>
-                            <button onClick={() => setGizmoMode('rotate')} style={{ flex: 1, padding: '6px', background: gizmoMode === 'rotate' ? '#3b82f6' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', transition: 'background 0.2s' }}>Rotate</button>
-                            <button onClick={() => setGizmoMode('scale')} style={{ flex: 1, padding: '6px', background: gizmoMode === 'scale' ? '#3b82f6' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', transition: 'background 0.2s' }}>Scale</button>
-                            <button onClick={() => setGizmoMode(null)} style={{ flex: 1, padding: '6px', background: gizmoMode === null ? '#84312a' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', transition: 'background 0.2s' }}>Off</button>
+                                }}
+                                style={{
+                                    background: '#2a5b84',
+                                    color: 'white',
+                                    border: 'none',
+                                    padding: '8px 12px',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '13px',
+                                    transition: 'background 0.2s'
+                                }}
+                                onMouseOver={(e) => e.currentTarget.style.background = '#3672a3'}
+                                onMouseOut={(e) => e.currentTarget.style.background = '#2a5b84'}
+                            >
+                                Measure Distance
+                            </button>
+                            
+                            <button 
+                                onClick={() => {
+                                    const viewer = (window as any).viewer;
+                                    if (viewer) {
+                                        if (viewer.scene && typeof viewer.scene.removeAllMeasurements === 'function') {
+                                            viewer.scene.removeAllMeasurements();
+                                        } else if (viewer.scene && viewer.scene.measurements) {
+                                            const measurements = [...viewer.scene.measurements];
+                                            measurements.forEach((m: any) => viewer.scene.removeMeasurement(m));
+                                        }
+                                        
+                                        // Fallback for visual clearing
+                                        if (viewer.measuringTool && viewer.measuringTool.scene) {
+                                            if (typeof viewer.measuringTool.scene.clear === 'function') {
+                                                viewer.measuringTool.scene.clear();
+                                            } else {
+                                                while (viewer.measuringTool.scene.children.length > 0) {
+                                                    viewer.measuringTool.scene.remove(viewer.measuringTool.scene.children[0]);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }}
+                                style={{
+                                    background: '#84312a',
+                                    color: 'white',
+                                    border: 'none',
+                                    padding: '8px 12px',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '13px',
+                                    transition: 'background 0.2s'
+                                }}
+                                onMouseOver={(e) => e.currentTarget.style.background = '#a33b32'}
+                                onMouseOut={(e) => e.currentTarget.style.background = '#84312a'}
+                            >
+                                Clear Measurements
+                            </button>
                         </div>
                     </div>
-                </div>
-            )}
-            </>
-            )}
+                )}
             </div>
         </div>
+    );
+};
+
+const PointCloudEditorPage: React.FC = () => {
+    return (
+        <ViewerProvider>
+            <PointCloudEditorPageContent />
+        </ViewerProvider>
     );
 };
 

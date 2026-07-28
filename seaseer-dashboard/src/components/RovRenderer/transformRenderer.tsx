@@ -1,14 +1,12 @@
 import {
     useEffect,
     useMemo,
-    useRef,
 } from "react";
 
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 
 import { useRoverStore } from "../../store/roverStore";
-import { useTimelineStore } from "../../store/timelineStore";
 
 import {
     TelemetryAttitudeReader,

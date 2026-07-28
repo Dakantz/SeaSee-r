@@ -1,7 +1,10 @@
 import { useEffect, useState, useRef, type RefObject } from 'react';
 import { useViewerContext } from '../ViewerContext';
 
-export const usePotreeViewer = (containerRef: RefObject<HTMLDivElement | null>) => {
+export const usePotreeViewer = (
+    containerRef: RefObject<HTMLDivElement | null>,
+    renderAreaRef?: RefObject<HTMLDivElement | null>
+) => {
     const { setViewer, setScene } = useViewerContext();
     const [potreeReady, setPotreeReady] = useState<boolean>(false);
     const viewerInitializedRef = useRef<boolean>(false);
@@ -25,10 +28,11 @@ export const usePotreeViewer = (containerRef: RefObject<HTMLDivElement | null>) 
 
     // 2. Initialize Viewer exactly once
     useEffect(() => {
-        if (!containerRef.current || !potreeReady || viewerInitializedRef.current) return;
+        const targetEl = renderAreaRef?.current || containerRef.current;
+        if (!targetEl || !potreeReady || viewerInitializedRef.current) return;
 
         viewerInitializedRef.current = true;
-        const viewer = new (window as any).Potree.Viewer(containerRef.current);
+        const viewer = new (window as any).Potree.Viewer(targetEl);
         
         // Expose to window for debugging and Potree internals
         (window as any).viewer = viewer;
@@ -41,6 +45,17 @@ export const usePotreeViewer = (containerRef: RefObject<HTMLDivElement | null>) 
 
         if (viewer.renderer) {
             viewer.renderer.outputEncoding = (window as any).THREE?.LinearEncoding ?? 3000;
+        }
+
+        // Load Potree built-in GUI controls panel if available
+        if (typeof viewer.loadGUI === 'function') {
+            viewer.loadGUI(() => {
+                viewer.setLanguage('en');
+                if ((window as any).$) {
+                    (window as any).$("#menu_tools")?.next()?.show();
+                    (window as any).$("#menu_clipping")?.next()?.show();
+                }
+            });
         }
 
         // Update Context
@@ -64,7 +79,7 @@ export const usePotreeViewer = (containerRef: RefObject<HTMLDivElement | null>) 
             setViewer(null);
             setScene(null);
         };
-    }, [potreeReady, containerRef, setViewer, setScene]);
+    }, [potreeReady, containerRef, renderAreaRef, setViewer, setScene]);
 
     return { potreeReady, isInitialized: viewerInitializedRef.current };
 };
