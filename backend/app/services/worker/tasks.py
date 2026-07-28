@@ -16,6 +16,8 @@ from app.models.pointcloud import PointCloud, PointCloudCameraRoute
 from app.services.pointcloud.entwine import build_ept
 from app.services.pointcloud.pdal import (
     get_pointcloud_stats,
+    get_pointcloud_srs_and_stats,
+    build_ept_pdal_docker,
     format_libpq_connection_string,
     ingest_pgpointcloud
 )
@@ -75,8 +77,10 @@ async def _run_background_job_async(job_id_str: str):
         return await _process_pointcloud_upload_async(job_id_str, payload)
     elif task_type in ("video_upload", "video_reconstruction"):
         return await _process_video_upload_async(job_id_str, payload)
-    elif task_type in ("opensfm_ingest"):
+    elif task_type in ("opensfm_ingest", "opensfm_append"):
         return await _process_opensfm_job_async(job_id_str, payload)
+    elif task_type in ("emodnet_ingest", "emodnet_append"):
+        return await _process_emodnet_job_async(job_id_str, payload)
 
     # Default fallback handler
     return await _process_default_job_async(job_id_str, name)
@@ -128,7 +132,8 @@ async def _process_video_upload_async(job_id_str: str, payload: dict):
 async def _process_opensfm_job_async(job_id_str: str, payload: dict):
     """Processes OpenSfM ingestion task dispatched via Job ID."""
     folder_path = payload.get("folder_path")
-    file_id = payload.get("file_id") or job_id_str
+    is_append = payload.get("is_append", False) or (payload.get("task_type") == "opensfm_append")
+    file_id = (payload.get("existing_id") or payload.get("file_id")) if is_append else (payload.get("file_id") or job_id_str)
     storage_type = payload.get("storage_type", settings.pointcloud_storage_type.value)
     fused_ply_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.ply") if folder_path else payload.get("file_path")
 
@@ -137,7 +142,8 @@ async def _process_opensfm_job_async(job_id_str: str, payload: dict):
         file_id=file_id,
         job_id=job_id_str,
         storage_type=storage_type,
-        folder_path=folder_path
+        folder_path=folder_path,
+        is_append=is_append
     )
 
 
@@ -158,13 +164,14 @@ async def _ingest_pointcloud_pipeline_async(
     file_id: str,
     job_id: str = None,
     storage_type: str = None,
-    mark_completed: bool = True
+    mark_completed: bool = True,
+    is_append: bool = False
 ):
     """
     Core pipeline to process point cloud file:
     1. Converts point cloud to EPT format using Entwine with progress tracking.
     2. If database storage is enabled, extracts PDAL stats & ingests points into pgPointcloud table.
-    3. Writes metadata record into pointclouds table.
+    3. Writes or updates metadata record in pointclouds table.
     """
     if job_id:
         await _update_job_status(job_id, "RUNNING", 0.0)
@@ -198,9 +205,9 @@ async def _ingest_pointcloud_pipeline_async(
 
         current_storage_type = storage_type or settings.pointcloud_storage_type.value
 
-        # 2. Database Ingestion via PDAL & Metadata insertion if storage_type == 'database'
+        # 2. Database Ingestion via PDAL & Metadata insertion/update if storage_type == 'database'
         if current_storage_type == StorageType.database.value:
-            print(f"Ingesting pointcloud {file_id} to database...")
+            print(f"Ingesting pointcloud {file_id} (is_append={is_append}) to database...")
             
             # Extract bbox and point count via PDAL
             bbox, number_of_points = await get_pointcloud_stats(file_path)
@@ -209,13 +216,14 @@ async def _ingest_pointcloud_pipeline_async(
             table_uuid = file_id.replace("-", "")
             dynamic_table_name = f"pc_{table_uuid}_lod0"
 
-            # Execute PDAL pgPointcloud ingestion
+            # Execute PDAL pgPointcloud ingestion (overwrite=False if appending)
             await ingest_pgpointcloud(
                 file_path=file_path,
                 connection_str=connection_str,
                 table_name=dynamic_table_name,
                 capacity=400,
-                srid=4326
+                srid=4326,
+                overwrite=not is_append
             )
 
             # Query PCID from database
@@ -251,23 +259,45 @@ async def _ingest_pointcloud_pipeline_async(
                         orig_filename = job_record.payload.get("filename", orig_filename)
                         safe_filename = job_record.payload.get("safe_filename", safe_filename)
 
-                # Insert PointCloud metadata record
-                metadata_record = PointCloud(
-                    id=uuid.UUID(file_id),
-                    job_id=uuid.UUID(job_id) if job_id else None,
-                    orig_filename=orig_filename,
-                    safe_filename=safe_filename,
-                    number_of_points=number_of_points,
-                    min_x=bbox["min_x"],
-                    min_y=bbox["min_y"],
-                    min_z=bbox["min_z"],
-                    max_x=bbox["max_x"],
-                    max_y=bbox["max_y"],
-                    max_z=bbox["max_z"],
-                    pcid=pcid
-                )
-                session.add(metadata_record)
-                await session.commit()
+                target_uuid = uuid.UUID(file_id)
+                stmt_existing = select(PointCloud).where(PointCloud.id == target_uuid)
+                res_existing = await session.execute(stmt_existing)
+                existing_record = res_existing.scalar_one_or_none()
+
+                if is_append and existing_record:
+                    # Update existing PointCloud metadata record with accumulated points and expanded bbox
+                    existing_record.number_of_points = (existing_record.number_of_points or 0) + number_of_points
+                    if bbox.get("min_x") is not None:
+                        existing_record.min_x = min(existing_record.min_x, bbox["min_x"]) if existing_record.min_x is not None else bbox["min_x"]
+                    if bbox.get("max_x") is not None:
+                        existing_record.max_x = max(existing_record.max_x, bbox["max_x"]) if existing_record.max_x is not None else bbox["max_x"]
+                    if bbox.get("min_y") is not None:
+                        existing_record.min_y = min(existing_record.min_y, bbox["min_y"]) if existing_record.min_y is not None else bbox["min_y"]
+                    if bbox.get("max_y") is not None:
+                        existing_record.max_y = max(existing_record.max_y, bbox["max_y"]) if existing_record.max_y is not None else bbox["max_y"]
+                    if bbox.get("min_z") is not None:
+                        existing_record.min_z = min(existing_record.min_z, bbox["min_z"]) if existing_record.min_z is not None else bbox["min_z"]
+                    if bbox.get("max_z") is not None:
+                        existing_record.max_z = max(existing_record.max_z, bbox["max_z"]) if existing_record.max_z is not None else bbox["max_z"]
+                    await session.commit()
+                else:
+                    # Insert new PointCloud metadata record
+                    metadata_record = PointCloud(
+                        id=target_uuid,
+                        job_id=uuid.UUID(job_id) if job_id else None,
+                        orig_filename=orig_filename,
+                        safe_filename=safe_filename,
+                        number_of_points=number_of_points,
+                        min_x=bbox.get("min_x"),
+                        min_y=bbox.get("min_y"),
+                        min_z=bbox.get("min_z"),
+                        max_x=bbox.get("max_x"),
+                        max_y=bbox.get("max_y"),
+                        max_z=bbox.get("max_z"),
+                        pcid=pcid
+                    )
+                    session.add(metadata_record)
+                    await session.commit()
             print(f"Successfully ingested pointcloud {file_id} metadata and data to database.")
 
         if job_id and mark_completed:
@@ -305,12 +335,21 @@ def process_opensfm(file_path: str, file_id: str, storage_type: str = None, fold
     return asyncio.run(_process_opensfm_async(file_path, file_id, job_id, storage_type, folder_path))
 
 
-async def _process_opensfm_async(file_path: str, file_id: str, job_id: str, storage_type: str = None, folder_path: str = None):
+async def _process_opensfm_async(
+    file_path: str,
+    file_id: str,
+    job_id: str,
+    storage_type: str = None,
+    folder_path: str = None,
+    is_append: bool = False
+):
     """
     Async implementation for OpenSfM pointcloud and camera trajectory processing.
     """
     # 1. Ingest fused.ply point cloud
-    await _ingest_pointcloud_pipeline_async(file_path, file_id, job_id, storage_type, mark_completed=False)
+    await _ingest_pointcloud_pipeline_async(
+        file_path, file_id, job_id, storage_type, mark_completed=False, is_append=is_append
+    )
 
     # 2. Process camera trajectory from reconstruction.json
     if not folder_path:
@@ -359,3 +398,151 @@ async def _process_opensfm_async(file_path: str, file_id: str, job_id: str, stor
     if job_id:
         await _update_job_status(job_id, "COMPLETED", 100.0)
     return {"status": "success", "file_id": file_id}
+
+
+async def _process_emodnet_job_async(job_id_str: str, payload: dict):
+    """Processes EMODnet GeoTIFF ingestion task using PDAL Docker pipeline."""
+    geotiff_path = payload.get("geotiff_path")
+    is_append = payload.get("is_append", False) or (payload.get("task_type") == "emodnet_append")
+    file_id = (payload.get("existing_id") or payload.get("file_id")) if is_append else (payload.get("file_id") or job_id_str)
+    storage_type = payload.get("storage_type", settings.pointcloud_storage_type.value)
+
+    if not geotiff_path or not os.path.exists(geotiff_path):
+        error_msg = f"GeoTIFF file not found for job {job_id_str}: {geotiff_path}"
+        await _update_job_status(job_id_str, "FAILED", 0.0, error_msg)
+        return {"status": "error", "message": error_msg}
+
+    return await _process_emodnet_async(
+        geotiff_path=geotiff_path,
+        file_id=file_id,
+        job_id=job_id_str,
+        storage_type=storage_type,
+        is_append=is_append
+    )
+
+
+async def _process_emodnet_async(
+    geotiff_path: str,
+    file_id: str,
+    job_id: str,
+    storage_type: str = None,
+    is_append: bool = False
+):
+    """
+    Core pipeline to process EMODnet GeoTIFF bathymetry rasters:
+    1. Converts GeoTIFF to EPSG:3857 EPT format using PDAL Docker pipeline.
+    2. Extracts bounding box & point count via PDAL stats.
+    3. If database storage is enabled, ingests points into pgPointcloud table.
+    4. Writes or updates metadata record in pointclouds table.
+    """
+    if job_id:
+        await _update_job_status(job_id, "RUNNING", 10.0)
+
+    output_dir = os.path.join(settings.ept_dir, file_id)
+
+    try:
+        # 1. Build EPT from GeoTIFF in EPSG:3857 using PDAL Docker container
+        await build_ept_pdal_docker(
+            geotiff_path=geotiff_path,
+            output_dir=output_dir,
+            out_srs="EPSG:3857"
+        )
+        print(f"Successfully converted EMODnet GeoTIFF {geotiff_path} to EPT at {output_dir}")
+
+        if job_id:
+            await _update_job_status(job_id, "RUNNING", 60.0)
+
+        current_storage_type = storage_type or settings.pointcloud_storage_type.value
+
+        # 2. Extract stats (bbox & number of points)
+        bbox, number_of_points, _ = await get_pointcloud_srs_and_stats(geotiff_path)
+
+        pcid = 1
+        if current_storage_type == StorageType.database.value:
+            print(f"Ingesting EMODnet pointcloud {file_id} (is_append={is_append}) to database...")
+            connection_str = format_libpq_connection_string(settings.database_url)
+            table_uuid = file_id.replace("-", "")
+            dynamic_table_name = f"pc_{table_uuid}_lod0"
+
+            await ingest_pgpointcloud(
+                file_path=geotiff_path,
+                connection_str=connection_str,
+                table_name=dynamic_table_name,
+                capacity=400,
+                srid=3857,
+                overwrite=not is_append
+            )
+
+            async with async_session() as session:
+                try:
+                    res = await session.execute(
+                        text(f"SELECT PC_PCId(patch) FROM {dynamic_table_name} LIMIT 1")
+                    )
+                    row = res.first()
+                    if row and row[0] is not None:
+                        pcid = int(row[0])
+                except Exception as e:
+                    print(f"Failed to query pcid from {dynamic_table_name}: {e}")
+
+        # 3. Create or update PointCloud metadata record in DB
+        async with async_session() as session:
+            orig_filename = os.path.basename(geotiff_path)
+            safe_filename = os.path.basename(geotiff_path)
+            if job_id:
+                stmt_job = select(Job).where(Job.id == job_id)
+                res_job = await session.execute(stmt_job)
+                job_record = res_job.scalar_one_or_none()
+                if job_record and isinstance(job_record.payload, dict):
+                    orig_filename = job_record.payload.get("filename", orig_filename)
+
+            target_uuid = uuid.UUID(file_id)
+            stmt_existing = select(PointCloud).where(PointCloud.id == target_uuid)
+            res_existing = await session.execute(stmt_existing)
+            existing_record = res_existing.scalar_one_or_none()
+
+            if is_append and existing_record:
+                existing_record.number_of_points = (existing_record.number_of_points or 0) + number_of_points
+                if bbox.get("min_x") is not None:
+                    existing_record.min_x = min(existing_record.min_x, bbox["min_x"]) if existing_record.min_x is not None else bbox["min_x"]
+                if bbox.get("max_x") is not None:
+                    existing_record.max_x = max(existing_record.max_x, bbox["max_x"]) if existing_record.max_x is not None else bbox["max_x"]
+                if bbox.get("min_y") is not None:
+                    existing_record.min_y = min(existing_record.min_y, bbox["min_y"]) if existing_record.min_y is not None else bbox["min_y"]
+                if bbox.get("max_y") is not None:
+                    existing_record.max_y = max(existing_record.max_y, bbox["max_y"]) if existing_record.max_y is not None else bbox["max_y"]
+                if bbox.get("min_z") is not None:
+                    existing_record.min_z = min(existing_record.min_z, bbox["min_z"]) if existing_record.min_z is not None else bbox["min_z"]
+                if bbox.get("max_z") is not None:
+                    existing_record.max_z = max(existing_record.max_z, bbox["max_z"]) if existing_record.max_z is not None else bbox["max_z"]
+                await session.commit()
+            else:
+                metadata_record = PointCloud(
+                    id=target_uuid,
+                    job_id=uuid.UUID(job_id) if job_id else None,
+                    orig_filename=orig_filename,
+                    safe_filename=safe_filename,
+                    number_of_points=number_of_points,
+                    min_x=bbox.get("min_x"),
+                    min_y=bbox.get("min_y"),
+                    min_z=bbox.get("min_z"),
+                    max_x=bbox.get("max_x"),
+                    max_y=bbox.get("max_y"),
+                    max_z=bbox.get("max_z"),
+                    pcid=pcid
+                )
+                session.add(metadata_record)
+                await session.commit()
+
+        if job_id:
+            await _update_job_status(job_id, "COMPLETED", 100.0)
+
+        return {"status": "success", "file_id": file_id, "ept_dir": output_dir}
+
+    except Exception as e:
+        error_msg = str(e)
+        print(f"Exception processing EMODnet GeoTIFF {geotiff_path}: {error_msg}")
+        if job_id:
+            await _update_job_status(job_id, "FAILED", 0.0, error_msg)
+        raise e
+
+

@@ -169,3 +169,22 @@ def test_endpoint_get_pointcloud():
         # Clean up overrides and files
         app.dependency_overrides.clear()
         shutil.rmtree(temp_dir)
+
+
+def test_ingest_opensfm_append_not_found():
+    # Attempting to append to non-existent pointcloud returns 404
+    mock_db = MagicMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = None
+    mock_db.execute = AsyncMock(return_value=mock_result)
+
+    from app.core.database import get_db_session
+    app.dependency_overrides[get_db_session] = lambda: mock_db
+
+    try:
+        response = client.post("/pointclouds/ingest-opensfm/append?existing_id=a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+

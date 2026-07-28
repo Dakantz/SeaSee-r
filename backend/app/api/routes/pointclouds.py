@@ -130,18 +130,14 @@ async def update_transform(
     
     return {"transform_matrix": pointcloud.transform_matrix}
 
-@router.post("/ingest-opensfm")
-async def ingest_opensfm(
+@router.post("/ingest-opensfm/init")
+async def ingest_opensfm_init(
     folder_name: Optional[str] = None,
     db: AsyncSession = Depends(get_db_session)
 ):
-    import os
-    import uuid
-    from redis import Redis
-    from rq import Queue
-    from app.core.config import settings
-    from app.models.job import Job
-
+    """
+    Initialize new point cloud ingestion from OpenSfM output directories.
+    """
     ingestion_dir = settings.opensfm_ingestion_dir
     if not os.path.exists(ingestion_dir) or not os.path.isdir(ingestion_dir):
         raise HTTPException(status_code=404, detail="OpenSfM ingestion directory not found.")
@@ -192,3 +188,304 @@ async def ingest_opensfm(
                 })
 
     return {"message": f"Started {len(jobs_created)} ingestion jobs", "jobs": jobs_created}
+
+
+@router.post("/ingest-opensfm/append")
+async def ingest_opensfm_append(
+    existing_id: str,
+    folder_name: Optional[str] = None,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Append point clouds inside opensfm_ingestion_dir into an existing point cloud
+    if conditions (within bounding box, same coordinate system) are met.
+    """
+    try:
+        pc_uuid = uuid.UUID(str(existing_id))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format for existing point cloud.")
+
+    query = select(PointCloud).where(PointCloud.id == pc_uuid)
+    result = await db.execute(query)
+    existing_pc = result.scalar_one_or_none()
+
+    if not existing_pc:
+        raise HTTPException(status_code=404, detail=f"Existing point cloud with ID {existing_id} not found.")
+
+    ingestion_dir = settings.opensfm_ingestion_dir
+    if not os.path.exists(ingestion_dir) or not os.path.isdir(ingestion_dir):
+        raise HTTPException(status_code=404, detail="OpenSfM ingestion directory not found.")
+
+    from app.services.pointcloud.pdal import (
+        get_pointcloud_srs_and_stats,
+        check_bbox_within_or_overlapping,
+        check_coordinate_systems_match
+    )
+
+    existing_bbox = {
+        "min_x": existing_pc.min_x,
+        "max_x": existing_pc.max_x,
+        "min_y": existing_pc.min_y,
+        "max_y": existing_pc.max_y,
+        "min_z": existing_pc.min_z,
+        "max_z": existing_pc.max_z,
+    }
+    existing_srs = str(existing_pc.pcid)
+
+    redis_conn = Redis.from_url(settings.redis_url)
+    q = Queue("pointcloud_tasks", connection=redis_conn)
+
+    jobs_created = []
+    skipped_folders = []
+
+    for f_name in os.listdir(ingestion_dir):
+        if folder_name and f_name != folder_name:
+            continue
+            
+        folder_path = os.path.join(ingestion_dir, f_name)
+        if os.path.isdir(folder_path):
+            fused_ply_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.ply")
+            if os.path.isfile(fused_ply_path):
+                try:
+                    cand_bbox, cand_points, cand_srs = await get_pointcloud_srs_and_stats(fused_ply_path)
+                except Exception as e:
+                    skipped_folders.append({"folder": f_name, "reason": f"Failed to parse PDAL stats: {str(e)}"})
+                    continue
+
+                bbox_valid = check_bbox_within_or_overlapping(existing_bbox, cand_bbox)
+                srs_valid = check_coordinate_systems_match(existing_srs, cand_srs)
+
+                if not bbox_valid:
+                    skipped_folders.append({"folder": f_name, "reason": "Candidate point cloud outside existing bounding box."})
+                    continue
+
+                if not srs_valid:
+                    skipped_folders.append({"folder": f_name, "reason": f"Coordinate system mismatch: existing={existing_srs}, candidate={cand_srs}."})
+                    continue
+
+                job_record = Job(
+                    name=f"Append OpenSfM {f_name} to {existing_id}",
+                    payload={
+                        "task_type": "opensfm_append",
+                        "filename": f_name,
+                        "folder_path": folder_path,
+                        "existing_id": str(existing_pc.id),
+                        "file_id": str(existing_pc.id),
+                        "is_append": True,
+                        "total_bytes": os.path.getsize(fused_ply_path),
+                        "storage_type": settings.pointcloud_storage_type.value
+                    },
+                    status="PENDING",
+                    progress=0.0
+                )
+                db.add(job_record)
+                await db.commit()
+                await db.refresh(job_record)
+
+                q.enqueue(
+                    "app.services.worker.tasks.run_background_job",
+                    str(job_record.id),
+                    job_id=str(job_record.id)
+                )
+
+                jobs_created.append({
+                    "folder": f_name,
+                    "job_id": str(job_record.id),
+                    "existing_id": str(existing_pc.id)
+                })
+
+    return {
+        "message": f"Started {len(jobs_created)} append jobs",
+        "jobs": jobs_created,
+        "skipped": skipped_folders
+    }
+
+
+def _find_geotiff_in_item(item_path: str) -> Optional[str]:
+    """Helper to locate a .geotif, .tif, or .tiff file within a directory or check if item_path itself is a GeoTIFF."""
+    if os.path.isfile(item_path) and item_path.lower().endswith(('.geotif', '.tif', '.tiff')):
+        return item_path
+    elif os.path.isdir(item_path):
+        for root, _, files in os.walk(item_path):
+            for file in files:
+                if file.lower().endswith(('.geotif', '.tif', '.tiff')):
+                    return os.path.join(root, file)
+    return None
+
+
+@router.post("/ingest-emodnet")
+@router.post("/ingest-emodnet/init")
+async def ingest_emodnet_init(
+    folder_name: Optional[str] = None,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Initialize new point cloud ingestion from EMODnet GeoTIFF bathymetry data files
+    using PDAL pipeline running inside Docker.
+    """
+    ingestion_dir = settings.emodnet_ingestion_dir
+    if not os.path.exists(ingestion_dir) or not os.path.isdir(ingestion_dir):
+        raise HTTPException(status_code=404, detail="EMODnet ingestion directory not found.")
+
+    redis_conn = Redis.from_url(settings.redis_url)
+    q = Queue("pointcloud_tasks", connection=redis_conn)
+
+    jobs_created = []
+
+    for f_name in os.listdir(ingestion_dir):
+        if folder_name and f_name != folder_name:
+            continue
+
+        item_path = os.path.join(ingestion_dir, f_name)
+        geotiff_path = _find_geotiff_in_item(item_path)
+
+        if geotiff_path:
+            file_uuid_str = str(uuid.uuid4())
+
+            job_record = Job(
+                name=f"Ingest EMODnet {f_name}",
+                payload={
+                    "task_type": "emodnet_ingest",
+                    "filename": f_name,
+                    "file_id": file_uuid_str,
+                    "geotiff_path": geotiff_path,
+                    "folder_path": item_path if os.path.isdir(item_path) else os.path.dirname(item_path),
+                    "total_bytes": os.path.getsize(geotiff_path),
+                    "storage_type": settings.pointcloud_storage_type.value
+                },
+                status="PENDING",
+                progress=0.0
+            )
+            db.add(job_record)
+            await db.commit()
+            await db.refresh(job_record)
+
+            q.enqueue(
+                "app.services.worker.tasks.run_background_job",
+                str(job_record.id),
+                job_id=str(job_record.id)
+            )
+
+            jobs_created.append({
+                "folder": f_name,
+                "job_id": str(job_record.id),
+                "file_id": file_uuid_str,
+                "geotiff": os.path.basename(geotiff_path)
+            })
+
+    return {"message": f"Started {len(jobs_created)} EMODnet ingestion jobs", "jobs": jobs_created}
+
+
+@router.post("/ingest-emodnet/append")
+async def ingest_emodnet_append(
+    existing_id: str,
+    folder_name: Optional[str] = None,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Append EMODnet GeoTIFF bathymetry data files into an existing point cloud
+    if conditions (within bounding box, matching coordinate system) are met.
+    """
+    try:
+        pc_uuid = uuid.UUID(str(existing_id))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format for existing point cloud.")
+
+    query = select(PointCloud).where(PointCloud.id == pc_uuid)
+    result = await db.execute(query)
+    existing_pc = result.scalar_one_or_none()
+
+    if not existing_pc:
+        raise HTTPException(status_code=404, detail=f"Existing point cloud with ID {existing_id} not found.")
+
+    ingestion_dir = settings.emodnet_ingestion_dir
+    if not os.path.exists(ingestion_dir) or not os.path.isdir(ingestion_dir):
+        raise HTTPException(status_code=404, detail="EMODnet ingestion directory not found.")
+
+    from app.services.pointcloud.pdal import (
+        get_pointcloud_srs_and_stats,
+        check_bbox_within_or_overlapping,
+        check_coordinate_systems_match
+    )
+
+    existing_bbox = {
+        "min_x": existing_pc.min_x,
+        "max_x": existing_pc.max_x,
+        "min_y": existing_pc.min_y,
+        "max_y": existing_pc.max_y,
+        "min_z": existing_pc.min_z,
+        "max_z": existing_pc.max_z,
+    }
+    existing_srs = str(existing_pc.pcid)
+
+    redis_conn = Redis.from_url(settings.redis_url)
+    q = Queue("pointcloud_tasks", connection=redis_conn)
+
+    jobs_created = []
+    skipped_folders = []
+
+    for f_name in os.listdir(ingestion_dir):
+        if folder_name and f_name != folder_name:
+            continue
+
+        item_path = os.path.join(ingestion_dir, f_name)
+        geotiff_path = _find_geotiff_in_item(item_path)
+
+        if geotiff_path:
+            try:
+                cand_bbox, cand_points, cand_srs = await get_pointcloud_srs_and_stats(geotiff_path)
+            except Exception as e:
+                skipped_folders.append({"folder": f_name, "reason": f"Failed to parse PDAL stats from GeoTIFF: {str(e)}"})
+                continue
+
+            bbox_valid = check_bbox_within_or_overlapping(existing_bbox, cand_bbox)
+            srs_valid = check_coordinate_systems_match(existing_srs, cand_srs)
+
+            if not bbox_valid:
+                skipped_folders.append({"folder": f_name, "reason": "Candidate GeoTIFF outside existing bounding box."})
+                continue
+
+            if not srs_valid:
+                skipped_folders.append({"folder": f_name, "reason": f"Coordinate system mismatch: existing={existing_srs}, candidate={cand_srs}."})
+                continue
+
+            job_record = Job(
+                name=f"Append EMODnet {f_name} to {existing_id}",
+                payload={
+                    "task_type": "emodnet_append",
+                    "filename": f_name,
+                    "geotiff_path": geotiff_path,
+                    "folder_path": item_path if os.path.isdir(item_path) else os.path.dirname(item_path),
+                    "existing_id": str(existing_pc.id),
+                    "file_id": str(existing_pc.id),
+                    "is_append": True,
+                    "total_bytes": os.path.getsize(geotiff_path),
+                    "storage_type": settings.pointcloud_storage_type.value
+                },
+                status="PENDING",
+                progress=0.0
+            )
+            db.add(job_record)
+            await db.commit()
+            await db.refresh(job_record)
+
+            q.enqueue(
+                "app.services.worker.tasks.run_background_job",
+                str(job_record.id),
+                job_id=str(job_record.id)
+            )
+
+            jobs_created.append({
+                "folder": f_name,
+                "job_id": str(job_record.id),
+                "existing_id": str(existing_pc.id),
+                "geotiff": os.path.basename(geotiff_path)
+            })
+
+    return {
+        "message": f"Started {len(jobs_created)} EMODnet append jobs",
+        "jobs": jobs_created,
+        "skipped": skipped_folders
+    }
+
+
