@@ -188,3 +188,41 @@ def test_ingest_opensfm_append_not_found():
     finally:
         app.dependency_overrides.clear()
 
+
+def test_ingest_emodnet_append_tiff_file():
+    mock_db = MagicMock()
+    mock_pc = MagicMock()
+    mock_pc.id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    mock_pc.min_x, mock_pc.max_x = -10.0, 10.0
+    mock_pc.min_y, mock_pc.max_y = -10.0, 10.0
+    mock_pc.min_z, mock_pc.max_z = -10.0, 10.0
+    mock_pc.pcid = 1
+
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_pc
+    mock_db.execute = AsyncMock(return_value=mock_result)
+    mock_db.commit = AsyncMock()
+    mock_db.refresh = AsyncMock()
+
+    from app.core.database import get_db_session
+    app.dependency_overrides[get_db_session] = lambda: mock_db
+
+    from unittest.mock import patch
+    with patch("app.api.routes.pointclouds.Redis.from_url"), \
+         patch("app.api.routes.pointclouds.Queue"), \
+         patch("app.services.pointcloud.pdal.get_pointcloud_srs_and_stats", new=AsyncMock(return_value=({"min_x": -5, "max_x": 5, "min_y": -5, "max_y": 5, "min_z": -5, "max_z": 5}, 100, "1"))), \
+         patch("app.services.pointcloud.pdal.check_bbox_within_or_overlapping", return_value=True), \
+         patch("app.services.pointcloud.pdal.check_coordinate_systems_match", return_value=True), \
+         patch("os.path.getsize", return_value=1024):
+
+        try:
+            response = client.post("/pointclouds/ingest-emodnet/append?existing_id=a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11&file_name=exportImage.tiff")
+            assert response.status_code == 200
+            data = response.json()
+            assert "jobs" in data
+            assert len(data["jobs"]) == 1
+            assert data["jobs"][0]["geotiff"] == "exportImage.tiff"
+        finally:
+            app.dependency_overrides.clear()
+
+

@@ -3,7 +3,7 @@ import json
 import shutil
 import asyncio
 import tempfile
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 from urllib.parse import urlparse
 
 
@@ -136,6 +136,72 @@ async def get_pointcloud_stats(file_path: str) -> Tuple[Dict[str, float], int]:
     """
     bbox_dict, number_of_points, _ = await get_pointcloud_srs_and_stats(file_path)
     return bbox_dict, number_of_points
+
+
+async def get_pointcloud_dimensions(file_path: str) -> list:
+    """
+    Extracts dimension names from a point cloud or raster file using `pdal info --stats`.
+    """
+    file_abs = os.path.abspath(file_path)
+    ext = os.path.splitext(file_abs)[1].lower()
+
+    cmd_args = ["pdal", "info", "--stats"]
+    if ext in ('.geotif', '.tif', '.tiff', '.geotiff', '.asc', '.nc'):
+        cmd_args.extend(["--driver", "readers.gdal"])
+    cmd_args.append(file_abs)
+
+    info_stdout = None
+    try:
+        info_proc = await asyncio.create_subprocess_exec(
+            *cmd_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        info_stdout, _ = await info_proc.communicate()
+        if info_proc.returncode != 0 and "--driver" not in cmd_args:
+            retry_cmd = ["pdal", "info", "--driver", "readers.gdal", "--stats", file_abs]
+            info_proc2 = await asyncio.create_subprocess_exec(
+                *retry_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            info_stdout, _ = await info_proc2.communicate()
+    except Exception:
+        docker_bin = get_docker_cmd()
+        if shutil.which("docker") or (os.path.exists(docker_bin) and os.access(docker_bin, os.X_OK)):
+            file_dir = os.path.dirname(file_abs)
+            file_name = os.path.basename(file_abs)
+            docker_cmd = [
+                docker_bin, "run", "--rm",
+                "-v", f"{file_dir}:/data:ro",
+                "pdal/pdal",
+                "pdal", "info", "--stats"
+            ]
+            if ext in ('.geotif', '.tif', '.tiff', '.geotiff', '.asc', '.nc'):
+                docker_cmd.extend(["--driver", "readers.gdal"])
+            docker_cmd.append(f"/data/{file_name}")
+
+            try:
+                info_proc = await asyncio.create_subprocess_exec(
+                    *docker_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                info_stdout, _ = await info_proc.communicate()
+            except Exception:
+                pass
+
+    if info_stdout:
+        try:
+            info_data = json.loads(info_stdout.decode('utf-8'))
+            stats = info_data.get("stats", {}).get("statistic", [])
+            dims = [dim.get("name") for dim in stats if dim.get("name")]
+            if dims:
+                return dims
+        except Exception:
+            pass
+    return []
+
 
 
 async def get_pointcloud_srs_and_stats(file_path: str) -> Tuple[Dict[str, float], int, str]:
@@ -322,19 +388,37 @@ async def ingest_pgpointcloud(
     table_name: str,
     srid: int = 4326,
     capacity: int = 400,
-    overwrite: bool = True
+    overwrite: bool = True,
+    pcid: Optional[int] = None,
+    target_dimensions: Optional[list] = None
 ) -> None:
     """
     Executes a PDAL pipeline to chip and ingest points into PostgreSQL pgPointcloud table.
     Supports GeoTIFF / raster formats via readers.gdal driver.
+    Logs both source and target dimensions.
     """
     file_abs = os.path.abspath(file_path)
     ext = os.path.splitext(file_abs)[1].lower()
 
-    if ext in ('.geotif', '.tif', '.tiff', '.asc', '.nc'):
+    source_dims = await get_pointcloud_dimensions(file_abs)
+    target_dims = target_dimensions or ["X", "Y", "Z"]
+
+    print(f"[PDAL Ingest] Source file dimensions: {source_dims if source_dims else 'unknown'}")
+    print(f"[PDAL Ingest] Target schema dimensions: {target_dims}")
+
+    if ext in ('.geotif', '.tif', '.tiff', '.geotiff', '.asc', '.nc'):
+        raster_band_dims = [d for d in source_dims if str(d).lower() not in ('x', 'y')]
+        num_bands = len(raster_band_dims) if raster_band_dims else 1
+
+        if num_bands == 1:
+            header_val = "Z"
+        else:
+            header_val = "Z," + ",".join([f"band_{i+2}" for i in range(num_bands - 1)])
+
         reader_stage = {
             "type": "readers.gdal",
-            "filename": file_abs
+            "filename": file_abs,
+            "header": header_val
         }
     else:
         reader_stage = file_abs
@@ -347,32 +431,101 @@ async def ingest_pgpointcloud(
             "out_srs": "EPSG:3857"
         })
 
+    writer_stage = {
+        "type": "writers.pgpointcloud",
+        "connection": connection_str,
+        "table": table_name,
+        "column": "patch",
+        "srid": srid,
+        "compression": "dimensional",
+        "overwrite": overwrite
+    }
+    if target_dims:
+        writer_stage["output_dims"] = target_dims
+    if pcid is not None:
+        writer_stage["pcid"] = pcid
+
     pipeline_stages.extend([
         {
             "type": "filters.chipper",
             "capacity": capacity
         },
-        {
-            "type": "writers.pgpointcloud",
-            "connection": connection_str,
-            "table": table_name,
-            "column": "patch",
-            "srid": srid,
-            "compression": "dimensional",
-            "overwrite": overwrite
-        }
+        writer_stage
     ])
 
     pdal_write_pipeline = {"pipeline": pipeline_stages}
 
     pipeline_json = json.dumps(pdal_write_pipeline)
-    write_proc = await asyncio.create_subprocess_exec(
-        "pdal", "pipeline", "--stdin",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    write_stdout, write_stderr = await write_proc.communicate(input=pipeline_json.encode('utf-8'))
-    if write_proc.returncode != 0:
-        raise RuntimeError(f"PDAL pgpointcloud ingestion failed: {write_stderr.decode('utf-8', errors='replace')}")
+    local_err = None
+    try:
+        write_proc = await asyncio.create_subprocess_exec(
+            "pdal", "pipeline", "--stdin",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        write_stdout, write_stderr = await write_proc.communicate(input=pipeline_json.encode('utf-8'))
+        if write_proc.returncode != 0:
+            err = write_stderr.decode('utf-8', errors='replace')
+            print(f"[PDAL Ingest] Ingestion failed for {file_abs}.")
+            print(f"[PDAL Ingest] Source file dimensions: {source_dims if source_dims else 'unknown'}")
+            print(f"[PDAL Ingest] Target schema dimensions: {target_dims}")
+            raise RuntimeError(f"PDAL pgpointcloud ingestion failed: {err}")
+    except (FileNotFoundError, RuntimeError) as e:
+        local_err = e
+        docker_bin = get_docker_cmd()
+        if shutil.which("docker") or (os.path.exists(docker_bin) and os.access(docker_bin, os.X_OK)):
+            file_dir = os.path.dirname(file_abs)
+            file_name = os.path.basename(file_abs)
+
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                docker_pipeline_path = os.path.join(tmp_dir, "pipeline.json")
+
+                docker_stages = []
+                for stage in pipeline_stages:
+                    stage_copy = dict(stage) if isinstance(stage, dict) else stage
+                    if isinstance(stage_copy, dict) and stage_copy.get("type") == "readers.gdal":
+                        stage_copy["filename"] = f"/data/{file_name}"
+                        docker_stages.append(stage_copy)
+                    elif isinstance(stage_copy, str) and stage_copy == file_abs:
+                        docker_stages.append(f"/data/{file_name}")
+                    else:
+                        docker_stages.append(stage_copy)
+
+                with open(docker_pipeline_path, "w") as f:
+                    json.dump({"pipeline": docker_stages}, f)
+
+                docker_cmd = [
+                    docker_bin, "run", "--rm",
+                    "-v", f"{file_dir}:/data:ro",
+                    "-v", f"{tmp_dir}:/config:ro",
+                    "pdal/pdal",
+                    "pdal", "pipeline", "/config/pipeline.json"
+                ]
+
+                try:
+                    docker_proc = await asyncio.create_subprocess_exec(
+                        *docker_cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                    d_stdout, d_stderr = await docker_proc.communicate()
+                    if docker_proc.returncode != 0:
+                        d_err = d_stderr.decode('utf-8', errors='replace')
+                        print(f"[PDAL Ingest] Docker ingestion failed for {file_abs}.")
+                        print(f"[PDAL Ingest] Source file dimensions: {source_dims if source_dims else 'unknown'}")
+                        print(f"[PDAL Ingest] Target schema dimensions: {target_dims}")
+                        raise RuntimeError(f"PDAL pgpointcloud ingestion via Docker failed: {d_err}") from local_err
+                except Exception as docker_err:
+                    print(f"[PDAL Ingest] Docker ingestion exception for {file_abs}.")
+                    print(f"[PDAL Ingest] Source file dimensions: {source_dims if source_dims else 'unknown'}")
+                    print(f"[PDAL Ingest] Target schema dimensions: {target_dims}")
+                    raise local_err from docker_err
+        else:
+            print(f"[PDAL Ingest] Ingestion failed for {file_abs}.")
+            print(f"[PDAL Ingest] Source file dimensions: {source_dims if source_dims else 'unknown'}")
+            print(f"[PDAL Ingest] Target schema dimensions: {target_dims}")
+            raise local_err
+
+
 

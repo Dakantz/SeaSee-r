@@ -303,25 +303,28 @@ async def ingest_opensfm_append(
 
 def _find_geotiff_in_item(item_path: str) -> Optional[str]:
     """Helper to locate a .geotif, .tif, or .tiff file within a directory or check if item_path itself is a GeoTIFF."""
-    if os.path.isfile(item_path) and item_path.lower().endswith(('.geotif', '.tif', '.tiff')):
+    if os.path.isfile(item_path) and item_path.lower().endswith(('.geotif', '.tif', '.tiff', '.geotiff')):
         return item_path
     elif os.path.isdir(item_path):
         for root, _, files in os.walk(item_path):
             for file in files:
-                if file.lower().endswith(('.geotif', '.tif', '.tiff')):
+                if file.lower().endswith(('.geotif', '.tif', '.tiff', '.geotiff')):
                     return os.path.join(root, file)
     return None
 
 
-@router.post("/ingest-emodnet")
 @router.post("/ingest-emodnet/init")
 async def ingest_emodnet_init(
     folder_name: Optional[str] = None,
+    file_name: Optional[str] = None,
+    filename: Optional[str] = None,
+    file_path: Optional[str] = None,
     db: AsyncSession = Depends(get_db_session)
 ):
     """
     Initialize new point cloud ingestion from EMODnet GeoTIFF bathymetry data files
     using PDAL pipeline running inside Docker.
+    Supports targeting specific folder names, file names, or direct .tiff/.tif/.geotif files.
     """
     ingestion_dir = settings.emodnet_ingestion_dir
     if not os.path.exists(ingestion_dir) or not os.path.isdir(ingestion_dir):
@@ -330,13 +333,24 @@ async def ingest_emodnet_init(
     redis_conn = Redis.from_url(settings.redis_url)
     q = Queue("pointcloud_tasks", connection=redis_conn)
 
+    target_name = file_name or filename or file_path or folder_name
+
+    items_to_process = []
+    if target_name and os.path.isabs(target_name) and os.path.exists(target_name):
+        items_to_process.append((os.path.basename(target_name), target_name))
+    elif os.path.exists(ingestion_dir) and os.path.isdir(ingestion_dir):
+        for f_name in os.listdir(ingestion_dir):
+            if target_name:
+                target_base = os.path.basename(target_name)
+                target_no_ext = os.path.splitext(target_base)[0]
+                f_no_ext = os.path.splitext(f_name)[0]
+                if f_name != target_name and f_name != target_base and f_no_ext != target_name and f_no_ext != target_no_ext:
+                    continue
+            items_to_process.append((f_name, os.path.join(ingestion_dir, f_name)))
+
     jobs_created = []
 
-    for f_name in os.listdir(ingestion_dir):
-        if folder_name and f_name != folder_name:
-            continue
-
-        item_path = os.path.join(ingestion_dir, f_name)
+    for f_name, item_path in items_to_process:
         geotiff_path = _find_geotiff_in_item(item_path)
 
         if geotiff_path:
@@ -368,6 +382,7 @@ async def ingest_emodnet_init(
 
             jobs_created.append({
                 "folder": f_name,
+                "file": f_name,
                 "job_id": str(job_record.id),
                 "file_id": file_uuid_str,
                 "geotiff": os.path.basename(geotiff_path)
@@ -380,11 +395,15 @@ async def ingest_emodnet_init(
 async def ingest_emodnet_append(
     existing_id: str,
     folder_name: Optional[str] = None,
+    file_name: Optional[str] = None,
+    filename: Optional[str] = None,
+    file_path: Optional[str] = None,
     db: AsyncSession = Depends(get_db_session)
 ):
     """
     Append EMODnet GeoTIFF bathymetry data files into an existing point cloud
     if conditions (within bounding box, matching coordinate system) are met.
+    Supports targeting specific folder names, file names, or direct .tiff/.tif/.geotif files.
     """
     try:
         pc_uuid = uuid.UUID(str(existing_id))
@@ -421,32 +440,43 @@ async def ingest_emodnet_append(
     redis_conn = Redis.from_url(settings.redis_url)
     q = Queue("pointcloud_tasks", connection=redis_conn)
 
+    target_name = file_name or filename or file_path or folder_name
+
+    items_to_process = []
+    if target_name and os.path.isabs(target_name) and os.path.exists(target_name):
+        items_to_process.append((os.path.basename(target_name), target_name))
+    elif os.path.exists(ingestion_dir) and os.path.isdir(ingestion_dir):
+        for f_name in os.listdir(ingestion_dir):
+            if target_name:
+                target_base = os.path.basename(target_name)
+                target_no_ext = os.path.splitext(target_base)[0]
+                f_no_ext = os.path.splitext(f_name)[0]
+                if f_name != target_name and f_name != target_base and f_no_ext != target_name and f_no_ext != target_no_ext:
+                    continue
+            items_to_process.append((f_name, os.path.join(ingestion_dir, f_name)))
+
     jobs_created = []
     skipped_folders = []
 
-    for f_name in os.listdir(ingestion_dir):
-        if folder_name and f_name != folder_name:
-            continue
-
-        item_path = os.path.join(ingestion_dir, f_name)
+    for f_name, item_path in items_to_process:
         geotiff_path = _find_geotiff_in_item(item_path)
 
         if geotiff_path:
             try:
                 cand_bbox, cand_points, cand_srs = await get_pointcloud_srs_and_stats(geotiff_path)
             except Exception as e:
-                skipped_folders.append({"folder": f_name, "reason": f"Failed to parse PDAL stats from GeoTIFF: {str(e)}"})
+                skipped_folders.append({"folder": f_name, "file": f_name, "reason": f"Failed to parse PDAL stats from GeoTIFF: {str(e)}"})
                 continue
 
             bbox_valid = check_bbox_within_or_overlapping(existing_bbox, cand_bbox)
             srs_valid = check_coordinate_systems_match(existing_srs, cand_srs)
 
             if not bbox_valid:
-                skipped_folders.append({"folder": f_name, "reason": "Candidate GeoTIFF outside existing bounding box."})
+                skipped_folders.append({"folder": f_name, "file": f_name, "reason": "Candidate GeoTIFF outside existing bounding box."})
                 continue
 
             if not srs_valid:
-                skipped_folders.append({"folder": f_name, "reason": f"Coordinate system mismatch: existing={existing_srs}, candidate={cand_srs}."})
+                skipped_folders.append({"folder": f_name, "file": f_name, "reason": f"Coordinate system mismatch: existing={existing_srs}, candidate={cand_srs}."})
                 continue
 
             job_record = Job(
@@ -477,6 +507,7 @@ async def ingest_emodnet_append(
 
             jobs_created.append({
                 "folder": f_name,
+                "file": f_name,
                 "job_id": str(job_record.id),
                 "existing_id": str(existing_pc.id),
                 "geotiff": os.path.basename(geotiff_path)

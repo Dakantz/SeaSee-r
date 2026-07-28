@@ -17,6 +17,7 @@ from app.services.pointcloud.entwine import build_ept
 from app.services.pointcloud.pdal import (
     get_pointcloud_stats,
     get_pointcloud_srs_and_stats,
+    get_pointcloud_dimensions,
     build_ept_pdal_docker,
     format_libpq_connection_string,
     ingest_pgpointcloud
@@ -216,6 +217,48 @@ async def _ingest_pointcloud_pipeline_async(
             table_uuid = file_id.replace("-", "")
             dynamic_table_name = f"pc_{table_uuid}_lod0"
 
+            pcid = None
+            if is_append:
+                async with async_session() as session:
+                    try:
+                        res = await session.execute(
+                            text(f"SELECT PC_PCId(patch) FROM {dynamic_table_name} LIMIT 1")
+                        )
+                        row = res.first()
+                        if row and row[0] is not None:
+                            pcid = int(row[0])
+                    except Exception as e:
+                        print(f"Failed to query existing pcid from {dynamic_table_name}: {e}")
+
+                    if pcid is None:
+                        try:
+                            stmt_existing = select(PointCloud).where(PointCloud.id == uuid.UUID(file_id))
+                            res_existing = await session.execute(stmt_existing)
+                            rec = res_existing.scalar_one_or_none()
+                            if rec and rec.pcid:
+                                pcid = rec.pcid
+                        except Exception as e:
+                            print(f"Failed to query existing metadata for pcid: {e}")
+
+            target_dims = None
+            if pcid:
+                try:
+                    async with async_session() as session:
+                        res = await session.execute(
+                            text("SELECT schema FROM pointcloud_formats WHERE pcid = :pcid"),
+                            {"pcid": pcid}
+                        )
+                        row = res.first()
+                        if row and row[0]:
+                            import re
+                            target_dims = re.findall(r"<pc:name>(.*?)</pc:name>", row[0])
+                except Exception as e:
+                    print(f"Failed to query pcid schema: {e}")
+
+            source_dims = await get_pointcloud_dimensions(file_path)
+            print(f"Source file dimensions: {source_dims}")
+            print(f"Target schema dimensions: {target_dims if target_dims else ['X', 'Y', 'Z']}")
+
             # Execute PDAL pgPointcloud ingestion (overwrite=False if appending)
             await ingest_pgpointcloud(
                 file_path=file_path,
@@ -223,21 +266,24 @@ async def _ingest_pointcloud_pipeline_async(
                 table_name=dynamic_table_name,
                 capacity=400,
                 srid=4326,
-                overwrite=not is_append
+                overwrite=not is_append,
+                pcid=pcid,
+                target_dimensions=target_dims
             )
 
             # Query PCID from database
-            pcid = 1
-            async with async_session() as session:
-                try:
-                    res = await session.execute(
-                        text(f"SELECT PC_PCId(patch) FROM {dynamic_table_name} LIMIT 1")
-                    )
-                    row = res.first()
-                    if row and row[0] is not None:
-                        pcid = int(row[0])
-                except Exception as e:
-                    print(f"Failed to query pcid from {dynamic_table_name}: {e}")
+            if pcid is None:
+                pcid = 1
+                async with async_session() as session:
+                    try:
+                        res = await session.execute(
+                            text(f"SELECT PC_PCId(patch) FROM {dynamic_table_name} LIMIT 1")
+                        )
+                        row = res.first()
+                        if row and row[0] is not None:
+                            pcid = int(row[0])
+                    except Exception as e:
+                        print(f"Failed to query pcid from {dynamic_table_name}: {e}")
                     try:
                         res = await session.execute(
                             text("SELECT pcid FROM pointcloud_formats ORDER BY pcid DESC LIMIT 1")
@@ -457,12 +503,53 @@ async def _process_emodnet_async(
         # 2. Extract stats (bbox & number of points)
         bbox, number_of_points, _ = await get_pointcloud_srs_and_stats(geotiff_path)
 
-        pcid = 1
+        pcid = None
         if current_storage_type == StorageType.database.value:
             print(f"Ingesting EMODnet pointcloud {file_id} (is_append={is_append}) to database...")
             connection_str = format_libpq_connection_string(settings.database_url)
             table_uuid = file_id.replace("-", "")
             dynamic_table_name = f"pc_{table_uuid}_lod0"
+
+            if is_append:
+                async with async_session() as session:
+                    try:
+                        res = await session.execute(
+                            text(f"SELECT PC_PCId(patch) FROM {dynamic_table_name} LIMIT 1")
+                        )
+                        row = res.first()
+                        if row and row[0] is not None:
+                            pcid = int(row[0])
+                    except Exception as e:
+                        print(f"Failed to query pcid from {dynamic_table_name}: {e}")
+
+                    if pcid is None:
+                        try:
+                            stmt_existing = select(PointCloud).where(PointCloud.id == uuid.UUID(file_id))
+                            res_existing = await session.execute(stmt_existing)
+                            rec = res_existing.scalar_one_or_none()
+                            if rec and rec.pcid:
+                                pcid = rec.pcid
+                        except Exception as e:
+                            print(f"Failed to query existing metadata for pcid: {e}")
+
+            target_dims = None
+            if pcid:
+                try:
+                    async with async_session() as session:
+                        res = await session.execute(
+                            text("SELECT schema FROM pointcloud_formats WHERE pcid = :pcid"),
+                            {"pcid": pcid}
+                        )
+                        row = res.first()
+                        if row and row[0]:
+                            import re
+                            target_dims = re.findall(r"<pc:name>(.*?)</pc:name>", row[0])
+                except Exception as e:
+                    print(f"Failed to query pcid schema: {e}")
+
+            source_dims = await get_pointcloud_dimensions(geotiff_path)
+            print(f"Source file dimensions: {source_dims}")
+            print(f"Target schema dimensions: {target_dims if target_dims else ['X', 'Y', 'Z']}")
 
             await ingest_pgpointcloud(
                 file_path=geotiff_path,
@@ -470,19 +557,23 @@ async def _process_emodnet_async(
                 table_name=dynamic_table_name,
                 capacity=400,
                 srid=3857,
-                overwrite=not is_append
+                overwrite=not is_append,
+                pcid=pcid,
+                target_dimensions=target_dims
             )
 
-            async with async_session() as session:
-                try:
-                    res = await session.execute(
-                        text(f"SELECT PC_PCId(patch) FROM {dynamic_table_name} LIMIT 1")
-                    )
-                    row = res.first()
-                    if row and row[0] is not None:
-                        pcid = int(row[0])
-                except Exception as e:
-                    print(f"Failed to query pcid from {dynamic_table_name}: {e}")
+            if pcid is None:
+                pcid = 1
+                async with async_session() as session:
+                    try:
+                        res = await session.execute(
+                            text(f"SELECT PC_PCId(patch) FROM {dynamic_table_name} LIMIT 1")
+                        )
+                        row = res.first()
+                        if row and row[0] is not None:
+                            pcid = int(row[0])
+                    except Exception as e:
+                        print(f"Failed to query pcid from {dynamic_table_name}: {e}")
 
         # 3. Create or update PointCloud metadata record in DB
         async with async_session() as session:
