@@ -33,36 +33,36 @@ export default function DiagnosticsExample() {
 
     return (
         <div style={{
-            padding: "1rem", 
-            border: "1px solid #333", 
-            margin: "1rem", 
-            borderRadius: "8px", 
-            backgroundColor: "#1e1e1e", 
-            color: "#e0e0e0",
+            padding: "var(--spacing-xl)", 
+            border: "1px solid var(--color-border-solid)", 
+            margin: "var(--spacing-xl)", 
+            borderRadius: "var(--radius-lg)", 
+            backgroundColor: "var(--color-bg-panel-alt)", 
+            color: "var(--color-text-secondary)",
             maxWidth: "400px"
         }}>
             <h3 style={{ marginTop: 0 }}>System Diagnostics</h3>
-            {error && <p style={{ color: "#ff6b6b" }}>Error: {error}</p>}
+            {error && <p style={{ color: "var(--color-danger-text)" }}>Error: {error}</p>}
             {!data && !error && <p>Loading diagnostics...</p>}
             
             {data && (
-                <div style={{ fontSize: "0.9rem" }}>
+                <div style={{ fontSize: "var(--font-size-md)" }}>
                     <p><strong>CPU Usage:</strong> {data.cpu_usage}%</p>
                     <p><strong>Memory Usage:</strong> {data.memory_usage}%</p>
                     <p><strong>Active Connections:</strong> {data.active_connections ?? 'N/A'}</p>
-                    <div style={{ marginTop: "0.5rem" }}>
+                    <div style={{ marginTop: "var(--spacing-sm)" }}>
                         <strong>Services Status:</strong>
-                        <ul style={{ margin: "0.5rem 0", paddingLeft: "1.5rem" }}>
+                        <ul style={{ margin: "var(--spacing-sm) 0", paddingLeft: "1.5rem" }}>
                             {Object.entries(data.services_status).map(([service, status]) => (
                                 <li key={service}>
-                                    {service}: <span style={{ color: status === "online" ? "#8ce99a" : "#ff6b6b" }}>{status}</span>
+                                    {service}: <span style={{ color: status === "online" ? "var(--color-success-text)" : "var(--color-danger-text)" }}>{status}</span>
                                 </li>
                             ))}
                         </ul>
                     </div>
                 </div>
             )}
-            <p style={{ fontSize: "0.75rem", color: "#888", marginTop: "1rem", fontStyle: "italic" }}>
+            <p style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-muted)", marginTop: "var(--spacing-xl)", fontStyle: "italic" }}>
                 * Type-safe request powered by hey-api. Ensure you run <code>npm run generate-client</code> to sync types.
             </p>
         </div>

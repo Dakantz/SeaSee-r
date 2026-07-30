@@ -6,19 +6,19 @@ export default function ExampleDiagnostics() {
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
-            padding: "3rem 1rem",
-            minHeight: "calc(100vh - 60px)", // Assuming Toolbar is 60px
-            backgroundColor: "#121212",
-            color: "white",
-            fontFamily: "system-ui, -apple-system, sans-serif"
+            padding: "var(--spacing-5xl) var(--spacing-xl)",
+            minHeight: "calc(100vh - 60px)",
+            backgroundColor: "var(--color-bg-app)",
+            color: "var(--color-text-primary)",
+            fontFamily: "var(--font-sans)"
         }}>
-            <h1 style={{ marginBottom: "1rem", color: "#e0e0e0" }}>Diagnostics Example Page</h1>
-            <p style={{ maxWidth: "600px", textAlign: "center", marginBottom: "3rem", color: "#aaa", lineHeight: "1.6" }}>
+            <h1 style={{ marginBottom: "var(--spacing-xl)", color: "var(--color-text-primary)" }}>Diagnostics Example Page</h1>
+            <p style={{ maxWidth: "600px", textAlign: "center", marginBottom: "var(--spacing-5xl)", color: "var(--color-text-muted)", lineHeight: "var(--line-height-relaxed)" }}>
                 This is a dedicated example webpage showcasing the <code>DiagnosticsExample</code> component. 
                 It connects to the local backend using the <strong>@hey-api</strong> generated client to fetch and display system diagnostics in real-time.
             </p>
             
-            <div style={{ boxShadow: "0 10px 30px rgba(0,0,0,0.5)", borderRadius: "8px" }}>
+            <div style={{ boxShadow: "var(--shadow-xl)", borderRadius: "var(--radius-lg)" }}>
                 <DiagnosticsExample />
             </div>
         </div>

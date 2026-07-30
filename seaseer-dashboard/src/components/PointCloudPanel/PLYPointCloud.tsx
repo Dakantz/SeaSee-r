@@ -213,26 +213,26 @@ export default function PLYPointCloud({
             >
                 <div
                     style={{
-                        background: "rgba(15, 23, 42, 0.88)",
-                        backdropFilter: "blur(10px)",
-                        border: "1px solid rgba(255, 255, 255, 0.15)",
-                        borderRadius: "10px",
-                        padding: "14px",
-                        color: "#f8fafc",
-                        fontFamily: "system-ui, -apple-system, sans-serif",
-                        fontSize: "12px",
-                        boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.5)",
+                        background: "var(--color-bg-card)",
+                        backdropFilter: "var(--backdrop-blur-lg)",
+                        border: "1px solid var(--color-border-strong)",
+                        borderRadius: "var(--radius-xl)",
+                        padding: "var(--spacing-2xl)",
+                        color: "var(--color-text-primary)",
+                        fontFamily: "var(--font-sans)",
+                        fontSize: "var(--font-size-sm)",
+                        boxShadow: "var(--shadow-xl)",
                     }}
                 >
                     <div
                         style={{
-                            fontWeight: 600,
-                            fontSize: "13px",
-                            marginBottom: "10px",
-                            color: "#38bdf8",
+                            fontWeight: "var(--font-weight-semibold)",
+                            fontSize: "var(--font-size-base)",
+                            marginBottom: "var(--spacing-md)",
+                            color: "var(--color-accent-text)",
                             display: "flex",
                             alignItems: "center",
-                            gap: "6px",
+                            gap: "var(--spacing-xs)",
                         }}
                     >
                         <span>☁️</span> Point Cloud Source
@@ -242,11 +242,11 @@ export default function PLYPointCloud({
                     <div
                         style={{
                             display: "flex",
-                            gap: "4px",
-                            marginBottom: "12px",
-                            background: "rgba(0, 0, 0, 0.3)",
-                            padding: "3px",
-                            borderRadius: "6px",
+                            gap: "var(--spacing-2xs)",
+                            marginBottom: "var(--spacing-lg)",
+                            background: "var(--color-bg-subtle)",
+                            padding: "var(--spacing-3xs)",
+                            borderRadius: "var(--radius-md)",
                         }}
                     >
                         <button
@@ -254,15 +254,15 @@ export default function PLYPointCloud({
                             onClick={() => setMode("binary")}
                             style={{
                                 flex: 1,
-                                padding: "6px 4px",
-                                background: mode === "binary" ? "#0284c7" : "transparent",
-                                color: mode === "binary" ? "#ffffff" : "#94a3b8",
+                                padding: "var(--spacing-xs) var(--spacing-2xs)",
+                                background: mode === "binary" ? "var(--color-accent)" : "transparent",
+                                color: mode === "binary" ? "var(--color-text-contrast)" : "var(--color-text-muted)",
                                 border: "none",
-                                borderRadius: "4px",
+                                borderRadius: "var(--radius-sm)",
                                 cursor: "pointer",
-                                fontSize: "11px",
-                                fontWeight: 500,
-                                transition: "all 0.2s",
+                                fontSize: "var(--font-size-xs)",
+                                fontWeight: "var(--font-weight-medium)",
+                                transition: "var(--transition-normal)",
                             }}
                         >
                             Binary Stream
@@ -272,15 +272,15 @@ export default function PLYPointCloud({
                             onClick={() => setMode("plyFile")}
                             style={{
                                 flex: 1,
-                                padding: "6px 4px",
-                                background: mode === "plyFile" ? "#0284c7" : "transparent",
-                                color: mode === "plyFile" ? "#ffffff" : "#94a3b8",
+                                padding: "var(--spacing-xs) var(--spacing-2xs)",
+                                background: mode === "plyFile" ? "var(--color-accent)" : "transparent",
+                                color: mode === "plyFile" ? "var(--color-text-contrast)" : "var(--color-text-muted)",
                                 border: "none",
-                                borderRadius: "4px",
+                                borderRadius: "var(--radius-sm)",
                                 cursor: "pointer",
-                                fontSize: "11px",
-                                fontWeight: 500,
-                                transition: "all 0.2s",
+                                fontSize: "var(--font-size-xs)",
+                                fontWeight: "var(--font-weight-medium)",
+                                transition: "var(--transition-normal)",
                             }}
                         >
                             .PLY File
@@ -290,15 +290,15 @@ export default function PLYPointCloud({
                             onClick={() => setMode("plyUrl")}
                             style={{
                                 flex: 1,
-                                padding: "6px 4px",
-                                background: mode === "plyUrl" ? "#0284c7" : "transparent",
-                                color: mode === "plyUrl" ? "#ffffff" : "#94a3b8",
+                                padding: "var(--spacing-xs) var(--spacing-2xs)",
+                                background: mode === "plyUrl" ? "var(--color-accent)" : "transparent",
+                                color: mode === "plyUrl" ? "var(--color-text-contrast)" : "var(--color-text-muted)",
                                 border: "none",
-                                borderRadius: "4px",
+                                borderRadius: "var(--radius-sm)",
                                 cursor: "pointer",
-                                fontSize: "11px",
-                                fontWeight: 500,
-                                transition: "all 0.2s",
+                                fontSize: "var(--font-size-xs)",
+                                fontWeight: "var(--font-weight-medium)",
+                                transition: "var(--transition-normal)",
                             }}
                         >
                             PLY URL
@@ -307,8 +307,8 @@ export default function PLYPointCloud({
 
                     {/* Mode Content */}
                     {mode === "binary" && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                            <label style={{ fontSize: "11px", color: "#94a3b8" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-sm)" }}>
+                            <label style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>
                                 Backend Identifier:
                             </label>
                             <input
@@ -317,13 +317,13 @@ export default function PLYPointCloud({
                                 onChange={(e) => setIdentifier(e.target.value)}
                                 placeholder="Identifier UUID"
                                 style={{
-                                    background: "rgba(30, 41, 59, 0.9)",
-                                    border: "1px solid #334155",
-                                    color: "#e2e8f0",
-                                    padding: "6px 8px",
-                                    borderRadius: "4px",
-                                    fontSize: "11px",
-                                    fontFamily: "monospace",
+                                    background: "var(--color-bg-subtle)",
+                                    border: "1px solid var(--color-border-strong)",
+                                    color: "var(--color-text-secondary)",
+                                    padding: "var(--spacing-xs) var(--spacing-sm)",
+                                    borderRadius: "var(--radius-sm)",
+                                    fontSize: "var(--font-size-xs)",
+                                    fontFamily: "var(--font-mono)",
                                     width: "100%",
                                     boxSizing: "border-box",
                                 }}
@@ -333,14 +333,14 @@ export default function PLYPointCloud({
                                 onClick={() => loadBinaryPointCloud(identifier)}
                                 disabled={isLoading}
                                 style={{
-                                    background: isLoading ? "#334155" : "#0284c7",
-                                    color: "#ffffff",
+                                    background: isLoading ? "var(--color-border-solid)" : "var(--color-accent)",
+                                    color: "var(--color-text-contrast)",
                                     border: "none",
-                                    padding: "6px 12px",
-                                    borderRadius: "4px",
+                                    padding: "var(--spacing-xs) var(--spacing-lg)",
+                                    borderRadius: "var(--radius-sm)",
                                     cursor: isLoading ? "not-allowed" : "pointer",
-                                    fontWeight: 500,
-                                    fontSize: "11px",
+                                    fontWeight: "var(--font-weight-medium)",
+                                    fontSize: "var(--font-size-xs)",
                                 }}
                             >
                                 {isLoading ? "Streaming Binary..." : "Stream Binary"}
@@ -349,8 +349,8 @@ export default function PLYPointCloud({
                     )}
 
                     {mode === "plyFile" && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                            <label style={{ fontSize: "11px", color: "#94a3b8" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-sm)" }}>
+                            <label style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>
                                 Select .PLY File:
                             </label>
                             <input
@@ -358,12 +358,12 @@ export default function PLYPointCloud({
                                 accept=".ply,.PLY"
                                 onChange={handleFileChange}
                                 style={{
-                                    fontSize: "11px",
-                                    color: "#cbd5e1",
+                                    fontSize: "var(--font-size-xs)",
+                                    color: "var(--color-text-body)",
                                 }}
                             />
                             {selectedFileName && (
-                                <div style={{ fontSize: "10px", color: "#38bdf8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                <div style={{ fontSize: "var(--font-size-2xs)", color: "var(--color-accent-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     Selected: {selectedFileName}
                                 </div>
                             )}
@@ -371,8 +371,8 @@ export default function PLYPointCloud({
                     )}
 
                     {mode === "plyUrl" && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                            <label style={{ fontSize: "11px", color: "#94a3b8" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-sm)" }}>
+                            <label style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>
                                 PLY File URL:
                             </label>
                             <input
@@ -380,12 +380,12 @@ export default function PLYPointCloud({
                                 value={plyUrl}
                                 onChange={(e) => setPlyUrl(e.target.value)}
                                 style={{
-                                    background: "rgba(30, 41, 59, 0.9)",
-                                    border: "1px solid #334155",
-                                    color: "#e2e8f0",
-                                    padding: "6px 8px",
-                                    borderRadius: "4px",
-                                    fontSize: "11px",
+                                    background: "var(--color-bg-subtle)",
+                                    border: "1px solid var(--color-border-strong)",
+                                    color: "var(--color-text-secondary)",
+                                    padding: "var(--spacing-xs) var(--spacing-sm)",
+                                    borderRadius: "var(--radius-sm)",
+                                    fontSize: "var(--font-size-xs)",
                                     width: "100%",
                                     boxSizing: "border-box",
                                 }}
@@ -395,14 +395,14 @@ export default function PLYPointCloud({
                                 onClick={() => loadPlyUrl(plyUrl)}
                                 disabled={isLoading}
                                 style={{
-                                    background: isLoading ? "#334155" : "#0284c7",
-                                    color: "#ffffff",
+                                    background: isLoading ? "var(--color-border-solid)" : "var(--color-accent)",
+                                    color: "var(--color-text-contrast)",
                                     border: "none",
-                                    padding: "6px 12px",
-                                    borderRadius: "4px",
+                                    padding: "var(--spacing-xs) var(--spacing-lg)",
+                                    borderRadius: "var(--radius-sm)",
                                     cursor: isLoading ? "not-allowed" : "pointer",
-                                    fontWeight: 500,
-                                    fontSize: "11px",
+                                    fontWeight: "var(--font-weight-medium)",
+                                    fontSize: "var(--font-size-xs)",
                                 }}
                             >
                                 {isLoading ? "Loading PLY..." : "Load PLY URL"}
@@ -413,24 +413,24 @@ export default function PLYPointCloud({
                     {/* Status / Errors / Stats */}
                     <div
                         style={{
-                            marginTop: "10px",
-                            paddingTop: "8px",
-                            borderTop: "1px solid rgba(255, 255, 255, 0.1)",
+                            marginTop: "var(--spacing-md)",
+                            paddingTop: "var(--spacing-sm)",
+                            borderTop: "1px solid var(--color-border-subtle)",
                             display: "flex",
                             justifyContent: "space-between",
                             alignItems: "center",
                         }}
                     >
                         {isLoading ? (
-                            <span style={{ color: "#f59e0b", fontStyle: "italic" }}>Loading...</span>
+                            <span style={{ color: "var(--color-warning)", fontStyle: "italic" }}>Loading...</span>
                         ) : error ? (
-                            <span style={{ color: "#ef4444", fontSize: "10px" }}>{error}</span>
+                            <span style={{ color: "var(--color-danger-text)", fontSize: "var(--font-size-2xs)" }}>{error}</span>
                         ) : pointCount !== null ? (
-                            <span style={{ color: "#22c55e", fontWeight: 500 }}>
+                            <span style={{ color: "var(--color-success-text)", fontWeight: "var(--font-weight-medium)" }}>
                                 {pointCount.toLocaleString()} pts loaded
                             </span>
                         ) : (
-                            <span style={{ color: "#64748b" }}>No points loaded</span>
+                            <span style={{ color: "var(--color-text-subtle)" }}>No points loaded</span>
                         )}
                     </div>
                 </div>

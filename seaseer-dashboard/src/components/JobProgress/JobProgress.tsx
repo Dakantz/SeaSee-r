@@ -227,16 +227,16 @@ export const JobProgress: React.FC<JobProgressProps> = ({
 
       {showDetails && jobData && (
         <>
-          <div style={{ marginTop: '8px', textAlign: 'right' }}>
+          <div style={{ marginTop: 'var(--spacing-sm)', textAlign: 'right' }}>
             <button
               onClick={() => setIsDetailsExpanded(prev => !prev)}
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#60a5fa',
-                fontSize: '11px',
+                color: 'var(--color-primary-text)',
+                fontSize: 'var(--font-size-xs)',
                 cursor: 'pointer',
-                padding: '2px 4px',
+                padding: 'var(--spacing-3xs) var(--spacing-2xs)',
                 textDecoration: 'underline'
               }}
             >
@@ -263,17 +263,17 @@ export const JobProgress: React.FC<JobProgressProps> = ({
                 </div>
               )}
               {jobData.result && (
-                <div className="job-progress-details-item" style={{ flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
+                <div className="job-progress-details-item" style={{ flexDirection: 'column', gap: 'var(--spacing-3xs)', marginTop: 'var(--spacing-2xs)' }}>
                   <span>Result Output:</span>
                   <pre style={{
-                    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-                    padding: '6px',
-                    borderRadius: '4px',
+                    backgroundColor: 'var(--color-bg-subtle)',
+                    padding: 'var(--spacing-xs)',
+                    borderRadius: 'var(--radius-sm)',
                     margin: 0,
                     maxHeight: '100px',
                     overflow: 'auto',
-                    fontSize: '10px',
-                    color: '#a7f3d0'
+                    fontSize: 'var(--font-size-2xs)',
+                    color: 'var(--color-success-text)'
                   }}>
                     {JSON.stringify(jobData.result, null, 2)}
                   </pre>
@@ -285,7 +285,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
       )}
 
       {loading && !jobData && (
-        <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '6px' }}>
+        <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', marginTop: 'var(--spacing-xs)' }}>
           Loading job information...
         </div>
       )}

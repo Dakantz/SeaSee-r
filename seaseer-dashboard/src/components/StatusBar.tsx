@@ -7,12 +7,12 @@ export default function StatusBar() {
                 left: 0,
                 width: "100%",
                 height: "30px",
-                background: "#2b2b2b",
-                color: "white",
+                background: "var(--color-bg-panel-alt)",
+                color: "var(--color-text-primary)",
                 display: "flex",
                 alignItems: "center",
-                paddingLeft: "20px",
-                zIndex: 1000,
+                paddingLeft: "var(--spacing-2xl)",
+                zIndex: "var(--z-modal)",
             }}
         >
             Status: Ready

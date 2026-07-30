@@ -188,25 +188,25 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
             <span className="jso-summary-label">Active:</span>
             <span
               className="jso-summary-val"
-              style={{ color: activeCount > 0 ? '#60a5fa' : '#94a3b8' }}
+              style={{ color: activeCount > 0 ? 'var(--color-primary-text)' : 'var(--color-text-muted)' }}
             >
               {activeCount}
             </span>
           </div>
           <div className="jso-summary-item">
             <span className="jso-summary-label">Done:</span>
-            <span className="jso-summary-val" style={{ color: '#34d399' }}>
+            <span className="jso-summary-val" style={{ color: 'var(--color-success-text)' }}>
               {completedCount}
             </span>
           </div>
           <div className="jso-summary-item">
             <span className="jso-summary-label">Failed:</span>
-            <span className="jso-summary-val" style={{ color: failedCount > 0 ? '#f87171' : '#94a3b8' }}>
+            <span className="jso-summary-val" style={{ color: failedCount > 0 ? 'var(--color-danger-text)' : 'var(--color-text-muted)' }}>
               {failedCount}
             </span>
           </div>
           {lastUpdated && !compact && (
-            <div className="jso-summary-item" style={{ marginLeft: 'auto', fontSize: '10.5px', color: '#64748b' }}>
+            <div className="jso-summary-item" style={{ marginLeft: 'auto', fontSize: 'var(--font-size-2xs)', color: 'var(--color-text-subtle)' }}>
               Updated {formatTime(lastUpdated.toISOString())}
             </div>
           )}
