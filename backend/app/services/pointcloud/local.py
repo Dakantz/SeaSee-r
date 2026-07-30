@@ -1,6 +1,6 @@
 import os
 from typing import List
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi import HTTPException
 from app.services.pointcloud.base import PointCloudStorageService
 
@@ -46,3 +46,10 @@ class LocalPointCloudStorageService(PointCloudStorageService):
             os.remove(file_path)
             return True
         return False
+
+    async def stream_pointcloud_binary(self, identifier: str, lod: int = 0) -> StreamingResponse:
+        raise HTTPException(
+            status_code=501,
+            detail="Binary streaming is only supported for database storage."
+        )
+

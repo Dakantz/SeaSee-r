@@ -11,6 +11,8 @@ services:
       POSTGRES_PASSWORD: seaseer_password
     ports:
       - "5433:5432"
+    volumes:
+      - ./backend/init-db:/docker-entrypoint-initdb.d
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U seaseer_user -d seaseer_test" ]
       interval: 5s

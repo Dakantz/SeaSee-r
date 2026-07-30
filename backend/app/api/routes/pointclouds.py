@@ -38,6 +38,18 @@ async def list_pointclouds(
 
 
 """
+Stream point cloud data directly from database as raw binary buffer (Float32 XYZ, Uint16 RGB).
+"""
+@router.get("/{identifier}/stream-binary")
+async def stream_pointcloud_binary(
+    identifier: str,
+    lod: int = 0,
+    storage_service: PointCloudStorageService = Depends(get_pointcloud_service)
+):
+    return await storage_service.stream_pointcloud_binary(identifier, lod=lod)
+
+
+"""
 Retrieve a .ply point cloud file.
 
 The underlying storage mechanism (local file system or database) is determined 

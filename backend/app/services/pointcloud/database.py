@@ -1,5 +1,7 @@
 import json
+import logging
 import re
+import struct
 import subprocess
 from typing import List
 from fastapi import HTTPException, Depends
@@ -9,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.core.database import get_db_session
+from app.core.database import get_db_session, async_session
 from urllib.parse import urlparse
 from app.core.config import settings
 from app.models import PointCloud
@@ -19,6 +21,119 @@ from app.services.pointcloud.base import PointCloudStorageService
 class DatabasePointCloudStorageService(PointCloudStorageService):
     def __init__(self, db_session: AsyncSession):
         self.db = db_session
+
+    async def stream_pointcloud_binary(self, identifier: str, lod: int = 0) -> StreamingResponse:
+        """
+        Queries point cloud points directly from pgPointcloud table using PC_Explode and PC_Get,
+        packs XYZ (Float32) and RGB (Uint16) into a flat binary string, and streams as application/octet-stream.
+        """
+        pointcloud_uuid = identifier
+        if "?" in identifier:
+            parts = identifier.split("?")
+            pointcloud_uuid = parts[0]
+            for param in parts[1].split("&"):
+                if param.startswith("lod="):
+                    try:
+                        lod = int(param.split("=")[1])
+                    except ValueError:
+                        pass
+
+        clean_uuid = re.sub(r'[^a-fA-F0-9\-]', '', pointcloud_uuid)
+        table_uuid = clean_uuid.replace("-", "")
+        if not table_uuid:
+            raise HTTPException(status_code=400, detail="Invalid Point Cloud UUID format.")
+
+        dynamic_table_name = f"pc_{table_uuid}_lod{lod}"
+
+        # Verify that the point cloud metadata exists in pointclouds table
+        try:
+            result = await self.db.execute(
+                text("SELECT id FROM pointclouds WHERE id = :id"),
+                {"id": clean_uuid}
+            )
+            row = result.first()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database query failed: {str(e)}")
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Point cloud metadata not found in database.")
+
+        # Check PCID schema for dimension names (XYZ and RGB)
+        x_dim, y_dim, z_dim = 'x', 'y', 'z'
+        r_dim, g_dim, b_dim = 'Red', 'Green', 'Blue'
+        has_color = True
+
+        try:
+            schema_res = await self.db.execute(text(f"""
+                SELECT schema FROM pointcloud_formats 
+                WHERE pcid = (SELECT PC_PCID(patch) FROM {dynamic_table_name} LIMIT 1)
+            """))
+            schema_row = schema_res.first()
+            if schema_row and schema_row[0]:
+                schema_xml = str(schema_row[0])
+                if 'name="X"' in schema_xml:
+                    x_dim, y_dim, z_dim = 'X', 'Y', 'Z'
+                elif 'name="x"' in schema_xml:
+                    x_dim, y_dim, z_dim = 'x', 'y', 'z'
+
+                if 'name="Red"' in schema_xml:
+                    r_dim, g_dim, b_dim = 'Red', 'Green', 'Blue'
+                elif 'name="red"' in schema_xml:
+                    r_dim, g_dim, b_dim = 'red', 'green', 'blue'
+                elif 'name="R"' in schema_xml:
+                    r_dim, g_dim, b_dim = 'R', 'G', 'B'
+                elif 'name="r"' in schema_xml:
+                    r_dim, g_dim, b_dim = 'r', 'g', 'b'
+                else:
+                    has_color = False
+        except Exception as e:
+            logging.warning(f"Could not inspect schema for table {dynamic_table_name}: {e}")
+
+        r_select = f"PC_Get(pt, '{r_dim}')" if has_color else "0"
+        g_select = f"PC_Get(pt, '{g_dim}')" if has_color else "0"
+        b_select = f"PC_Get(pt, '{b_dim}')" if has_color else "0"
+
+        query = text(f"""
+            SELECT 
+                PC_Get(pt, '{x_dim}') as x,
+                PC_Get(pt, '{y_dim}') as y,
+                PC_Get(pt, '{z_dim}') as z,
+                {r_select} as r,
+                {g_select} as g,
+                {b_select} as b
+            FROM (
+                SELECT PC_Explode(patch) AS pt FROM {dynamic_table_name}
+            ) AS points;
+        """)
+
+        async def generate_binary():
+            try:
+                async with async_session() as session:
+                    stream_result = await session.stream(query)
+                    buffer = bytearray()
+                    async for record in stream_result:
+                        x = float(record[0]) if record[0] is not None else 0.0
+                        y = float(record[1]) if record[1] is not None else 0.0
+                        z = float(record[2]) if record[2] is not None else 0.0
+                        r = int(record[3]) if record[3] is not None else 0
+                        g = int(record[4]) if record[4] is not None else 0
+                        b = int(record[5]) if record[5] is not None else 0
+
+                        buffer.extend(struct.pack('<3f3H', x, y, z, r, g, b))
+                        if len(buffer) >= 18000:
+                            yield bytes(buffer)
+                            buffer.clear()
+
+                    if buffer:
+                        yield bytes(buffer)
+            except Exception as e:
+                logging.error(f"Error during binary streaming: {e}", exc_info=True)
+
+        return StreamingResponse(
+            generate_binary(),
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f"attachment; filename={pointcloud_uuid}_lod{lod}.bin"}
+        )
 
     async def get_pointcloud(self, identifier: str) -> StreamingResponse:
         """
@@ -166,4 +281,5 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
             print(f"Error deleting pointcloud from db: {e}")
             await self.db.rollback()
             return False
+
 
