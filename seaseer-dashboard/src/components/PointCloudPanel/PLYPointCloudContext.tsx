@@ -5,6 +5,12 @@ import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
 export interface PLYPointCloudContextType {
     mode: "binary" | "plyFile" | "plyUrl";
     setMode: (mode: "binary" | "plyFile" | "plyUrl") => void;
+    renderMode: "points" | "mesh";
+    setRenderMode: (mode: "points" | "mesh") => void;
+    wireframe: boolean;
+    setWireframe: (wireframe: boolean) => void;
+    pointSize: number;
+    setPointSize: (size: number) => void;
     identifier: string;
     setIdentifier: (id: string) => void;
     plyUrl: string;
@@ -36,6 +42,9 @@ export const usePLYPointCloudContext = () => {
 
 export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [mode, setMode] = useState<"binary" | "plyFile" | "plyUrl">("binary");
+    const [renderMode, setRenderMode] = useState<"points" | "mesh">("points");
+    const [wireframe, setWireframe] = useState<boolean>(true);
+    const [pointSize, setPointSize] = useState<number>(0.1);
     const [identifier, setIdentifier] = useState<string>(DEFAULT_HARDCODED_IDENTIFIER);
     const [plyUrl, setPlyUrl] = useState<string>(DEFAULT_PLY_URL);
     const [lod, setLod] = useState<number>(0);
@@ -178,6 +187,12 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
             value={{
                 mode,
                 setMode,
+                renderMode,
+                setRenderMode,
+                wireframe,
+                setWireframe,
+                pointSize,
+                setPointSize,
                 identifier,
                 setIdentifier,
                 plyUrl,

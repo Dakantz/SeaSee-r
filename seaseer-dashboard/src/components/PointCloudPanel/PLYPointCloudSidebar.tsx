@@ -5,6 +5,12 @@ import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 export interface PLYPointCloudSidebarProps {
     mode?: "binary" | "plyFile" | "plyUrl";
     setMode?: (mode: "binary" | "plyFile" | "plyUrl") => void;
+    renderMode?: "points" | "mesh";
+    setRenderMode?: (mode: "points" | "mesh") => void;
+    wireframe?: boolean;
+    setWireframe?: (wireframe: boolean) => void;
+    pointSize?: number;
+    setPointSize?: (size: number) => void;
     identifier?: string;
     setIdentifier?: (id: string) => void;
     plyUrl?: string;
@@ -32,6 +38,12 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
 
     const mode = props.mode ?? contextState?.mode ?? "binary";
     const setMode = props.setMode ?? contextState?.setMode ?? (() => {});
+    const renderMode = props.renderMode ?? contextState?.renderMode ?? "points";
+    const setRenderMode = props.setRenderMode ?? contextState?.setRenderMode ?? (() => {});
+    const wireframe = props.wireframe ?? contextState?.wireframe ?? true;
+    const setWireframe = props.setWireframe ?? contextState?.setWireframe ?? (() => {});
+    const pointSize = props.pointSize ?? contextState?.pointSize ?? 0.1;
+    const setPointSize = props.setPointSize ?? contextState?.setPointSize ?? (() => {});
     const identifier = props.identifier ?? contextState?.identifier ?? "";
     const setIdentifier = props.setIdentifier ?? contextState?.setIdentifier ?? (() => {});
     const plyUrl = props.plyUrl ?? contextState?.plyUrl ?? "";
@@ -345,6 +357,106 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                     </button>
                 </div>
             )}
+
+            {/* Display Settings */}
+            <div
+                style={{
+                    marginTop: "var(--spacing-md)",
+                    paddingTop: "var(--spacing-xs)",
+                    borderTop: "1px solid var(--color-border-subtle)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "var(--spacing-xs)",
+                }}
+            >
+                <div
+                    style={{
+                        fontWeight: "var(--font-weight-semibold)",
+                        fontSize: "var(--font-size-2xs)",
+                        color: "var(--color-text-muted)",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                    }}
+                >
+                    Display Settings
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--spacing-xs)" }}>
+                    <label style={{ flex: 1, fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                        Render Mode:
+                    </label>
+                    <div
+                        style={{
+                            display: "flex",
+                            gap: "var(--spacing-3xs)",
+                            background: "var(--color-bg-subtle)",
+                            padding: "var(--spacing-3xs)",
+                            borderRadius: "var(--radius-sm)",
+                        }}
+                    >
+                        <button
+                            type="button"
+                            onClick={() => setRenderMode("points")}
+                            style={{
+                                padding: "var(--spacing-3xs) var(--spacing-xs)",
+                                background: renderMode === "points" ? "var(--color-accent)" : "transparent",
+                                color: renderMode === "points" ? "var(--color-text-contrast)" : "var(--color-text-muted)",
+                                border: "none",
+                                borderRadius: "var(--radius-xs)",
+                                cursor: "pointer",
+                                fontSize: "var(--font-size-xs)",
+                                fontWeight: "var(--font-weight-medium)",
+                            }}
+                        >
+                            Points
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setRenderMode("mesh")}
+                            style={{
+                                padding: "var(--spacing-3xs) var(--spacing-xs)",
+                                background: renderMode === "mesh" ? "var(--color-accent)" : "transparent",
+                                color: renderMode === "mesh" ? "var(--color-text-contrast)" : "var(--color-text-muted)",
+                                border: "none",
+                                borderRadius: "var(--radius-xs)",
+                                cursor: "pointer",
+                                fontSize: "var(--font-size-xs)",
+                                fontWeight: "var(--font-weight-medium)",
+                            }}
+                        >
+                            Mesh
+                        </button>
+                    </div>
+                </div>
+
+                {renderMode === "mesh" ? (
+                    <label style={{ display: "flex", alignItems: "center", gap: "var(--spacing-xs)", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)", cursor: "pointer" }}>
+                        <input
+                            type="checkbox"
+                            checked={wireframe}
+                            onChange={(e) => setWireframe(e.target.checked)}
+                            style={{ cursor: "pointer" }}
+                        />
+                        Wireframe Overlay
+                    </label>
+                ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                            <span>Point Size:</span>
+                            <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--font-size-2xs)" }}>{pointSize.toFixed(2)}</span>
+                        </div>
+                        <input
+                            type="range"
+                            min="0.01"
+                            max="1.0"
+                            step="0.01"
+                            value={pointSize}
+                            onChange={(e) => setPointSize(parseFloat(e.target.value))}
+                            style={{ width: "100%", cursor: "pointer" }}
+                        />
+                    </div>
+                )}
+            </div>
 
             {/* Status / Errors / Stats */}
             <div
