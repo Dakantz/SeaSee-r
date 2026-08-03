@@ -10,7 +10,7 @@ services:
       POSTGRES_USER: seaseer_user
       POSTGRES_PASSWORD: seaseer_password
     ports:
-      - "5433:5432"
+      - "5434:5432"
     volumes:
       - ./backend/init-db:/docker-entrypoint-initdb.d
     healthcheck:

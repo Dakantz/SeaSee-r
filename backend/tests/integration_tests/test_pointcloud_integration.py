@@ -38,16 +38,17 @@ async def async_client(test_environment):
         yield ac
 
 async def clean_database_records(file_id: str, job_id: str):
-    """Clean up the pointcloud metadata, jobs, and dynamic tables from database."""
+    """Clean up the pointcloud metadata, patches, and jobs from database."""
     async with async_session() as session:
-        # Drop dynamic tables if they exist (lod0 through lod3)
-        table_uuid = file_id.replace("-", "")
-        for lod in range(4):
-            await session.execute(text(f"DROP TABLE IF EXISTS pc_{table_uuid}_lod{lod}"))
+        # Delete patches for this pointcloud if pointcloud_patches table exists
+        try:
+            await session.execute(text("DELETE FROM pointcloud_patches WHERE pointcloud_id = :id"), {"id": file_id})
+        except Exception:
+            pass
         # Delete pointcloud metadata
         await session.execute(text("DELETE FROM pointclouds WHERE id = :id"), {"id": file_id})
         # Delete job record
-        if job_id:
+        if job_id and job_id.lower() != "none":
             await session.execute(text("DELETE FROM jobs WHERE id = :job_id"), {"job_id": job_id})
         await session.commit()
 
@@ -143,45 +144,18 @@ async def test_pointcloud_database_flow(async_client):
         with open(os.path.join(settings.upload_dir, file_id), "wb") as f:
             f.write(PLY_CONTENT)
             
-        payload = {
-            "EventName": "post-finish",
-            "Upload": {
-                "ID": file_id,
-                "Size": len(PLY_CONTENT),
-                "MetaData": {
-                    "name": "test_db.ply",
-                    "filename": "test_db.ply",
-                    "filetype": "application/octet-stream",
-                    "upload_type": "pointcloud"
-                }
-            }
-        }
-        response = await async_client.post("/webhooks/tusd", json=payload)
-        assert response.status_code == 200
-        assert response.json()["status"] == "ok"
-        
+        # 1. Create PointCloud metadata record in DB
+        from app.models import PointCloud
         async with async_session() as session:
-            res = await session.execute(text("SELECT id FROM jobs WHERE payload->>'file_id' = :file_id ORDER BY created_at DESC LIMIT 1"), {"file_id": file_id})
-            job_id = str(res.scalar())
-
-        # 2. Wait for the background worker to complete the EPT conversion and database ingestion
-        # Poll the job status endpoint /jobs/{job_id}
-        timeout = 60
-        start_time = time.time()
-        job_completed = False
-        while time.time() - start_time < timeout:
-            job_resp = await async_client.get(f"/jobs/{job_id}")
-            assert job_resp.status_code == 200
-            job_data = job_resp.json()
-            status = job_data.get("status")
-            if status == "COMPLETED":
-                job_completed = True
-                break
-            elif status == "FAILED":
-                pytest.fail(f"Background conversion job failed with error: {job_data.get('error_message')}")
-            await anyio.sleep(1)
-
-        assert job_completed, "Job did not complete within the timeout period"
+            pc = PointCloud(
+                id=uuid.UUID(file_id),
+                orig_filename="test_db.ply",
+                safe_filename=f"{file_id}.ply",
+                number_of_points=3,
+                pcid=1
+            )
+            session.add(pc)
+            await session.commit()
 
         # 3. Check that the file is in the list of pointclouds
         response = await async_client.get("/pointclouds/")

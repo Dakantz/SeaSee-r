@@ -58,7 +58,7 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
         if not row:
             raise HTTPException(status_code=404, detail="Point cloud metadata not found in database.")
 
-        query = text(f"""
+        query = text("""
             SELECT 
                 PC_Get(pt, 'X')         as x,
                 PC_Get(pt, 'Y')         as y,
@@ -67,14 +67,16 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
                 PC_Get(pt, 'Green')     as g,
                 PC_Get(pt, 'Blue')      as b
             FROM (
-                SELECT PC_Explode(patch) AS pt FROM {dynamic_table_name}
+                SELECT PC_Explode(patch) AS pt 
+                FROM pointcloud_patches 
+                WHERE pointcloud_id = :id AND lod = :lod
             ) AS points;
         """)
 
         async def generate_binary():
             try:
                 async with async_session() as session:
-                    stream_result = await session.stream(query)
+                    stream_result = await session.stream(query, {"id": clean_uuid, "lod": lod})
                     buffer = bytearray()
                     async for record in stream_result:
                         x = float(record[0]) if record[0] is not None else 0.0
@@ -107,7 +109,7 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
 
     async def get_pointcloud(self, identifier: str) -> StreamingResponse:
         """
-        Fetches the pointcloud from a dynamic pgPointcloud table for a given 
+        Fetches the pointcloud from pgPointcloud table for a given 
         identifier (UUID) and LOD, streams the result as a PLY file using a PDAL reader.
         """
         # Parse identifier and optional lod parameters (e.g. "uuid?lod=1")
@@ -123,14 +125,10 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
                     except ValueError:
                         lod = 0
 
-        # Sanitize UUID to prevent SQL Injection in table names
+        # Sanitize UUID
         clean_uuid = re.sub(r'[^a-fA-F0-9\-]', '', pointcloud_uuid)
-        # Remove hyphens for table name representation
-        table_uuid = clean_uuid.replace("-", "")
-        if not table_uuid:
+        if not clean_uuid:
             raise HTTPException(status_code=400, detail="Invalid Point Cloud UUID format.")
-
-        dynamic_table_name = f"pc_{table_uuid}_lod{lod}"
 
         # Verify that the point cloud metadata exists in pointclouds table
         try:
@@ -161,14 +159,15 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
             conn_parts.append(f"dbname={parsed.path.lstrip('/')}")
         connection_str = " ".join(conn_parts)
 
-        # Build a PDAL read pipeline configuration
+        # Build a PDAL read pipeline configuration targeting pointcloud_patches
         pdal_pipeline = {
             "pipeline": [
                 {
                     "type": "readers.pgpointcloud",
                     "connection": connection_str,
-                    "table": dynamic_table_name,
+                    "table": "pointcloud_patches",
                     "column": "patch",
+                    "where": f"pointcloud_id = '{clean_uuid}' AND lod = {lod}",
                     "spatialreference": "EPSG:4326"
                 },
                 {
@@ -217,15 +216,14 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
             return []
 
     async def delete_pointcloud(self, identifier: str) -> bool:
-        """Deletes point cloud metadata and all related dynamic tables."""
+        """Deletes point cloud metadata and all related patches from pointcloud_patches."""
         pointcloud_uuid = identifier
         if "?" in identifier:
             parts = identifier.split("?")
             pointcloud_uuid = parts[0]
 
         clean_uuid = re.sub(r'[^a-fA-F0-9\-]', '', pointcloud_uuid)
-        table_uuid = clean_uuid.replace("-", "")
-        if not table_uuid:
+        if not clean_uuid:
             return False
 
         try:
@@ -236,14 +234,6 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
             deleted = result.first()
             if not deleted:
                 return False
-
-            tables_result = await self.db.execute(
-                text("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name LIKE :prefix"),
-                {"prefix": f"pc_{table_uuid}_lod%"}
-            )
-            tables = tables_result.scalars().all()
-            for table_name in tables:
-                await self.db.execute(text(f"DROP TABLE IF EXISTS {table_name}"))
 
             await self.db.commit()
             return True

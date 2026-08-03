@@ -267,6 +267,11 @@ def test_ingest_emodnet_append_tiff_file():
     from app.core.database import get_db_session
     app.dependency_overrides[get_db_session] = lambda: mock_db
 
+    os.makedirs(settings.emodnet_ingestion_dir, exist_ok=True)
+    test_file = os.path.join(settings.emodnet_ingestion_dir, "exportImage.tiff")
+    with open(test_file, "w") as f:
+        f.write("dummy")
+
     from unittest.mock import patch
     with patch("app.api.routes.pointclouds.Redis.from_url"), \
          patch("app.api.routes.pointclouds.Queue"), \
@@ -283,6 +288,8 @@ def test_ingest_emodnet_append_tiff_file():
             assert len(data["jobs"]) == 1
             assert data["jobs"][0]["geotiff"] == "exportImage.tiff"
         finally:
+            if os.path.exists(test_file):
+                os.remove(test_file)
             app.dependency_overrides.clear()
 
 

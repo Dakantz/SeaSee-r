@@ -13,7 +13,7 @@ from app.core.config import settings, StorageType
 from app.core.database import async_session
 from app.services.pointcloud.entwine import build_ept
 
-EMODNET_ELEVATION_MULTIPLICATION = 50.0
+EMODNET_ELEVATION_MULTIPLICATION = 100.0
 
 def get_docker_cmd() -> str:
     """Finds the absolute path to docker executable, checking PATH and common system locations."""
@@ -290,29 +290,17 @@ async def process_emodnet_csv(
         current_storage_type = storage_type or settings.pointcloud_storage_type.value
         if current_storage_type == StorageType.database.value and file_id:
             connection_str = format_libpq_connection_string(settings.database_url)
-            table_uuid = file_id.replace("-", "")
-            dynamic_table_name = f"pc_{table_uuid}_lod0"
 
-            print(f"[EMODnet CSV Ingest] Ingesting pointcloud {file_id} to database table {dynamic_table_name}...")
-            await ingest_pgpointcloud(
+            print(f"[EMODnet CSV Ingest] Ingesting pointcloud {file_id} to database pointcloud_patches table...")
+            pcid = await ingest_pgpointcloud(
                 file_path=temp_laz_path,
                 connection_str=connection_str,
-                table_name=dynamic_table_name,
+                pointcloud_id=file_id,
+                lod=0,
                 capacity=400,
                 srid=3857,
                 overwrite=True
             )
-
-            async with async_session() as session:
-                try:
-                    res = await session.execute(
-                        text(f"SELECT PC_PCId(patch) FROM {dynamic_table_name} LIMIT 1")
-                    )
-                    row = res.first()
-                    if row and row[0] is not None:
-                        pcid = int(row[0])
-                except Exception as e:
-                    print(f"Failed to query pcid from {dynamic_table_name}: {e}")
 
             if pcid is None:
                 pcid = 1
@@ -325,7 +313,6 @@ async def process_emodnet_csv(
         )
 
         return bbox, number_of_points, pcid
-
 
 
 async def get_pointcloud_stats(file_path: str) -> Tuple[Dict[str, float], int]:
@@ -377,7 +364,7 @@ async def get_pointcloud_dimensions(file_path: str) -> list:
                 "pdal/pdal",
                 "pdal", "info", "--stats"
             ]
-            if ext in ('.geotif', '.tif', '.tiff', '.geotiff', '.asc', '.nc'):
+            if ext in ('.geotif', '.tif', '.tiff', '.asc', '.nc'):
                 docker_cmd.extend(["--driver", "readers.gdal"])
             docker_cmd.append(f"/data/{file_name}")
 
@@ -585,27 +572,37 @@ def format_libpq_connection_string(db_url: str) -> str:
 async def ingest_pgpointcloud(
     file_path: str,
     connection_str: str,
-    table_name: str,
+    table_name: Optional[str] = None,
+    pointcloud_id: Optional[str] = None,
+    lod: int = 0,
     srid: int = 4326,
     capacity: int = 400,
     overwrite: bool = True,
     pcid: Optional[int] = None,
     target_dimensions: Optional[list] = None,
     step: int = 1
-) -> None:
+) -> Optional[int]:
     """
-    Executes a PDAL pipeline to chip and ingest points into PostgreSQL pgPointcloud table.
-    Supports GeoTIFF / raster formats via readers.gdal driver.
-    Logs both source and target dimensions. Supports optional decimation step.
+    Executes a PDAL pipeline to chip and ingest points into PostgreSQL pgPointcloud database.
+    If pointcloud_id is provided, ingests into a temporary staging table and transfers patches
+    into the unified `pointcloud_patches` table with (pointcloud_id, lod).
+    Returns the pcid detected/generated during ingestion.
     """
     file_abs = os.path.abspath(file_path)
     ext = os.path.splitext(file_abs)[1].lower()
+
+    if pointcloud_id:
+        clean_uuid = pointcloud_id.replace("-", "")
+        target_table = f"pc_staging_{clean_uuid}_lod{lod}"
+    else:
+        target_table = table_name or "pointcloud_patches"
 
     source_dims = await get_pointcloud_dimensions(file_abs)
     target_dims = target_dimensions or ["X", "Y", "Z", "Red", "Green", "Blue"]
 
     print(f"[PDAL Ingest] Source file dimensions: {source_dims if source_dims else 'unknown'}")
     print(f"[PDAL Ingest] Target schema dimensions: {target_dims}")
+    print(f"[PDAL Ingest] Staging table: {target_table}")
 
     if ext in ('.geotif', '.tif', '.tiff', '.geotiff', '.asc', '.nc'):
         raster_band_dims = [d for d in source_dims if str(d).lower() not in ('x', 'y')]
@@ -668,11 +665,11 @@ async def ingest_pgpointcloud(
     writer_stage = {
         "type": "writers.pgpointcloud",
         "connection": connection_str,
-        "table": table_name,
+        "table": target_table,
         "column": "patch",
         "srid": srid,
         "compression": "dimensional",
-        "overwrite": overwrite
+        "overwrite": True
     }
     if target_dims:
         writer_stage["output_dims"] = target_dims
@@ -760,6 +757,62 @@ async def ingest_pgpointcloud(
             print(f"[PDAL Ingest] Source file dimensions: {source_dims if source_dims else 'unknown'}")
             print(f"[PDAL Ingest] Target schema dimensions: {target_dims}")
             raise local_err
+
+    found_pcid = None
+    if pointcloud_id:
+        async with async_session() as session:
+            try:
+                res = await session.execute(text(f"SELECT PC_PCId(patch) FROM {target_table} LIMIT 1"))
+                row = res.first()
+                if row and row[0] is not None:
+                    found_pcid = int(row[0])
+
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS pointcloud_patches (
+                        id BIGSERIAL PRIMARY KEY,
+                        pointcloud_id UUID NOT NULL REFERENCES pointclouds(id) ON DELETE CASCADE,
+                        lod INTEGER NOT NULL DEFAULT 0,
+                        patch PCPATCH
+                    );
+                """))
+                await session.execute(text("""
+                    CREATE INDEX IF NOT EXISTS idx_pointcloud_patches_pc_lod 
+                    ON pointcloud_patches (pointcloud_id, lod);
+                """))
+
+                # Ensure parent record exists in pointclouds table to satisfy foreign key constraint
+                await session.execute(
+                    text("""
+                        INSERT INTO pointclouds (id, orig_filename, number_of_points, pcid, created_at)
+                        VALUES (:id, :filename, 0, 1, NOW())
+                        ON CONFLICT (id) DO NOTHING
+                    """),
+                    {"id": pointcloud_id, "filename": os.path.basename(file_abs)}
+                )
+
+                if overwrite:
+                    await session.execute(
+                        text("DELETE FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = :lod"),
+                        {"id": pointcloud_id, "lod": lod}
+                    )
+
+                await session.execute(
+                    text(f"""
+                        INSERT INTO pointcloud_patches (pointcloud_id, lod, patch)
+                        SELECT :pointcloud_id, :lod, patch FROM {target_table}
+                    """),
+                    {"pointcloud_id": pointcloud_id, "lod": lod}
+                )
+
+                await session.execute(text(f"DROP TABLE IF EXISTS {target_table}"))
+                await session.commit()
+            except Exception as transfer_err:
+                await session.rollback()
+                print(f"[PDAL Ingest] Error transferring patches from {target_table} to pointcloud_patches: {transfer_err}")
+                raise transfer_err
+
+    return found_pcid
+
 
 
 
