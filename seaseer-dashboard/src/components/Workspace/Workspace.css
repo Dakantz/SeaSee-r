@@ -92,6 +92,19 @@
     flex: 1;
     overflow-y: auto;
     padding: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.jobs-sidebar-divider {
+    border: none;
+    border-top: 1px solid var(--color-border-subtle);
+    margin: var(--spacing-md) 0;
+}
+
+.jobs-section-header {
+    margin-bottom: var(--spacing-2xs);
 }
 
 .jobs-sidebar-reopen-btn {
