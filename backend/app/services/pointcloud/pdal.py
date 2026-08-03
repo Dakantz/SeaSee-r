@@ -1,4 +1,5 @@
 import os
+import csv
 import json
 import shutil
 import asyncio
@@ -7,8 +8,12 @@ from typing import Dict, Any, Tuple, Optional
 from urllib.parse import urlparse
 
 
+from sqlalchemy import text
+from app.core.config import settings, StorageType
+from app.core.database import async_session
 from app.services.pointcloud.entwine import build_ept
 
+EMODNET_ELEVATION_MULTIPLICATION = 50.0
 
 def get_docker_cmd() -> str:
     """Finds the absolute path to docker executable, checking PATH and common system locations."""
@@ -129,7 +134,202 @@ async def build_ept_pdal_docker(
 build_ept_pdal = build_ept_pdal_docker
 
 
+async def process_emodnet_csv(
+    csv_path: str,
+    output_dir: str,
+    out_srs: str = "EPSG:3857",
+    storage_type: Optional[str] = None,
+    file_id: Optional[str] = None
+) -> Tuple[Dict[str, float], int, Optional[int]]:
+    """
+    Processes an EMODnet Bathymetry CSV file:
+    1. Pre-processes the CSV by removing the unit row (2nd line) and renaming spatial
+       columns (longitude -> X, latitude -> Y, elevation -> Z).
+    2. Runs PDAL (readers.text -> filters.reprojection -> writers.las/laz) to generate a temporary reprojected .laz file.
+    3. Extracts point cloud statistics (bbox and point count).
+    4. Ingests point cloud into PostgreSQL pgPointcloud table if database storage is enabled.
+    5. Uses Entwine (build_ept) to convert the .laz file into an EPT dataset.
+    Returns (bbox_dict, number_of_points, pcid).
+    """
+    csv_abs = os.path.abspath(csv_path)
+    output_abs = os.path.abspath(output_dir)
+    os.makedirs(output_abs, exist_ok=True)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        cleaned_csv_path = os.path.join(tmp_dir, "cleaned_emodnet.csv")
+        temp_laz_path = os.path.join(tmp_dir, "reprojected.laz")
+
+        # 1. Pre-processing: Clean CSV header and rename spatial columns
+        with open(csv_abs, mode="r", newline="", encoding="utf-8") as infile, \
+             open(cleaned_csv_path, mode="w", newline="", encoding="utf-8") as outfile:
+            reader = csv.reader(infile)
+            writer = csv.writer(outfile)
+
+            header = next(reader, None)
+            if header is not None:
+                # Strip out second header line (units row)
+                next(reader, None)
+
+                # Rename columns longitude -> X, latitude -> Y, elevation -> Z
+                header_mapped = []
+                elevation_idx = -1
+                for idx, col in enumerate(header):
+                    col_name = col.strip()
+                    if col_name == "longitude":
+                        header_mapped.append("X")
+                    elif col_name == "latitude":
+                        header_mapped.append("Y")
+                    elif col_name == "elevation":
+                        header_mapped.append("Z")
+                        elevation_idx = idx
+                    else:
+                        header_mapped.append(col_name)
+
+                # Append Red, Green, Blue columns for bright blue color
+                header_mapped.extend(["Red", "Green", "Blue"])
+
+                writer.writerow(header_mapped)
+
+                for row in reader:
+                    if row:
+                        # Multiply elevation by 100
+                        if elevation_idx != -1 and elevation_idx < len(row):
+                            raw_val = row[elevation_idx].strip()
+                            if raw_val and raw_val.lower() != "nan":
+                                try:
+                                    z_val = float(raw_val)
+                                    row[elevation_idx] = str(z_val * EMODNET_ELEVATION_MULTIPLICATION)
+                                except (ValueError, TypeError):
+                                    pass
+
+                        # Append 8-bit bright blue RGB values (Red: 0, Green: 191, Blue: 255)
+                        row.extend(["0", "191", "255"])
+                        writer.writerow(row)
+
+        # 2. Native PDAL pipeline execution
+        pdal_pipeline = {
+            "pipeline": [
+                {
+                    "type": "readers.text",
+                    "filename": cleaned_csv_path,
+                    "spatialreference": "EPSG:4326"
+                },
+                {
+                    "type": "filters.reprojection",
+                    "out_srs": out_srs
+                },
+                temp_laz_path
+            ]
+        }
+
+        pipeline_json = json.dumps(pdal_pipeline)
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "pdal", "pipeline", "--stdin",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate(input=pipeline_json.encode("utf-8"))
+
+            if proc.returncode != 0:
+                err_msg = stderr.decode("utf-8", errors="replace") or stdout.decode("utf-8", errors="replace")
+                raise RuntimeError(f"Native PDAL pipeline failed: {err_msg}")
+
+        except (FileNotFoundError, RuntimeError) as native_err:
+            # Fall back to Docker pdal/pdal if native pdal binary is missing or fails
+            docker_bin = get_docker_cmd()
+
+            docker_pipeline_path = os.path.join(tmp_dir, "pipeline.json")
+            docker_pdal_pipeline = {
+                "pipeline": [
+                    {
+                        "type": "readers.text",
+                        "filename": "/config/cleaned_emodnet.csv",
+                        "spatialreference": "EPSG:4326"
+                    },
+                    {
+                        "type": "filters.reprojection",
+                        "out_srs": out_srs
+                    },
+                    "/config/reprojected.laz"
+                ]
+            }
+            with open(docker_pipeline_path, "w") as f:
+                json.dump(docker_pdal_pipeline, f)
+
+            cmd = [
+                docker_bin, "run", "--rm",
+                "-v", f"{tmp_dir}:/config",
+                "pdal/pdal",
+                "pdal", "pipeline", "/config/pipeline.json"
+            ]
+
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await proc.communicate()
+
+                if proc.returncode != 0:
+                    err_msg = stderr.decode("utf-8", errors="replace") or stdout.decode("utf-8", errors="replace")
+                    raise RuntimeError(f"PDAL Docker pipeline failed: {err_msg}") from native_err
+            except FileNotFoundError:
+                raise RuntimeError(
+                    f"Neither native 'pdal' command nor '{docker_bin}' binary was found."
+                ) from native_err
+
+        # 3. Extract stats (bbox & number of points) from reprojected LAZ file
+        bbox, number_of_points, _ = await get_pointcloud_srs_and_stats(temp_laz_path)
+
+        # 4. Ingest points into pgPointcloud database if database storage is enabled
+        pcid = None
+        current_storage_type = storage_type or settings.pointcloud_storage_type.value
+        if current_storage_type == StorageType.database.value and file_id:
+            connection_str = format_libpq_connection_string(settings.database_url)
+            table_uuid = file_id.replace("-", "")
+            dynamic_table_name = f"pc_{table_uuid}_lod0"
+
+            print(f"[EMODnet CSV Ingest] Ingesting pointcloud {file_id} to database table {dynamic_table_name}...")
+            await ingest_pgpointcloud(
+                file_path=temp_laz_path,
+                connection_str=connection_str,
+                table_name=dynamic_table_name,
+                capacity=400,
+                srid=3857,
+                overwrite=True
+            )
+
+            async with async_session() as session:
+                try:
+                    res = await session.execute(
+                        text(f"SELECT PC_PCId(patch) FROM {dynamic_table_name} LIMIT 1")
+                    )
+                    row = res.first()
+                    if row and row[0] is not None:
+                        pcid = int(row[0])
+                except Exception as e:
+                    print(f"Failed to query pcid from {dynamic_table_name}: {e}")
+
+            if pcid is None:
+                pcid = 1
+
+        # 5. Build EPT dataset using Entwine
+        await build_ept(
+            file_path=temp_laz_path,
+            output_dir=output_abs,
+            scale="0.001"
+        )
+
+        return bbox, number_of_points, pcid
+
+
+
 async def get_pointcloud_stats(file_path: str) -> Tuple[Dict[str, float], int]:
+
     """
     Runs `pdal info --stats` to extract bounding box coordinates (min_x, min_y, min_z, max_x, max_y, max_z)
     and total point count from a point cloud file.
