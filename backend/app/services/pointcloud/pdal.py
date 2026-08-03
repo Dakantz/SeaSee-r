@@ -390,18 +390,19 @@ async def ingest_pgpointcloud(
     capacity: int = 400,
     overwrite: bool = True,
     pcid: Optional[int] = None,
-    target_dimensions: Optional[list] = None
+    target_dimensions: Optional[list] = None,
+    step: int = 1
 ) -> None:
     """
     Executes a PDAL pipeline to chip and ingest points into PostgreSQL pgPointcloud table.
     Supports GeoTIFF / raster formats via readers.gdal driver.
-    Logs both source and target dimensions.
+    Logs both source and target dimensions. Supports optional decimation step.
     """
     file_abs = os.path.abspath(file_path)
     ext = os.path.splitext(file_abs)[1].lower()
 
     source_dims = await get_pointcloud_dimensions(file_abs)
-    target_dims = target_dimensions or ["X", "Y", "Z"]
+    target_dims = target_dimensions or ["X", "Y", "Z", "Red", "Green", "Blue"]
 
     print(f"[PDAL Ingest] Source file dimensions: {source_dims if source_dims else 'unknown'}")
     print(f"[PDAL Ingest] Target schema dimensions: {target_dims}")
@@ -425,10 +426,43 @@ async def ingest_pgpointcloud(
 
     pipeline_stages = [reader_stage]
 
+    # Map color dimensions if source uses alternative cases (e.g. red, green, blue or r, g, b)
+    s_dims_lower = [str(d).lower() for d in source_dims]
+    ferry_pairs = []
+    if "red" in s_dims_lower and "Red" not in source_dims:
+        orig = source_dims[s_dims_lower.index("red")]
+        ferry_pairs.append(f"{orig}=>Red")
+    elif "r" in s_dims_lower and "Red" not in source_dims and "r" in source_dims:
+        ferry_pairs.append("r=>Red")
+
+    if "green" in s_dims_lower and "Green" not in source_dims:
+        orig = source_dims[s_dims_lower.index("green")]
+        ferry_pairs.append(f"{orig}=>Green")
+    elif "g" in s_dims_lower and "Green" not in source_dims and "g" in source_dims:
+        ferry_pairs.append("g=>Green")
+
+    if "blue" in s_dims_lower and "Blue" not in source_dims:
+        orig = source_dims[s_dims_lower.index("blue")]
+        ferry_pairs.append(f"{orig}=>Blue")
+    elif "b" in s_dims_lower and "Blue" not in source_dims and "b" in source_dims:
+        ferry_pairs.append("b=>Blue")
+
+    if ferry_pairs:
+        pipeline_stages.append({
+            "type": "filters.ferry",
+            "dimensions": ", ".join(ferry_pairs)
+        })
+
     if srid == 3857:
         pipeline_stages.append({
             "type": "filters.reprojection",
             "out_srs": "EPSG:3857"
+        })
+
+    if step > 1:
+        pipeline_stages.append({
+            "type": "filters.decimation",
+            "step": step
         })
 
     writer_stage = {

@@ -25,7 +25,7 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
     async def stream_pointcloud_binary(self, identifier: str, lod: int = 0) -> StreamingResponse:
         """
         Queries point cloud points directly from pgPointcloud table using PC_Explode and PC_Get,
-        packs XYZ (Float32) and RGB (Uint16) into a flat binary string, and streams as application/octet-stream.
+        packs XYZ (Float32) and RGB (Uint8) into a flat binary string, and streams as application/octet-stream.
         """
         pointcloud_uuid = identifier
         if "?" in identifier:
@@ -58,49 +58,14 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
         if not row:
             raise HTTPException(status_code=404, detail="Point cloud metadata not found in database.")
 
-        # Check PCID schema for dimension names (XYZ and RGB)
-        x_dim, y_dim, z_dim = 'x', 'y', 'z'
-        r_dim, g_dim, b_dim = 'Red', 'Green', 'Blue'
-        has_color = True
-
-        try:
-            schema_res = await self.db.execute(text(f"""
-                SELECT schema FROM pointcloud_formats 
-                WHERE pcid = (SELECT PC_PCID(patch) FROM {dynamic_table_name} LIMIT 1)
-            """))
-            schema_row = schema_res.first()
-            if schema_row and schema_row[0]:
-                schema_xml = str(schema_row[0])
-                if 'name="X"' in schema_xml:
-                    x_dim, y_dim, z_dim = 'X', 'Y', 'Z'
-                elif 'name="x"' in schema_xml:
-                    x_dim, y_dim, z_dim = 'x', 'y', 'z'
-
-                if 'name="Red"' in schema_xml:
-                    r_dim, g_dim, b_dim = 'Red', 'Green', 'Blue'
-                elif 'name="red"' in schema_xml:
-                    r_dim, g_dim, b_dim = 'red', 'green', 'blue'
-                elif 'name="R"' in schema_xml:
-                    r_dim, g_dim, b_dim = 'R', 'G', 'B'
-                elif 'name="r"' in schema_xml:
-                    r_dim, g_dim, b_dim = 'r', 'g', 'b'
-                else:
-                    has_color = False
-        except Exception as e:
-            logging.warning(f"Could not inspect schema for table {dynamic_table_name}: {e}")
-
-        r_select = f"PC_Get(pt, '{r_dim}')" if has_color else "0"
-        g_select = f"PC_Get(pt, '{g_dim}')" if has_color else "0"
-        b_select = f"PC_Get(pt, '{b_dim}')" if has_color else "0"
-
         query = text(f"""
             SELECT 
-                PC_Get(pt, '{x_dim}') as x,
-                PC_Get(pt, '{y_dim}') as y,
-                PC_Get(pt, '{z_dim}') as z,
-                {r_select} as r,
-                {g_select} as g,
-                {b_select} as b
+                PC_Get(pt, 'X')         as x,
+                PC_Get(pt, 'Y')         as y,
+                PC_Get(pt, 'Z')         as z,
+                PC_Get(pt, 'Red')       as r,
+                PC_Get(pt, 'Green')     as g,
+                PC_Get(pt, 'Blue')      as b
             FROM (
                 SELECT PC_Explode(patch) AS pt FROM {dynamic_table_name}
             ) AS points;
@@ -119,8 +84,13 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
                         g = int(record[4]) if record[4] is not None else 0
                         b = int(record[5]) if record[5] is not None else 0
 
-                        buffer.extend(struct.pack('<3f3H', x, y, z, r, g, b))
-                        if len(buffer) >= 18000:
+                        # Convert/scale 16-bit (0-65535) if needed and clamp to 0-255 (Uint8)
+                        r_u8 = min(255, max(0, r >> 8 if r > 255 else r))
+                        g_u8 = min(255, max(0, g >> 8 if g > 255 else g))
+                        b_u8 = min(255, max(0, b >> 8 if b > 255 else b))
+
+                        buffer.extend(struct.pack('<3f3B', x, y, z, r_u8, g_u8, b_u8))
+                        if len(buffer) >= 15000:
                             yield bytes(buffer)
                             buffer.clear()
 

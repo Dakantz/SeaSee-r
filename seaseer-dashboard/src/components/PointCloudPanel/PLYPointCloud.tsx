@@ -7,19 +7,22 @@ export interface PLYPointCloudProps {
     hardcodedIdentifier?: string;
     defaultPlyUrl?: string;
     initialMode?: "binary" | "plyFile" | "plyUrl";
+    initialLod?: number;
 }
 
-const DEFAULT_HARDCODED_IDENTIFIER = "ec6fd8b9-8ef1-4c32-868a-075e99f46b0d";
+const DEFAULT_HARDCODED_IDENTIFIER = "";
 const DEFAULT_PLY_URL = "/test_data/datasets/video_1/odm_filterpoints/point_cloud.ply";
 
 export default function PLYPointCloud({
     hardcodedIdentifier = DEFAULT_HARDCODED_IDENTIFIER,
     defaultPlyUrl = DEFAULT_PLY_URL,
     initialMode = "binary",
+    initialLod = 0,
 }: PLYPointCloudProps) {
     const [mode, setMode] = useState<"binary" | "plyFile" | "plyUrl">(initialMode);
     const [identifier, setIdentifier] = useState<string>(hardcodedIdentifier);
     const [plyUrl, setPlyUrl] = useState<string>(defaultPlyUrl);
+    const [lod, setLod] = useState<number>(initialLod);
     const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
@@ -39,6 +42,12 @@ export default function PLYPointCloud({
                 geom.computeBoundingSphere();
                 const count = geom.attributes.position ? geom.attributes.position.count : 0;
 
+                if (geom.attributes.color) {
+                    console.log("[PLY Loader] Returned color values (first 3 points):", Array.from(geom.attributes.color.array.slice(0, 9)));
+                } else {
+                    console.log("[PLY Loader] No color attribute in loaded PLY file");
+                }
+
                 setGeometry((prev) => {
                     if (prev) prev.dispose();
                     return geom;
@@ -55,17 +64,18 @@ export default function PLYPointCloud({
         );
     }, []);
 
-    const loadBinaryPointCloud = useCallback(async (idToLoad: string) => {
+    const loadBinaryPointCloud = useCallback(async (idToLoad: string, lodToLoad: number = 0) => {
         if (!idToLoad.trim()) return;
         setIsLoading(true);
         setError(null);
 
         const startTime = performance.now();
-        console.log(`[Binary Stream] Loading started for ID: ${idToLoad}`);
+        console.log(`[Binary Stream] Loading started for ID: ${idToLoad}, LOD: ${lodToLoad}`);
 
         try {
             const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
-            const url = `${API_BASE_URL}/pointclouds/${encodeURIComponent(idToLoad.trim())}/stream-binary`;
+            const cleanId = idToLoad.trim().split("?")[0];
+            const url = `${API_BASE_URL}/pointclouds/${encodeURIComponent(cleanId)}/stream-binary?lod=${lodToLoad}`;
 
             const fetchStartTime = performance.now();
             const res = await fetch(url);
@@ -82,7 +92,7 @@ export default function PLYPointCloud({
             const sizeMB = (buffer.byteLength / (1024 * 1024)).toFixed(2);
             console.log(`[Binary Stream] Buffer downloaded (${sizeMB} MB): ${bufferTime.toFixed(2)} ms`);
 
-            const pointSizeInBytes = 18; // 3 x Float32 (12 bytes) + 3 x Uint16 (6 bytes)
+            const pointSizeInBytes = 15; // 3 x Float32 (12 bytes) + 3 x Uint8 (3 bytes)
             const count = Math.floor(buffer.byteLength / pointSizeInBytes);
 
             if (count === 0) {
@@ -93,36 +103,37 @@ export default function PLYPointCloud({
             const positions = new Float32Array(count * 3);
             const colors = new Float32Array(count * 3);
             const dataView = new DataView(buffer);
-
-            let maxColorVal = 0;
-            const samples = Math.min(count, 500);
-            for (let i = 0; i < samples; i++) {
-                const offset = i * 18;
-                const r = dataView.getUint16(offset + 12, true);
-                const g = dataView.getUint16(offset + 14, true);
-                const b = dataView.getUint16(offset + 16, true);
-                if (r > maxColorVal) maxColorVal = r;
-                if (g > maxColorVal) maxColorVal = g;
-                if (b > maxColorVal) maxColorVal = b;
-            }
-            const colorScale = maxColorVal > 255 ? 65535 : (maxColorVal > 0 ? 255 : 1);
+            const colorScale = 255;
+            const tempColor = new THREE.Color();
 
             for (let i = 0; i < count; i++) {
-                const offset = i * 18;
+                const offset = i * 15;
                 positions[i * 3] = dataView.getFloat32(offset, true);
                 positions[i * 3 + 1] = dataView.getFloat32(offset + 4, true);
                 positions[i * 3 + 2] = dataView.getFloat32(offset + 8, true);
 
-                const r = dataView.getUint16(offset + 12, true);
-                const g = dataView.getUint16(offset + 14, true);
-                const b = dataView.getUint16(offset + 16, true);
+                const r = dataView.getUint8(offset + 12);
+                const g = dataView.getUint8(offset + 13);
+                const b = dataView.getUint8(offset + 14);
 
-                colors[i * 3] = r / colorScale;
-                colors[i * 3 + 1] = g / colorScale;
-                colors[i * 3 + 2] = b / colorScale;
+                tempColor.setRGB(
+                    Math.min(1, r / colorScale),
+                    Math.min(1, g / colorScale),
+                    Math.min(1, b / colorScale),
+                    THREE.SRGBColorSpace
+                );
+                colors[i * 3] = tempColor.r;
+                colors[i * 3 + 1] = tempColor.g;
+                colors[i * 3 + 2] = tempColor.b;
             }
             const parseTime = performance.now() - parseStartTime;
             console.log(`[Binary Stream] Parsed ${count.toLocaleString()} points from binary buffer: ${parseTime.toFixed(2)} ms`);
+            console.log("[Binary Stream] Sample raw Uint8 colors (point 0):", {
+                r: dataView.getUint8(12),
+                g: dataView.getUint8(13),
+                b: dataView.getUint8(14),
+            });
+            console.log("[Binary Stream] Sample returned color values (first 3 points normalized):", Array.from(colors.slice(0, 9)));
 
             const geomStartTime = performance.now();
             const geom = new THREE.BufferGeometry();
@@ -171,6 +182,12 @@ export default function PLYPointCloud({
 
             const count = geom.attributes.position ? geom.attributes.position.count : 0;
 
+            if (geom.attributes.color) {
+                console.log("[PLY File] Returned color values (first 3 points):", Array.from(geom.attributes.color.array.slice(0, 9)));
+            } else {
+                console.log("[PLY File] No color attribute in loaded PLY file");
+            }
+
             setGeometry((prev) => {
                 if (prev) prev.dispose();
                 return geom;
@@ -186,11 +203,11 @@ export default function PLYPointCloud({
 
     useEffect(() => {
         if (mode === "binary") {
-            loadBinaryPointCloud(identifier);
+            loadBinaryPointCloud(identifier, lod);
         } else if (mode === "plyUrl") {
             loadPlyUrl(plyUrl);
         }
-    }, [mode, identifier, plyUrl, loadBinaryPointCloud, loadPlyUrl]);
+    }, [mode, identifier, lod, loadBinaryPointCloud, loadPlyUrl]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
@@ -328,9 +345,32 @@ export default function PLYPointCloud({
                                     boxSizing: "border-box",
                                 }}
                             />
+                            <label style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>
+                                Level of Detail (LOD):
+                            </label>
+                            <select
+                                value={lod}
+                                onChange={(e) => setLod(Number(e.target.value))}
+                                style={{
+                                    background: "var(--color-bg-subtle)",
+                                    border: "1px solid var(--color-border-strong)",
+                                    color: "var(--color-text-secondary)",
+                                    padding: "var(--spacing-xs) var(--spacing-sm)",
+                                    borderRadius: "var(--radius-sm)",
+                                    fontSize: "var(--font-size-xs)",
+                                    width: "100%",
+                                    boxSizing: "border-box",
+                                    cursor: "pointer",
+                                }}
+                            >
+                                <option value={0} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 0 (Full - 100%)</option>
+                                <option value={1} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 1 (High - 50%)</option>
+                                <option value={2} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 2 (Medium - 25%)</option>
+                                <option value={3} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 3 (Low - 12.5%)</option>
+                            </select>
                             <button
                                 type="button"
-                                onClick={() => loadBinaryPointCloud(identifier)}
+                                onClick={() => loadBinaryPointCloud(identifier, lod)}
                                 disabled={isLoading}
                                 style={{
                                     background: isLoading ? "var(--color-border-solid)" : "var(--color-accent)",

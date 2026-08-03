@@ -38,7 +38,7 @@ async def list_pointclouds(
 
 
 """
-Stream point cloud data directly from database as raw binary buffer (Float32 XYZ, Uint16 RGB).
+Stream point cloud data directly from database as raw binary buffer (Float32 XYZ, Uint8 RGB).
 """
 @router.get("/{identifier}/stream-binary")
 async def stream_pointcloud_binary(
