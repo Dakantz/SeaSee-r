@@ -4,7 +4,14 @@ import { OrbitControls, Grid} from "@react-three/drei";
 import "./PointCloudPanel.css";
 import PLYPointCloud from "./PLYPointCloud";
 
-export default function PointCloudPanel() {
+import type { ReactNode } from "react";
+
+
+type PointCloudPanelProps = {
+    children?: ReactNode;
+};
+
+export default function PointCloudPanel({ children }: PointCloudPanelProps)  {
     return (
         <div className="pointcloud-panel">
 
@@ -30,6 +37,8 @@ export default function PointCloudPanel() {
                 <axesHelper args={[2]} />
 
                 <PLYPointCloud />
+
+                {children}
 
                 <OrbitControls />
 

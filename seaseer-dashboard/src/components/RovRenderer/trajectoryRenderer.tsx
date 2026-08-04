@@ -12,6 +12,9 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 
 import { TelemetryPositionReader } from "../TelemetoryPanel/TelemetryPositionReader";
+import { useTrajectoryHover } from "./hooks/useTrajectoryHover";
+import { useTrajectoryClosestPoint } from "./hooks/useTrajectoryClosestPoint";
+import { Billboard } from "@react-three/drei";
 
 export interface TrajectoryRendererProps {
     url: string;
@@ -22,6 +25,7 @@ export interface TrajectoryRendererProps {
     position?: [number, number, number];
     rotation?: [number, number, number];
     scale?: [number, number, number];
+    onInitialPositionLoaded?: () => void;
 }
 
 export function TrajectoryRenderer({
@@ -33,9 +37,12 @@ export function TrajectoryRenderer({
     position = [0, 0, 0],
     rotation = [0, 0, 0],
     scale = [1, 1, 1],
+    onInitialPositionLoaded,
 }: TrajectoryRendererProps) {
-    
+
     const { size } = useThree();
+    const { isHovered, hoverProps } = useTrajectoryHover(url);
+    const { hoveredPoint, pointerMoveProps } = useTrajectoryClosestPoint();
 
     const reader = useMemo(
         () => new TelemetryPositionReader(url),
@@ -54,6 +61,17 @@ export function TrajectoryRenderer({
 
             if (cancelled) {
                 return;
+            }
+
+            if (samples.length > 0) {
+                TrajectoryRenderer.initialPositions[url] = [
+                    samples[0].x,
+                    samples[0].y,
+                    samples[0].z,
+                ];
+                if (onInitialPositionLoaded) {
+                    onInitialPositionLoaded();
+                }
             }
 
             const positions: number[] = [];
@@ -76,8 +94,7 @@ export function TrajectoryRenderer({
             const material =
                 new LineMaterial({
                     color,
-                    linewidth:
-                        lineWidth,
+                    linewidth: isHovered ? lineWidth * 1.5 : lineWidth,
                     opacity,
                     transparent:
                         opacity < 1,
@@ -169,6 +186,7 @@ export function TrajectoryRenderer({
         rotation,
         scale,
         size,
+        isHovered,
     ]);
 
     if (!group) {
@@ -176,6 +194,37 @@ export function TrajectoryRenderer({
     }
 
     return (
-        <primitive object={group} />
+        <group>
+            <primitive
+                object={group}
+                onPointerOver={hoverProps.onPointerOver}
+                onPointerMove={pointerMoveProps.onPointerMove}
+                onPointerOut={(e: any) => {
+                    hoverProps.onPointerOut(e);
+                    pointerMoveProps.onPointerOut(e);
+                }}
+            />
+            {hoveredPoint && (
+                <group
+                    position={position}
+                    rotation={rotation}
+                    scale={scale}
+                >
+                    <Billboard position={hoveredPoint}>
+                        <mesh>
+                            <ringGeometry args={[0.4, 0.6, 32]} />
+                            <meshBasicMaterial
+                                color={0xffff00}
+                                depthTest={false}
+                                transparent
+                                opacity={0.8}
+                            />
+                        </mesh>
+                    </Billboard>
+                </group>
+            )}
+        </group>
     );
 }
+
+TrajectoryRenderer.initialPositions = {} as Record<string, [number, number, number]>;
