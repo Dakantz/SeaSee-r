@@ -119,6 +119,21 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
   // Track expanded error rows for FAILED jobs (job ID set)
   const [expandedErrorIds, setExpandedErrorIds] = useState<Set<string>>(new Set());
 
+  // Track expanded completed jobs (job ID set). Completed jobs start collapsed by default.
+  const [expandedCompletedIds, setExpandedCompletedIds] = useState<Set<string>>(new Set());
+
+  const toggleCompletedExpand = (jobId: string) => {
+    setExpandedCompletedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(jobId)) {
+        next.delete(jobId);
+      } else {
+        next.add(jobId);
+      }
+      return next;
+    });
+  };
+
   const toggleErrorExpand = (jobId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setExpandedErrorIds((prev) => {
@@ -247,15 +262,24 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
         <div className="jso-list">
           {jobs.map((job) => {
             const isFailed = job.status === 'FAILED';
+            const isCompleted = job.status === 'COMPLETED';
+            const isCompletedExpanded = expandedCompletedIds.has(job.id);
+            const isCollapsed = isCompleted && !isCompletedExpanded;
             const isErrorExpanded = expandedErrorIds.has(job.id);
             const progressValue = Math.min(100, Math.max(0, job.progress || 0));
 
             return (
               <div
                 key={job.id}
-                className="jso-item"
-                onClick={() => onJobSelect?.(job)}
-                style={{ cursor: onJobSelect ? 'pointer' : 'default' }}
+                className={`jso-item ${isCollapsed ? 'jso-item-collapsed' : ''}`}
+                onClick={() => {
+                  if (isCompleted) {
+                    toggleCompletedExpand(job.id);
+                  }
+                  onJobSelect?.(job);
+                }}
+                style={{ cursor: isCompleted || onJobSelect ? 'pointer' : 'default' }}
+                title={isCompleted && isCollapsed ? 'Click to expand completed job details' : undefined}
               >
                 {/* Job Info & Status Badge */}
                 <div className="jso-item-main">
@@ -263,34 +287,45 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
                     <span className="jso-job-name" title={job.name}>
                       {job.name || 'Unnamed Job'}
                     </span>
-                    <div className="jso-job-meta">
-                      <span>ID: {job.id.substring(0, 8)}...</span>
-                      <span>•</span>
-                      <span>{formatTime(job.created_at)}</span>
-                    </div>
+                    {!isCollapsed && (
+                      <div className="jso-job-meta">
+                        <span className="jso-job-id">ID: {job.id}</span>
+                        {job.created_at && (
+                          <span className="jso-job-time">
+                            <span className="jso-job-meta-bullet">•</span>
+                            {formatTime(job.created_at)}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Status Badge */}
                   <span className={`jso-status-badge ${getStatusBadgeClass(job.status)}`}>
                     {job.status}
+                    {isCompleted && (
+                      <span className="jso-expand-arrow">{isCollapsed ? '▼' : '▲'}</span>
+                    )}
                   </span>
                 </div>
 
                 {/* Visual Progress Indicator (0.0 to 100.0) */}
-                <div className="jso-progress-section">
-                  <div className="jso-progress-bar-bg">
-                    <div
-                      className={`jso-progress-bar-fill status-${job.status.toLowerCase()}`}
-                      style={{ width: `${progressValue}%` }}
-                    />
+                {!isCollapsed && (
+                  <div className="jso-progress-section">
+                    <div className="jso-progress-bar-bg">
+                      <div
+                        className={`jso-progress-bar-fill status-${job.status.toLowerCase()}`}
+                        style={{ width: `${progressValue}%` }}
+                      />
+                    </div>
+                    <span className="jso-progress-percent">
+                      {progressValue.toFixed(1)}%
+                    </span>
                   </div>
-                  <span className="jso-progress-percent">
-                    {progressValue.toFixed(1)}%
-                  </span>
-                </div>
+                )}
 
                 {/* Error Expandable Row for FAILED Jobs */}
-                {isFailed && job.error_message && (
+                {!isCollapsed && isFailed && job.error_message && (
                   <div>
                     <button
                       type="button"
