@@ -16,6 +16,24 @@ import { useTrajectoryHover } from "./hooks/useTrajectoryHover";
 import { useTrajectoryClosestPoint } from "./hooks/useTrajectoryClosestPoint";
 import { Billboard } from "@react-three/drei";
 
+let circleTexture: THREE.CanvasTexture | null = null;
+function getCircleTexture(): THREE.CanvasTexture {
+    if (!circleTexture && typeof document !== "undefined") {
+        const canvas = document.createElement("canvas");
+        canvas.width = 32;
+        canvas.height = 32;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+            ctx.beginPath();
+            ctx.arc(16, 16, 14, 0, 2 * Math.PI);
+            ctx.fillStyle = "#ffffff";
+            ctx.fill();
+        }
+        circleTexture = new THREE.CanvasTexture(canvas);
+    }
+    return circleTexture!;
+}
+
 export interface TrajectoryRendererProps {
     url: string;
     color?: THREE.ColorRepresentation;
@@ -26,6 +44,8 @@ export interface TrajectoryRendererProps {
     rotation?: [number, number, number];
     scale?: [number, number, number];
     onInitialPositionLoaded?: () => void;
+    showPoints?: boolean;
+    pointSize?: number;
 }
 
 export function TrajectoryRenderer({
@@ -38,11 +58,14 @@ export function TrajectoryRenderer({
     rotation = [0, 0, 0],
     scale = [1, 1, 1],
     onInitialPositionLoaded,
+    showPoints = true,
+    pointSize = 0.5,
 }: TrajectoryRendererProps) {
 
     const { size } = useThree();
     const { isHovered, hoverProps } = useTrajectoryHover(url);
-    const { hoveredPoint, pointerMoveProps } = useTrajectoryClosestPoint();
+    const [samples, setSamples] = useState<any[]>([]);
+    const { hoveredPoint, pointerMoveProps } = useTrajectoryClosestPoint(samples, size, 30);
 
     const reader = useMemo(
         () => new TelemetryPositionReader(url),
@@ -73,6 +96,8 @@ export function TrajectoryRenderer({
                     onInitialPositionLoaded();
                 }
             }
+
+            setSamples(samples);
 
             const positions: number[] = [];
 
@@ -132,6 +157,26 @@ export function TrajectoryRenderer({
 
             group.add(line);
 
+            if (showPoints) {
+                const pointsGeometry = new THREE.BufferGeometry();
+                pointsGeometry.setAttribute(
+                    "position",
+                    new THREE.Float32BufferAttribute(positions, 3)
+                );
+
+                const pointsMaterial = new THREE.PointsMaterial({
+                    color,
+                    size: pointSize,
+                    map: getCircleTexture(),
+                    transparent: true,
+                    alphaTest: 0.5,
+                    sizeAttenuation: true,
+                });
+
+                const points = new THREE.Points(pointsGeometry, pointsMaterial);
+                group.add(points);
+            }
+
             setGroup(group);
         }
 
@@ -187,6 +232,8 @@ export function TrajectoryRenderer({
         scale,
         size,
         isHovered,
+        showPoints,
+        pointSize,
     ]);
 
     if (!group) {
@@ -212,7 +259,7 @@ export function TrajectoryRenderer({
                 >
                     <Billboard position={hoveredPoint}>
                         <mesh>
-                            <ringGeometry args={[0.4, 0.6, 32]} />
+                            <ringGeometry args={[0.15, 0.25, 32]} />
                             <meshBasicMaterial
                                 color={0xffff00}
                                 depthTest={false}
