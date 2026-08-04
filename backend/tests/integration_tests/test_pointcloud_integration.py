@@ -111,9 +111,10 @@ async def test_pointcloud_filesystem_flow(async_client):
 
         # Cleanup created files
         if file_id:
-            file_path = os.path.join(settings.upload_dir, f"{file_id}.ply")
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            for fname in [file_id, f"{file_id}.ply"]:
+                file_path = os.path.join(settings.upload_dir, fname)
+                if os.path.exists(file_path):
+                    os.remove(file_path)
             ept_path = os.path.join(settings.ept_dir, file_id)
             if os.path.exists(ept_path):
                 shutil.rmtree(ept_path)
@@ -182,9 +183,10 @@ async def test_pointcloud_database_flow(async_client):
 
         # Cleanup created files
         if file_id:
-            file_path = os.path.join(settings.upload_dir, f"{file_id}.ply")
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            for fname in [file_id, f"{file_id}.ply"]:
+                file_path = os.path.join(settings.upload_dir, fname)
+                if os.path.exists(file_path):
+                    os.remove(file_path)
             ept_path = os.path.join(settings.ept_dir, file_id)
             if os.path.exists(ept_path):
                 shutil.rmtree(ept_path)
