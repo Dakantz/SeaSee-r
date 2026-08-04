@@ -1,8 +1,10 @@
 import json
 import logging
+import os
 import re
 import struct
 import subprocess
+import uuid
 from typing import List
 from fastapi import HTTPException, Depends
 from fastapi.responses import StreamingResponse
@@ -107,34 +109,44 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
             headers={"Content-Disposition": f"attachment; filename={pointcloud_uuid}_lod{lod}.bin"}
         )
 
-    async def get_pointcloud(self, identifier: str) -> StreamingResponse:
+    async def get_pointcloud(self, identifier: str, lod: int = 0) -> StreamingResponse:
         """
         Fetches the pointcloud from pgPointcloud table for a given 
-        identifier (UUID) and LOD, streams the result as a PLY file using a PDAL reader.
+        identifier (UUID) and LOD, and streams the result as a PLY file (binary_little_endian 1.0).
         """
-        # Parse identifier and optional lod parameters (e.g. "uuid?lod=1")
-        lod = 0
+        # Parse identifier and optional lod parameters (e.g. "uuid?lod=1" or "uuid.ply?lod=1")
         pointcloud_uuid = identifier
         if "?" in identifier:
-            parts = identifier.split("?")
+            parts = identifier.split("?", 1)
             pointcloud_uuid = parts[0]
-            for param in parts[1].split("&"):
-                if param.startswith("lod="):
-                    try:
-                        lod = int(param.split("=")[1])
-                    except ValueError:
-                        lod = 0
+            if lod == 0:
+                for param in parts[1].split("&"):
+                    if param.startswith("lod="):
+                        try:
+                            lod = int(param.split("=")[1])
+                        except ValueError:
+                            lod = 0
 
-        # Sanitize UUID
+        # Remove trailing .ply extension if present
+        if pointcloud_uuid.endswith(".ply"):
+            pointcloud_uuid = pointcloud_uuid[:-4]
+
+        # Sanitize UUID string
         clean_uuid = re.sub(r'[^a-fA-F0-9\-]', '', pointcloud_uuid)
         if not clean_uuid:
+            raise HTTPException(status_code=400, detail="Invalid Point Cloud UUID format.")
+
+        # Verify that clean_uuid is a valid UUID format
+        try:
+            valid_uuid = str(uuid.UUID(clean_uuid))
+        except ValueError:
             raise HTTPException(status_code=400, detail="Invalid Point Cloud UUID format.")
 
         # Verify that the point cloud metadata exists in pointclouds table
         try:
             result = await self.db.execute(
-                text("SELECT id FROM pointclouds WHERE id = :id"),
-                {"id": clean_uuid}
+                text("SELECT id, orig_filename FROM pointclouds WHERE id = :id"),
+                {"id": valid_uuid}
             )
             row = result.first()
         except Exception as e:
@@ -143,63 +155,83 @@ class DatabasePointCloudStorageService(PointCloudStorageService):
         if not row:
             raise HTTPException(status_code=404, detail="Point cloud metadata not found in database.")
 
-        # Dynamically build libpq connection string from settings
-        db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
-        parsed = urlparse(db_url)
-        conn_parts = []
-        if parsed.hostname:
-            conn_parts.append(f"host={parsed.hostname}")
-        if parsed.port:
-            conn_parts.append(f"port={parsed.port}")
-        if parsed.username:
-            conn_parts.append(f"user={parsed.username}")
-        if parsed.password:
-            conn_parts.append(f"password={parsed.password}")
-        if parsed.path:
-            conn_parts.append(f"dbname={parsed.path.lstrip('/')}")
-        connection_str = " ".join(conn_parts)
+        orig_filename = row[1] if row and len(row) > 1 and row[1] else valid_uuid
+        base_name = os.path.splitext(orig_filename)[0]
+        download_filename = f"{base_name}_lod{lod}.ply"
 
-        # Build a PDAL read pipeline configuration targeting pointcloud_patches
-        pdal_pipeline = {
-            "pipeline": [
-                {
-                    "type": "readers.pgpointcloud",
-                    "connection": connection_str,
-                    "table": "pointcloud_patches",
-                    "column": "patch",
-                    "where": f"pointcloud_id = '{clean_uuid}' AND lod = {lod}",
-                    "spatialreference": "EPSG:4326"
-                },
-                {
-                    "type": "writers.ply",
-                    "filename": "stdout"
-                }
-            ]
-        }
+        # Query total count of points for PLY header vertex count
+        try:
+            count_result = await self.db.execute(
+                text("SELECT COALESCE(SUM(PC_NumPoints(patch)), 0) FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = :lod"),
+                {"id": valid_uuid, "lod": lod}
+            )
+            total_points = int(count_result.scalar() or 0)
+        except Exception as e:
+            logging.error(f"Error querying point cloud count for PLY export: {e}", exc_info=True)
+            total_points = 0
 
-        # Run PDAL process and stream output stdout directly
-        def generate_ply():
+        query = text("""
+            SELECT 
+                PC_Get(pt, 'X')         as x,
+                PC_Get(pt, 'Y')         as y,
+                PC_Get(pt, 'Z')         as z,
+                PC_Get(pt, 'Red')       as r,
+                PC_Get(pt, 'Green')     as g,
+                PC_Get(pt, 'Blue')      as b
+            FROM (
+                SELECT PC_Explode(patch) AS pt 
+                FROM pointcloud_patches 
+                WHERE pointcloud_id = :id AND lod = :lod
+            ) AS points;
+        """)
+
+        async def generate_ply_binary():
             try:
-                proc = subprocess.Popen(
-                    ["pdal", "pipeline", "--stdin"],
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=False
-                )
-                stdout, stderr = proc.communicate(input=json.dumps(pdal_pipeline).encode('utf-8'))
-                if proc.returncode != 0:
-                    raise RuntimeError(f"PDAL export failed: {stderr.decode('utf-8')}")
-                yield stdout
-            except FileNotFoundError:
-                raise HTTPException(status_code=500, detail="PDAL CLI is not installed on the system.")
+                # PLY Header (binary_little_endian 1.0)
+                header = (
+                    f"ply\n"
+                    f"format binary_little_endian 1.0\n"
+                    f"element vertex {total_points}\n"
+                    f"property float x\n"
+                    f"property float y\n"
+                    f"property float z\n"
+                    f"property uchar red\n"
+                    f"property uchar green\n"
+                    f"property uchar blue\n"
+                    f"end_header\n"
+                ).encode('utf-8')
+
+                buffer = bytearray(header)
+
+                async with async_session() as session:
+                    stream_result = await session.stream(query, {"id": valid_uuid, "lod": lod})
+                    async for record in stream_result:
+                        x = float(record[0]) if record[0] is not None else 0.0
+                        y = float(record[1]) if record[1] is not None else 0.0
+                        z = float(record[2]) if record[2] is not None else 0.0
+                        r = int(record[3]) if record[3] is not None else 0
+                        g = int(record[4]) if record[4] is not None else 0
+                        b = int(record[5]) if record[5] is not None else 0
+
+                        # Convert/scale 16-bit (0-65535) if needed and clamp to 0-255 (Uint8)
+                        r_u8 = min(255, max(0, r >> 8 if r > 255 else r))
+                        g_u8 = min(255, max(0, g >> 8 if g > 255 else g))
+                        b_u8 = min(255, max(0, b >> 8 if b > 255 else b))
+
+                        buffer.extend(struct.pack('<3f3B', x, y, z, r_u8, g_u8, b_u8))
+                        if len(buffer) >= 65536:
+                            yield bytes(buffer)
+                            buffer.clear()
+
+                    if buffer:
+                        yield bytes(buffer)
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to export point cloud: {str(e)}")
+                logging.error(f"Error during PLY binary streaming: {e}", exc_info=True)
 
         return StreamingResponse(
-            generate_ply(),
+            generate_ply_binary(),
             media_type="application/octet-stream",
-            headers={"Content-Disposition": f"attachment; filename={pointcloud_uuid}_lod{lod}.ply"}
+            headers={"Content-Disposition": f'attachment; filename="{download_filename}"'}
         )
 
     async def list_pointclouds(self) -> list:

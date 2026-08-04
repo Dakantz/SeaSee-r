@@ -55,12 +55,13 @@ Retrieve a .ply point cloud file.
 The underlying storage mechanism (local file system or database) is determined 
 by the `POINTCLOUD_STORAGE_TYPE` configuration.
 """
-@router.get("/{filename_or_id}", response_class=FileResponse)
+@router.get("/{filename_or_id}")
 async def get_pointcloud(
     filename_or_id: str,
+    lod: int = 0,
     storage_service: PointCloudStorageService = Depends(get_pointcloud_service)
 ):
-    return await storage_service.get_pointcloud(filename_or_id)
+    return await storage_service.get_pointcloud(filename_or_id, lod=lod)
 
 
 """

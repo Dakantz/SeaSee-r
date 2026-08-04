@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 class PointCloudStorageService(ABC):
     """Fetch and return the point cloud file as a response."""
     @abstractmethod
-    async def get_pointcloud(self, identifier: str) -> FileResponse:
+    async def get_pointcloud(self, identifier: str, lod: int = 0) -> Union[FileResponse, StreamingResponse]:
         pass
 
     """Return a list of available point clouds."""

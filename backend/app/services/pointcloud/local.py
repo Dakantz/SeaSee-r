@@ -10,7 +10,7 @@ class LocalPointCloudStorageService(PointCloudStorageService):
         if not os.path.exists(self.base_dir):
             os.makedirs(self.base_dir)
 
-    async def get_pointcloud(self, identifier: str) -> FileResponse:
+    async def get_pointcloud(self, identifier: str, lod: int = 0) -> FileResponse:
         # Prevent simple path traversal attacks
         safe_filename = os.path.basename(identifier)
         if not safe_filename.endswith(".ply"):
