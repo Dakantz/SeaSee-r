@@ -14,6 +14,8 @@ Point cloud data (such as bathymetry or terrain scans) obtained from binary stre
    - **2D Delaunay Triangulation**: Computes Delaunay triangles using `Delaunator`.
    - **Artifact Edge Filtering**: Filters out artificially long boundary triangles (which span outer convex hull gaps) by comparing triangle edge lengths against an adaptive distance threshold.
    - **Normals & Index Buffer**: Populates `geometry.setIndex(...)` and calls `geometry.computeVertexNormals()` to enable realistic lighting and surface shading.
+   - **Recalculation**: `generateDelaunayTerrainMesh(geometry, force = true)` is recalculated automatically whenever a new point cloud is selected, loaded, or when changing the Level of Detail (LOD) while render mode is set to Mesh.
 
 3. **Integration**:
    - Integrated into [`PLYPointCloud.tsx`](file:///home/tastegger/Documents/SeaSee-r/seaseer-dashboard/src/components/PointCloudPanel/PLYPointCloud.tsx).
+

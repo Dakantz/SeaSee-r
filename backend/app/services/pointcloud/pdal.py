@@ -291,16 +291,23 @@ async def process_emodnet_csv(
         if current_storage_type == StorageType.database.value and file_id:
             connection_str = format_libpq_connection_string(settings.database_url)
 
-            print(f"[EMODnet CSV Ingest] Ingesting pointcloud {file_id} to database pointcloud_patches table...")
-            pcid = await ingest_pgpointcloud(
-                file_path=temp_laz_path,
-                connection_str=connection_str,
-                pointcloud_id=file_id,
-                lod=0,
-                capacity=400,
-                srid=3857,
-                overwrite=True
-            )
+            print(f"[EMODnet CSV Ingest] Ingesting pointcloud {file_id} to database pointcloud_patches table for LOD levels 0..3...")
+            # Execute PDAL pgPointcloud ingestion for LOD levels: lod0, lod1, lod2, lod3
+            for lod in range(4):
+                step = 2 ** lod
+                ingested_pcid = await ingest_pgpointcloud(
+                    file_path=temp_laz_path,
+                    connection_str=connection_str,
+                    pointcloud_id=file_id,
+                    lod=lod,
+                    capacity=400,
+                    srid=3857,
+                    overwrite=True,
+                    pcid=pcid,
+                    step=step
+                )
+                if lod == 0 and pcid is None and ingested_pcid is not None:
+                    pcid = ingested_pcid
 
             if pcid is None:
                 pcid = 1

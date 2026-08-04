@@ -27,11 +27,7 @@ export default function PLYPointCloud() {
 
     useEffect(() => {
         if (geometry && renderMode === "mesh") {
-            if (!geometry.index) {
-                generateDelaunayTerrainMesh(geometry);
-            } else if (!geometry.attributes.normal) {
-                geometry.computeVertexNormals();
-            }
+            generateDelaunayTerrainMesh(geometry, true);
         }
     }, [geometry, renderMode]);
 

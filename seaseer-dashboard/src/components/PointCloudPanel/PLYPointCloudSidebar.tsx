@@ -255,7 +255,13 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                     </label>
                     <select
                         value={lod}
-                        onChange={(e) => setLod(Number(e.target.value))}
+                        onChange={(e) => {
+                            const newLod = Number(e.target.value);
+                            setLod(newLod);
+                            if (identifier.trim()) {
+                                onLoadBinary(identifier, newLod);
+                            }
+                        }}
                         style={{
                             background: "var(--color-bg-subtle)",
                             border: "1px solid var(--color-border-strong)",
