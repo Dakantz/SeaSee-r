@@ -1,6 +1,7 @@
 import { useRef, useEffect } from "react";
 
 import { useVideoStore } from "../../store/videoStore";
+import FramePanel from "./FramePanel";
 
 import "./CameraPanel.css";
 
@@ -11,6 +12,7 @@ export default function CameraPanel() {
 
     const addVideo = useVideoStore((state) => state.addVideo);
     const removeVideo = useVideoStore((state) => state.removeVideo);
+    const selectedFrame = useVideoStore((state) => state.selectedFrame);
 
     const {
         setDuration,
@@ -30,6 +32,7 @@ export default function CameraPanel() {
             fps: 30,
             width: 0,
             height: 0,
+            videoUrl: "test_data/20260505_121047_180_N001.MP4",
         });
 
         return () => {
@@ -65,6 +68,9 @@ export default function CameraPanel() {
                 onPlay={() => setPlaying(DEFAULT_VIDEO_ID, true)}
                 onPause={() => setPlaying(DEFAULT_VIDEO_ID, false)}
             />
+            {selectedFrame && selectedFrame.videoId === DEFAULT_VIDEO_ID && (
+                <FramePanel />
+            )}
         </div>
     );
 }

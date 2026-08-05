@@ -8,10 +8,18 @@ export interface Video {
     fps: number;
     width: number;
     height: number;
+    videoUrl?: string;
+}
+
+export interface SelectedFrame {
+    videoId: string;
+    relativeTime: number;
+    position?: [number, number, number];
 }
 
 interface VideoStore {
     videos: Record<string, Video>;
+    selectedFrame: SelectedFrame | null;
 
     addVideo: (video: Video) => void;
     removeVideo: (id: string) => void;
@@ -21,6 +29,7 @@ interface VideoStore {
     setPlaying: (id: string, playing: boolean) => void;
     setFPS: (id: string, fps: number) => void;
     setResolution: (id: string, width: number, height: number) => void;
+    setSelectedFrame: (frame: SelectedFrame | null) => void;
 }
 
 export const useVideoStore = create<VideoStore>((set) => ({
@@ -140,6 +149,9 @@ export const useVideoStore = create<VideoStore>((set) => ({
                 },
             };
         }),
+
+    selectedFrame: null,
+    setSelectedFrame: (selectedFrame) => set({ selectedFrame }),
 }));
 
 export const useCurrentFrame = (id: string) =>

@@ -113,6 +113,7 @@ export function RovRenderer({
                 <TrajectoryRenderer
                     url={positionUrl}
                     position={positionOffset}
+                    videoId={videoId}
                     {...trajectoryProps}
                 />
             ) : null}

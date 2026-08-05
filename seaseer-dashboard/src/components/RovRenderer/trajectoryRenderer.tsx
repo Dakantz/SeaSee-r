@@ -14,7 +14,8 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { TelemetryPositionReader } from "../TelemetoryPanel/TelemetryPositionReader";
 import { useTrajectoryHover } from "./hooks/useTrajectoryHover";
 import { useTrajectoryClosestPoint } from "./hooks/useTrajectoryClosestPoint";
-import { Billboard } from "@react-three/drei";
+import { Billboard} from "@react-three/drei";
+import { useVideoStore } from "../../store/videoStore";
 
 let circleTexture: THREE.CanvasTexture | null = null;
 function getCircleTexture(): THREE.CanvasTexture {
@@ -36,6 +37,7 @@ function getCircleTexture(): THREE.CanvasTexture {
 
 export interface TrajectoryRendererProps {
     url: string;
+    videoId?: string;
     color?: THREE.ColorRepresentation;
     lineWidth?: number;
     opacity?: number;
@@ -50,6 +52,7 @@ export interface TrajectoryRendererProps {
 
 export function TrajectoryRenderer({
     url,
+    videoId,
     color = 0x00ff00,
     lineWidth = 3,
     opacity = 1,
@@ -62,18 +65,39 @@ export function TrajectoryRenderer({
     pointSize = 0.5,
 }: TrajectoryRendererProps) {
 
-    const { size } = useThree();
-    const { isHovered, hoverProps } = useTrajectoryHover(url);
+    const [group, setGroup] = useState<THREE.Group | null>(null);
+    const { size, gl } = useThree();
+    const { isHovered} = useTrajectoryHover(url);
     const [samples, setSamples] = useState<any[]>([]);
-    const { hoveredPoint, pointerMoveProps } = useTrajectoryClosestPoint(samples, size, 30);
+    const { hoveredPoint, hoveredSample } = useTrajectoryClosestPoint(
+        samples,
+        size,
+        30,
+        !!videoId,
+        group
+    );
+    const setSelectedFrame = useVideoStore((state) => state.setSelectedFrame);
 
     const reader = useMemo(
         () => new TelemetryPositionReader(url),
         [url]
     );
 
-    const [group, setGroup] =
-        useState<THREE.Group | null>(null);
+    useEffect(() => {
+        const handleCanvasClick = (e: MouseEvent) => {
+            if (videoId && hoveredSample) {
+                setSelectedFrame({
+                    videoId: videoId,
+                    relativeTime: hoveredSample.relativeTime,
+                    position: [hoveredSample.x, hoveredSample.y, hoveredSample.z],
+                });
+            }
+        };
+        gl.domElement.addEventListener("click", handleCanvasClick);
+        return () => {
+            gl.domElement.removeEventListener("click", handleCanvasClick);
+        };
+    }, [gl, videoId, hoveredSample, setSelectedFrame]);
 
     useEffect(() => {
         let cancelled = false;
@@ -244,12 +268,6 @@ export function TrajectoryRenderer({
         <group>
             <primitive
                 object={group}
-                onPointerOver={hoverProps.onPointerOver}
-                onPointerMove={pointerMoveProps.onPointerMove}
-                onPointerOut={(e: any) => {
-                    hoverProps.onPointerOut(e);
-                    pointerMoveProps.onPointerOut(e);
-                }}
             />
             {hoveredPoint && (
                 <group
