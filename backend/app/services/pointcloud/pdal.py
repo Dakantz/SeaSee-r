@@ -9,8 +9,7 @@ from urllib.parse import urlparse
 
 
 from sqlalchemy import text
-from app.core.config import settings, StorageType
-from app.core.database import async_session
+from app.core.config import settings
 from app.services.pointcloud.entwine import build_ept
 
 EMODNET_ELEVATION_MULTIPLICATION = 100.0
@@ -285,10 +284,9 @@ async def process_emodnet_csv(
         # 3. Extract stats (bbox & number of points) from reprojected LAZ file
         bbox, number_of_points, _ = await get_pointcloud_srs_and_stats(temp_laz_path)
 
-        # 4. Ingest points into pgPointcloud database if database storage is enabled
+        # 4. Ingest points into pgPointcloud database
         pcid = None
-        current_storage_type = storage_type or settings.pointcloud_storage_type.value
-        if current_storage_type == StorageType.database.value and file_id:
+        if file_id:
             connection_str = format_libpq_connection_string(settings.database_url)
 
             print(f"[EMODnet CSV Ingest] Ingesting pointcloud {file_id} to database pointcloud_patches table for LOD levels 0..3...")

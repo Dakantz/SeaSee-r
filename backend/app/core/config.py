@@ -1,17 +1,9 @@
-from enum import Enum
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-
-class StorageType(str, Enum):
-    filesystem = "filesystem"
-    database = "database"
 
 
 class Settings(BaseSettings):
     # API version
     version: str = "1.0.0"
-    # 'filesystem' or 'database'
-    pointcloud_storage_type: StorageType
     # directory for local .ply files
     pointcloud_local_dir: str = "./data/pointclouds"
     # directory for raw resumable uploads before processing

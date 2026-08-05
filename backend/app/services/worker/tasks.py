@@ -8,7 +8,7 @@ from datetime import datetime
 from rq import get_current_job
 from sqlalchemy import update, text, select
 
-from app.core.config import settings, StorageType
+from app.core.config import settings
 from app.core.database import async_session
 from app.models.job import Job
 from app.models.pointcloud import PointCloud, PointCloudCameraRoute
@@ -111,8 +111,7 @@ async def _process_pointcloud_upload_async(job_id_str: str, payload: dict):
         await _update_job_status(job_id_str, "FAILED", 0.0, error_msg)
         return {"status": "error", "message": error_msg}
 
-    storage_type = payload.get("storage_type", settings.pointcloud_storage_type.value)
-    return await _ingest_pointcloud_pipeline_async(file_path, file_id or job_id_str, job_id_str, storage_type)
+    return await _ingest_pointcloud_pipeline_async(file_path, file_id or job_id_str, job_id_str)
 
 
 async def _process_video_upload_async(job_id_str: str, payload: dict):
@@ -138,14 +137,12 @@ async def _process_opensfm_job_async(job_id_str: str, payload: dict):
     folder_path = payload.get("folder_path")
     is_append = payload.get("is_append", False) or (payload.get("task_type") == "opensfm_append")
     file_id = (payload.get("existing_id") or payload.get("file_id")) if is_append else (payload.get("file_id") or job_id_str)
-    storage_type = payload.get("storage_type", settings.pointcloud_storage_type.value)
     fused_ply_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.ply") if folder_path else payload.get("file_path")
 
     return await _process_opensfm_async(
         file_path=fused_ply_path,
         file_id=file_id,
         job_id=job_id_str,
-        storage_type=storage_type,
         folder_path=folder_path,
         is_append=is_append
     )
@@ -331,14 +328,13 @@ async def _ingest_pointcloud_pipeline_async(
     file_path: str,
     file_id: str,
     job_id: str = None,
-    storage_type: str = None,
     mark_completed: bool = True,
     is_append: bool = False
 ):
     """
     Core pipeline to process point cloud file:
     1. Converts point cloud to EPT format using Entwine with progress tracking.
-    2. If database storage is enabled, extracts PDAL stats & ingests points into pgPointcloud table.
+    2. Extracts PDAL stats & ingests points into pgPointcloud table.
     3. Writes or updates metadata record in pointclouds table.
     """
     if job_id:
@@ -371,16 +367,13 @@ async def _ingest_pointcloud_pipeline_async(
 
         print(f"Successfully converted {file_path} to EPT at {output_dir}")
 
-        current_storage_type = storage_type or settings.pointcloud_storage_type.value
-
-        # 2. Database Ingestion via PDAL & Metadata insertion/update if storage_type == 'database'
-        if current_storage_type == StorageType.database.value:
-            await _ingest_pointcloud_to_db_async(
-                file_path=file_path,
-                file_id=file_id,
-                job_id=job_id,
-                is_append=is_append
-            )
+        # 2. Database Ingestion via PDAL & Metadata insertion/update
+        await _ingest_pointcloud_to_db_async(
+            file_path=file_path,
+            file_id=file_id,
+            job_id=job_id,
+            is_append=is_append
+        )
 
         if job_id and mark_completed:
             await _update_job_status(job_id, "COMPLETED", 100.0)
@@ -399,29 +392,28 @@ async def _ingest_pointcloud_pipeline_async(
 _convert_to_ept_async = _ingest_pointcloud_pipeline_async
 
 
-def convert_to_ept(file_path: str, file_id: str, storage_type: str = None):
+def convert_to_ept(file_path: str, file_id: str):
     """
     Legacy RQ task entrypoint to convert a .las/.laz/.ply file to EPT format.
     """
     current_job = get_current_job()
     job_id = current_job.id if current_job else None
-    return asyncio.run(_ingest_pointcloud_pipeline_async(file_path, file_id, job_id, storage_type))
+    return asyncio.run(_ingest_pointcloud_pipeline_async(file_path, file_id, job_id))
 
 
-def process_opensfm(file_path: str, file_id: str, storage_type: str = None, folder_path: str = None):
+def process_opensfm(file_path: str, file_id: str, folder_path: str = None):
     """
     Legacy RQ task entrypoint to process OpenSfM output files.
     """
     current_job = get_current_job()
     job_id = current_job.id if current_job else None
-    return asyncio.run(_process_opensfm_async(file_path, file_id, job_id, storage_type, folder_path))
+    return asyncio.run(_process_opensfm_async(file_path, file_id, job_id, folder_path))
 
 
 async def _process_opensfm_async(
     file_path: str,
     file_id: str,
     job_id: str,
-    storage_type: str = None,
     folder_path: str = None,
     is_append: bool = False
 ):
@@ -430,7 +422,7 @@ async def _process_opensfm_async(
     """
     # 1. Ingest fused.ply point cloud
     await _ingest_pointcloud_pipeline_async(
-        file_path, file_id, job_id, storage_type, mark_completed=False, is_append=is_append
+        file_path, file_id, job_id, mark_completed=False, is_append=is_append
     )
 
     # 2. Process camera trajectory from reconstruction.json
@@ -487,7 +479,6 @@ async def _process_emodnet_job_async(job_id_str: str, payload: dict):
     geotiff_path = payload.get("geotiff_path")
     is_append = payload.get("is_append", False) or (payload.get("task_type") == "emodnet_append")
     file_id = (payload.get("existing_id") or payload.get("file_id")) if is_append else (payload.get("file_id") or job_id_str)
-    storage_type = payload.get("storage_type", settings.pointcloud_storage_type.value)
 
     if not geotiff_path or not os.path.exists(geotiff_path):
         error_msg = f"GeoTIFF file not found for job {job_id_str}: {geotiff_path}"
@@ -498,7 +489,6 @@ async def _process_emodnet_job_async(job_id_str: str, payload: dict):
         geotiff_path=geotiff_path,
         file_id=file_id,
         job_id=job_id_str,
-        storage_type=storage_type,
         is_append=is_append
     )
 
@@ -507,14 +497,13 @@ async def _process_emodnet_async(
     geotiff_path: str,
     file_id: str,
     job_id: str,
-    storage_type: str = None,
     is_append: bool = False
 ):
     """
     Core pipeline to process EMODnet GeoTIFF bathymetry rasters:
     1. Converts GeoTIFF to EPSG:3857 EPT format using PDAL Docker pipeline.
     2. Extracts bounding box & point count via PDAL stats.
-    3. If database storage is enabled, ingests points into pgPointcloud table.
+    3. Ingests points into pgPointcloud table.
     4. Writes or updates metadata record in pointclouds table.
     """
     if job_id:
@@ -534,72 +523,69 @@ async def _process_emodnet_async(
         if job_id:
             await _update_job_status(job_id, "RUNNING", 60.0)
 
-        current_storage_type = storage_type or settings.pointcloud_storage_type.value
-
         # 2. Extract stats (bbox & number of points)
         bbox, number_of_points, _ = await get_pointcloud_srs_and_stats(geotiff_path)
 
         pcid = None
-        if current_storage_type == StorageType.database.value:
-            print(f"Ingesting EMODnet pointcloud {file_id} (is_append={is_append}) to database...")
-            connection_str = format_libpq_connection_string(settings.database_url)
+        print(f"Ingesting EMODnet pointcloud {file_id} (is_append={is_append}) to database...")
+        connection_str = format_libpq_connection_string(settings.database_url)
 
-            if is_append:
-                async with async_session() as session:
-                    try:
-                        res = await session.execute(
-                            text("SELECT PC_PCId(patch) FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = 0 LIMIT 1"),
-                            {"id": uuid.UUID(file_id)}
-                        )
-                        row = res.first()
-                        if row and row[0] is not None:
-                            pcid = int(row[0])
-                    except Exception as e:
-                        print(f"Failed to query pcid from pointcloud_patches: {e}")
-
-                    if pcid is None:
-                        try:
-                            stmt_existing = select(PointCloud).where(PointCloud.id == uuid.UUID(file_id))
-                            res_existing = await session.execute(stmt_existing)
-                            rec = res_existing.scalar_one_or_none()
-                            if rec and rec.pcid:
-                                pcid = rec.pcid
-                        except Exception as e:
-                            print(f"Failed to query existing metadata for pcid: {e}")
-
-            target_dims = None
-            if pcid:
+        if is_append:
+            async with async_session() as session:
                 try:
-                    async with async_session() as session:
-                        res = await session.execute(
-                            text("SELECT schema FROM pointcloud_formats WHERE pcid = :pcid"),
-                            {"pcid": pcid}
-                        )
-                        row = res.first()
-                        if row and row[0]:
-                            import re
-                            target_dims = re.findall(r"<pc:name>(.*?)</pc:name>", row[0])
+                    res = await session.execute(
+                        text("SELECT PC_PCId(patch) FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = 0 LIMIT 1"),
+                        {"id": uuid.UUID(file_id)}
+                    )
+                    row = res.first()
+                    if row and row[0] is not None:
+                        pcid = int(row[0])
                 except Exception as e:
-                    print(f"Failed to query pcid schema: {e}")
+                    print(f"Failed to query pcid from pointcloud_patches: {e}")
 
-            source_dims = await get_pointcloud_dimensions(geotiff_path)
-            print(f"Source file dimensions: {source_dims}")
-            print(f"Target schema dimensions: {target_dims if target_dims else ['X', 'Y', 'Z']}")
+                if pcid is None:
+                    try:
+                        stmt_existing = select(PointCloud).where(PointCloud.id == uuid.UUID(file_id))
+                        res_existing = await session.execute(stmt_existing)
+                        rec = res_existing.scalar_one_or_none()
+                        if rec and rec.pcid:
+                            pcid = rec.pcid
+                    except Exception as e:
+                        print(f"Failed to query existing metadata for pcid: {e}")
 
-            ingested_pcid = await ingest_pgpointcloud(
-                file_path=geotiff_path,
-                connection_str=connection_str,
-                pointcloud_id=file_id,
-                lod=0,
-                capacity=400,
-                srid=3857,
-                overwrite=not is_append,
-                pcid=pcid,
-                target_dimensions=target_dims
-            )
+        target_dims = None
+        if pcid:
+            try:
+                async with async_session() as session:
+                    res = await session.execute(
+                        text("SELECT schema FROM pointcloud_formats WHERE pcid = :pcid"),
+                        {"pcid": pcid}
+                    )
+                    row = res.first()
+                    if row and row[0]:
+                        import re
+                        target_dims = re.findall(r"<pc:name>(.*?)</pc:name>", row[0])
+            except Exception as e:
+                print(f"Failed to query pcid schema: {e}")
 
-            if pcid is None:
-                pcid = ingested_pcid or 1
+        source_dims = await get_pointcloud_dimensions(geotiff_path)
+        print(f"Source file dimensions: {source_dims}")
+        print(f"Target schema dimensions: {target_dims if target_dims else ['X', 'Y', 'Z']}")
+
+        ingested_pcid = await ingest_pgpointcloud(
+            file_path=geotiff_path,
+            connection_str=connection_str,
+            pointcloud_id=file_id,
+            lod=0,
+            capacity=400,
+            srid=3857,
+            overwrite=not is_append,
+            pcid=pcid,
+            target_dimensions=target_dims
+        )
+
+        if pcid is None:
+            pcid = ingested_pcid or 1
 
         # 3. Create or update PointCloud metadata record in DB
         async with async_session() as session:
@@ -667,7 +653,6 @@ async def _process_emodnet_csv_job_async(job_id_str: str, payload: dict):
     """Processes EMODnet CSV upload task: cleans header, reprojects via PDAL, ingests to DB, and builds EPT."""
     file_path = payload.get("file_path")
     file_id = payload.get("file_id") or job_id_str
-    storage_type = payload.get("storage_type", settings.pointcloud_storage_type.value)
     output_dir = os.path.join(settings.ept_dir, file_id)
 
     if not file_path or not os.path.exists(file_path):
@@ -683,7 +668,6 @@ async def _process_emodnet_csv_job_async(job_id_str: str, payload: dict):
             csv_path=file_path,
             output_dir=output_dir,
             out_srs="EPSG:3857",
-            storage_type=storage_type,
             file_id=file_id
         )
         print(f"Successfully processed EMODnet CSV {file_path} to EPT at {output_dir} (points: {number_of_points})")

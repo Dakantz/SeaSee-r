@@ -18,9 +18,9 @@ from urllib.parse import urlparse
 from app.core.config import settings
 from app.models import PointCloud
 from app.models.video import Video, VideoMetadata
-from app.services.pointcloud.base import PointCloudStorageService
 
-class DatabasePointCloudStorageService(PointCloudStorageService):
+
+class DatabasePointCloudStorageService:
     def __init__(self, db_session: AsyncSession):
         self.db = db_session
 

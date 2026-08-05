@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, conlist
 
-from app.services.pointcloud import PointCloudStorageService
+from app.services.pointcloud import DatabasePointCloudStorageService
 from app.api.dependencies.pointcloud import get_pointcloud_service
 from app.core.config import settings
 from app.core.database import get_db_session
@@ -32,7 +32,7 @@ Retrieve a list of available point clouds.
 """
 @router.get("/", response_model=List[Union[PointCloudMetadataResponse, str]])
 async def list_pointclouds(
-    storage_service: PointCloudStorageService = Depends(get_pointcloud_service)
+    storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
 ):
     return await storage_service.list_pointclouds()
 
@@ -44,22 +44,19 @@ Stream point cloud data directly from database as raw binary buffer (Float32 XYZ
 async def stream_pointcloud_binary(
     identifier: str,
     lod: int = 0,
-    storage_service: PointCloudStorageService = Depends(get_pointcloud_service)
+    storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
 ):
     return await storage_service.stream_pointcloud_binary(identifier, lod=lod)
 
 
 """
-Retrieve a .ply point cloud file.
-
-The underlying storage mechanism (local file system or database) is determined 
-by the `POINTCLOUD_STORAGE_TYPE` configuration.
+Retrieve a .ply point cloud file from database storage.
 """
 @router.get("/{filename_or_id}")
 async def get_pointcloud(
     filename_or_id: str,
     lod: int = 0,
-    storage_service: PointCloudStorageService = Depends(get_pointcloud_service)
+    storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
 ):
     return await storage_service.get_pointcloud(filename_or_id, lod=lod)
 
@@ -84,12 +81,10 @@ async def delete_pointcloud(
     db: AsyncSession = Depends(get_db_session)
 ):
     import shutil
-    from app.services.pointcloud import LocalPointCloudStorageService, DatabasePointCloudStorageService
+    from app.services.pointcloud import DatabasePointCloudStorageService
     
-    local_service = LocalPointCloudStorageService(base_dir=settings.pointcloud_local_dir)
     db_service = DatabasePointCloudStorageService(db_session=db)
 
-    deleted_local = await local_service.delete_pointcloud(identifier)
     deleted_db = await db_service.delete_pointcloud(identifier)
     
     ept_dir_path = os.path.join(settings.ept_dir, identifier)
@@ -98,7 +93,7 @@ async def delete_pointcloud(
         shutil.rmtree(ept_dir_path)
         deleted_ept = True
 
-    if not (deleted_local or deleted_db or deleted_ept):
+    if not (deleted_db or deleted_ept):
         raise HTTPException(status_code=404, detail="Point cloud not found or could not be deleted.")
         
     return {"message": "Point cloud deleted successfully from available storages"}
@@ -178,8 +173,7 @@ async def ingest_opensfm_init(
                         "safe_filename": f"{file_uuid_str}.ply",
                         "total_bytes": os.path.getsize(fused_ply_path),
                         "file_id": file_uuid_str,
-                        "folder_path": folder_path,
-                        "storage_type": settings.pointcloud_storage_type.value
+                        "folder_path": folder_path
                     },
                     status="PENDING",
                     progress=0.0
@@ -285,8 +279,7 @@ async def ingest_opensfm_append(
                         "existing_id": str(existing_pc.id),
                         "file_id": str(existing_pc.id),
                         "is_append": True,
-                        "total_bytes": os.path.getsize(fused_ply_path),
-                        "storage_type": settings.pointcloud_storage_type.value
+                        "total_bytes": os.path.getsize(fused_ply_path)
                     },
                     status="PENDING",
                     progress=0.0
@@ -377,8 +370,7 @@ async def ingest_emodnet_init(
                     "file_id": file_uuid_str,
                     "geotiff_path": geotiff_path,
                     "folder_path": item_path if os.path.isdir(item_path) else os.path.dirname(item_path),
-                    "total_bytes": os.path.getsize(geotiff_path),
-                    "storage_type": settings.pointcloud_storage_type.value
+                    "total_bytes": os.path.getsize(geotiff_path)
                 },
                 status="PENDING",
                 progress=0.0
@@ -502,8 +494,7 @@ async def ingest_emodnet_append(
                     "existing_id": str(existing_pc.id),
                     "file_id": str(existing_pc.id),
                     "is_append": True,
-                    "total_bytes": os.path.getsize(geotiff_path),
-                    "storage_type": settings.pointcloud_storage_type.value
+                    "total_bytes": os.path.getsize(geotiff_path)
                 },
                 status="PENDING",
                 progress=0.0
@@ -566,8 +557,7 @@ async def upload_emodnet_csv(
             "safe_filename": safe_filename,
             "file_id": file_uuid_str,
             "file_path": file_path,
-            "total_bytes": os.path.getsize(file_path),
-            "storage_type": settings.pointcloud_storage_type.value
+            "total_bytes": os.path.getsize(file_path)
         },
         status="PENDING",
         progress=0.0

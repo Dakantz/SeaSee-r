@@ -38,7 +38,6 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://seaseer_user:seaseer_password@test-db:5432/seaseer_test
       - REDIS_URL=redis://test-redis:6379
-      - POINTCLOUD_STORAGE_TYPE=${POINTCLOUD_STORAGE_TYPE:-filesystem}
     depends_on:
       - test-redis
       - test-db

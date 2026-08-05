@@ -11,7 +11,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 # ENVIRONMENT OVERRIDES (Must happen before any app code is imported)
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://seaseer_user:seaseer_password@localhost:5434/seaseer_test"
 os.environ["REDIS_URL"] = "redis://localhost:6380"
-os.environ.setdefault("POINTCLOUD_STORAGE_TYPE", "filesystem")
 
 import subprocess
 import time
