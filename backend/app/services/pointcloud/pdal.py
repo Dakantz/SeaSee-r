@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from sqlalchemy import text
 from app.core.config import settings
+from app.core.database import async_session
 from app.services.pointcloud.entwine import build_ept
 
 EMODNET_ELEVATION_MULTIPLICATION = 100.0
