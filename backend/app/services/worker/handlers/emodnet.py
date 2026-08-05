@@ -10,7 +10,8 @@ from app.services.pointcloud.pdal import (
     build_ept_pdal_docker,
     process_emodnet_csv,
     format_libpq_connection_string,
-    ingest_pgpointcloud
+    ingest_pgpointcloud,
+    ingest_postgis_raster_pyramids
 )
 from app.services.pointcloud.db_utils import (
     query_existing_pcid,
@@ -70,20 +71,15 @@ class EMODnetGeoTIFFTaskHandler(BaseTaskHandler):
             source_dims = await get_pointcloud_dimensions(geotiff_path)
             logger.info(f"Source file dimensions: {source_dims}")
 
-            ingested_pcid = await ingest_pgpointcloud(
-                file_path=geotiff_path,
-                connection_str=connection_str,
-                pointcloud_id=file_id,
-                lod=0,
-                capacity=400,
+            await ingest_postgis_raster_pyramids(
+                geotiff_path=geotiff_path,
+                table_name="bathymetry_raster",
                 srid=3857,
-                overwrite=not is_append,
-                pcid=pcid,
-                target_dimensions=target_dims
+                pyramid_levels="2,4,8,16",
+                pointcloud_id=file_id,
+                scale_z=100.0
             )
-
-            if pcid is None:
-                pcid = ingested_pcid or 1
+            pcid = 1
 
             # 3. Create or update PointCloud metadata record in DB
             async with async_session() as session:
@@ -144,12 +140,15 @@ class EMODnetCSVTaskHandler(BaseTaskHandler):
         try:
             await self.update_job_status(job_id, "RUNNING", 10.0)
 
+            is_append = payload.get("is_append", False) or (payload.get("task_type") == "emodnet_csv_append")
+
             # Process EMODnet CSV using PDAL pipeline (reproject to EPSG:3857), ingest into pgPointcloud DB, & build EPT
             bbox, number_of_points, pcid = await process_emodnet_csv(
                 csv_path=file_path,
                 output_dir=output_dir,
                 out_srs="EPSG:3857",
-                file_id=file_id
+                file_id=file_id,
+                is_append=is_append
             )
             logger.info(f"Successfully processed EMODnet CSV {file_path} to EPT at {output_dir} (points: {number_of_points})")
 

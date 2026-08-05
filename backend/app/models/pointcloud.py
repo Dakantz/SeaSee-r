@@ -63,3 +63,13 @@ class PointCloudCameraRoute(Base):
     
     transform_matrix = Column(ARRAY(Float), nullable=False, default=[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0])
 
+
+class BathymetryRaster(Base):
+    __tablename__ = "bathymetry_raster"
+
+    rid = Column(Integer, primary_key=True, autoincrement=True)
+    rast = Column(NullType)
+    filename = Column(String(255), nullable=True)
+    pointcloud_id = Column(UUID(as_uuid=True), ForeignKey("pointclouds.id", ondelete="CASCADE"), nullable=True)
+
+

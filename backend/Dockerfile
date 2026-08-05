@@ -4,6 +4,8 @@ FROM condaforge/miniforge3:latest
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
+    postgresql-client \
+    postgis \
     && rm -rf /var/lib/apt/lists/*
 
 # Install PDAL, Entwine, and Python 3.11 from conda-forge

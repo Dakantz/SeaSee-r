@@ -13,3 +13,6 @@ aiofiles
 pytest
 httpx
 psutil
+pillow
+numpy
+
