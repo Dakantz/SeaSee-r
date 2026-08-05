@@ -1,25 +1,63 @@
-import { useLoader } from "@react-three/fiber";
-import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
 import { useEffect } from "react";
+import * as THREE from "three";
+import { usePLYPointCloudContext } from "./PLYPointCloudContext";
+import { generateDelaunayTerrainMesh } from "./utils/delaunayTriangulation";
 
 export default function PLYPointCloud() {
-    const geometry = useLoader(PLYLoader, "/test_data/datasets/video_1/odm_filterpoints/point_cloud.ply");
+    const {
+        geometry,
+        mode,
+        renderMode,
+        wireframe,
+        pointSize,
+        identifier,
+        lod,
+        plyUrl,
+        loadBinaryPointCloud,
+        loadPlyUrl,
+    } = usePLYPointCloudContext();
 
     useEffect(() => {
-        geometry.center();
-        geometry.computeBoundingSphere();
-    }, [geometry]);
+        if (mode === "binary") {
+            loadBinaryPointCloud(identifier, lod);
+        } else if (mode === "plyUrl") {
+            loadPlyUrl(plyUrl);
+        }
+    }, [mode, identifier, lod, loadBinaryPointCloud, loadPlyUrl]);
+
+    useEffect(() => {
+        if (geometry && renderMode === "mesh") {
+            if (!geometry.index) {
+                generateDelaunayTerrainMesh(geometry);
+            } else if (!geometry.attributes.normal) {
+                geometry.computeVertexNormals();
+            }
+        }
+    }, [geometry, renderMode]);
 
     return (
-        <points
-            geometry={geometry}
-            rotation={[-Math.PI / 2, 0, 0]}
-        >
-            <pointsMaterial
-                vertexColors
-                size={0.1}
-                sizeAttenuation
-            />
-        </points>
+        <group>
+            {geometry && (
+                renderMode === "mesh" ? (
+                    <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}>
+                        <meshStandardMaterial
+                            vertexColors={!!geometry.attributes.color}
+                            side={THREE.DoubleSide}
+                            wireframe={wireframe}
+                            roughness={0.5}
+                            metalness={0.1}
+                        />
+                    </mesh>
+                ) : (
+                    <points geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}>
+                        <pointsMaterial
+                            vertexColors={!!geometry.attributes.color}
+                            size={pointSize}
+                            sizeAttenuation
+                        />
+                    </points>
+                )
+            )}
+        </group>
     );
 }

@@ -11,6 +11,7 @@ services:
       - "5433:5432" # Keeps host access available via localhost:5433
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./backend/init-db:/docker-entrypoint-initdb.d
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 5s
@@ -42,6 +43,7 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - uploads_data:/app/data/uploads
     env_file:
       - .env
     healthcheck:
@@ -64,6 +66,7 @@ services:
     container_name: seasee-r-worker
     volumes:
       - ./backend:/app
+      - uploads_data:/app/data/uploads
     # Instead of hardcoding the URL in command, reference the env variable
     command: ["rq", "worker", "pointcloud_tasks", "job_tasks", "default", "--url", "${REDIS_URL}"]
 
@@ -92,7 +95,7 @@ services:
       -hooks-http-forward-headers Cookie,Authorization
       -hooks-enabled-events post-create,post-finish,post-terminate
     volumes:
-      - ./backend/data/uploads:/srv/tusd-data
+      - uploads_data:/srv/tusd-data
     depends_on:
       backend:
         condition: service_healthy
@@ -100,3 +103,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  uploads_data:

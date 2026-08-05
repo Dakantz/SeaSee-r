@@ -40,9 +40,10 @@ async def async_client(test_environment):
 async def clean_database_records(file_id: str, job_id: str):
     """Clean up the pointcloud metadata, jobs, and dynamic tables from database."""
     async with async_session() as session:
-        # Drop dynamic table if it exists
+        # Drop dynamic tables if they exist (lod0 through lod3)
         table_uuid = file_id.replace("-", "")
-        await session.execute(text(f"DROP TABLE IF EXISTS pc_{table_uuid}_lod0"))
+        for lod in range(4):
+            await session.execute(text(f"DROP TABLE IF EXISTS pc_{table_uuid}_lod{lod}"))
         # Delete pointcloud metadata
         await session.execute(text("DELETE FROM pointclouds WHERE id = :id"), {"id": file_id})
         # Delete job record

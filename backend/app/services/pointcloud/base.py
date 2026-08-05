@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import List
-from fastapi.responses import FileResponse
+from typing import List, Union
+from fastapi.responses import FileResponse, StreamingResponse
 
 class PointCloudStorageService(ABC):
     """Fetch and return the point cloud file as a response."""
@@ -17,3 +17,9 @@ class PointCloudStorageService(ABC):
     @abstractmethod
     async def delete_pointcloud(self, identifier: str) -> bool:
         pass
+
+    """Stream point cloud data directly as raw binary buffer (Float32 XYZ, Uint16 RGB)."""
+    @abstractmethod
+    async def stream_pointcloud_binary(self, identifier: str, lod: int = 0) -> StreamingResponse:
+        pass
+

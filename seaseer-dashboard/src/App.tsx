@@ -8,6 +8,7 @@ import VideoUploadTestPage from "./components/VideoUploader/VideoUploadTestPage.
 import PointCloudUploadTestPage from "./components/PointCloudUploader/PointCloudUploadTestPage.tsx";
 import PointCloudEditorPage from "./components/PointCloudEditor/PointCloudEditorPage.tsx";
 import TestRover from "./components/RovRenderer/testRover.tsx";
+import TestRoverVideo from "./components/RovRenderer/testRoverVideo.tsx";
 import StatusBar from "./components/StatusBar.tsx";
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
                 <Route path="/pointcloud-editor" element={<PointCloudEditorPage />} />
                 <Route path="/pointcloud-editor/:id" element={<PointCloudEditorPage />} />
                 <Route path="/test-rover" element={<TestRover />} />
+                <Route path="/test-rover-video" element={<TestRoverVideo />} />
             </Routes>
             <StatusBar />
         </div>

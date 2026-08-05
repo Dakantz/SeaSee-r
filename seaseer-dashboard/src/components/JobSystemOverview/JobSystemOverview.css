@@ -1,0 +1,422 @@
+/* JobSystemOverview Container */
+.job-system-overview {
+  background: var(--color-bg-card);
+  backdrop-filter: var(--backdrop-blur-xl);
+  -webkit-backdrop-filter: var(--backdrop-blur-xl);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-3xl);
+  padding: var(--spacing-2xl);
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  box-shadow: var(--shadow-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  width: 100%;
+  box-sizing: border-box;
+  transition: var(--transition-normal);
+}
+
+.job-system-overview.compact {
+  padding: var(--spacing-lg) var(--spacing-3xl);
+  gap: var(--spacing-md);
+  border-radius: var(--radius-xl);
+}
+
+/* Header Section */
+.jso-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding-bottom: var(--spacing-lg);
+}
+
+.jso-title-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.jso-title {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.compact .jso-title {
+  font-size: var(--font-size-md);
+}
+
+/* Polling Rate Indicator Badge */
+.jso-polling-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 3px var(--spacing-sm);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.02em;
+  transition: var(--transition-smooth);
+}
+
+.jso-polling-badge.active {
+  background: var(--color-primary-subtle);
+  color: var(--color-primary-text);
+  border: 1px solid var(--color-primary-border);
+}
+
+.jso-polling-badge.idle {
+  background: var(--color-border-light);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border-strong);
+}
+
+.jso-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+}
+
+.jso-polling-badge.active .jso-pulse-dot {
+  background-color: var(--color-primary);
+  box-shadow: 0 0 8px var(--color-primary);
+  animation: jso-pulse 1.5s infinite;
+}
+
+.jso-polling-badge.idle .jso-pulse-dot {
+  background-color: var(--color-text-subtle);
+}
+
+@keyframes jso-pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+  }
+  70% {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  }
+}
+
+/* Header Action Buttons */
+.jso-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.jso-refresh-btn {
+  background: var(--color-border-light);
+  border: 1px solid var(--color-border-default);
+  color: var(--color-text-body);
+  border-radius: var(--radius-md);
+  padding: 5px var(--spacing-md);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: var(--transition-normal);
+}
+
+.jso-refresh-btn:hover {
+  background: var(--color-border-default);
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong);
+}
+
+.jso-spin-icon {
+  display: inline-block;
+  animation: jso-spin 1s linear infinite;
+}
+
+@keyframes jso-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Summary Counter Bar */
+.jso-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-bg-subtle);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-light);
+  font-size: var(--font-size-sm);
+}
+
+.jso-summary-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.jso-summary-label {
+  color: var(--color-text-muted);
+}
+
+.jso-summary-val {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+/* Job List Section */
+.jso-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.jso-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.jso-list::-webkit-scrollbar-track {
+  background: var(--color-border-light);
+}
+
+.jso-list::-webkit-scrollbar-thumb {
+  background: var(--color-border-default);
+  border-radius: var(--radius-xs);
+}
+
+/* Individual Job Item Card */
+.jso-item {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  transition: background var(--transition-normal), border-color var(--transition-normal);
+}
+
+.jso-item:hover {
+  background: var(--color-bg-card-hover);
+  border-color: var(--color-border-strong);
+}
+
+.jso-item-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.jso-job-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.jso-job-name {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jso-job-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-subtle);
+  font-family: var(--font-mono);
+}
+
+/* Status Badges with Color-Coding */
+.jso-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  padding: 3px var(--spacing-sm);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+}
+
+/* PENDING = Amber */
+.jso-status-pending {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning-text);
+  border: 1px solid var(--color-warning-border);
+}
+
+/* RUNNING = Blue */
+.jso-status-running {
+  background: var(--color-primary-subtle);
+  color: var(--color-primary-text);
+  border: 1px solid var(--color-primary-border);
+}
+
+/* COMPLETED = Green */
+.jso-status-completed {
+  background: var(--color-success-subtle);
+  color: var(--color-success-text);
+  border: 1px solid var(--color-success-border);
+}
+
+/* FAILED = Red */
+.jso-status-failed {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger-text);
+  border: 1px solid var(--color-danger-border);
+}
+
+/* Progress Indicator Row */
+.jso-progress-section {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-top: 2px;
+}
+
+.jso-progress-bar-bg {
+  flex: 1;
+  height: 6px;
+  background: rgba(51, 65, 85, 0.6);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  position: relative;
+}
+
+.jso-progress-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-xs);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.jso-progress-bar-fill.status-pending {
+  background: linear-gradient(90deg, var(--color-warning-hover), var(--color-warning-text));
+}
+
+.jso-progress-bar-fill.status-running {
+  background: linear-gradient(90deg, var(--color-primary-hover), var(--color-primary-text));
+  background-size: 200% 100%;
+  animation: jso-shimmer 2s linear infinite;
+}
+
+.jso-progress-bar-fill.status-completed {
+  background: linear-gradient(90deg, var(--color-success-hover), var(--color-success-text));
+}
+
+.jso-progress-bar-fill.status-failed {
+  background: linear-gradient(90deg, var(--color-danger-hover), var(--color-danger-text));
+}
+
+@keyframes jso-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.jso-progress-percent {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-muted);
+  width: 42px;
+  text-align: right;
+  font-family: var(--font-mono);
+}
+
+/* Expandable Error Section for FAILED Jobs */
+.jso-error-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-danger-text);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  padding: 2px 0;
+  margin-top: 2px;
+  transition: var(--transition-normal);
+}
+
+.jso-error-toggle-btn:hover {
+  color: var(--color-danger-light);
+  text-decoration: underline;
+}
+
+.jso-error-container {
+  background: var(--color-danger-subtle);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-top: var(--spacing-2xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-danger-light);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Loading & Skeleton States */
+.jso-loading-container, .jso-error-state, .jso-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px var(--spacing-xl);
+  text-align: center;
+  color: var(--color-text-muted);
+  gap: var(--spacing-sm);
+}
+
+.jso-skeleton-item {
+  height: 52px;
+  background: var(--color-border-light);
+  border-radius: var(--radius-lg);
+  animation: jso-skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes jso-skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+.jso-error-state {
+  color: var(--color-danger-text);
+}
+
+.jso-retry-btn {
+  margin-top: var(--spacing-sm);
+  background: var(--color-danger-subtle);
+  border: 1px solid var(--color-danger-border);
+  color: var(--color-danger-light);
+  padding: var(--spacing-xs) var(--spacing-3xl);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  transition: var(--transition-normal);
+}
+
+.jso-retry-btn:hover {
+  background: rgba(239, 68, 68, 0.3);
+  color: var(--color-text-contrast);
+}

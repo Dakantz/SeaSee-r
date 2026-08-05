@@ -12,6 +12,8 @@ export interface Rover {
 
     rotationUrl: string;
     positionUrl: string;
+
+    videoId?: string;
 }
 
 interface RoverStore {

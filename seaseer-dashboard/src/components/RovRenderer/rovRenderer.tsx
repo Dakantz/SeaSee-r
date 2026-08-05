@@ -29,6 +29,7 @@ interface RovRendererProps {
     name?: string;
     rotationUrl: string;
     positionUrl: string;
+    videoId?: string;
     rotationOffset?: [number, number, number];
     positionOffset?: [number, number, number];
     showRover?: boolean;
@@ -44,6 +45,7 @@ export function RovRenderer({
     name,
     rotationUrl,
     positionUrl,
+    videoId,
     rotationOffset = [0, 0, 0],
     positionOffset = [0, 0, 0],
     showRover = true,
@@ -77,6 +79,7 @@ export function RovRenderer({
             roll: defaultOrientation[2],
             rotationUrl,
             positionUrl,
+            videoId,
         });
 
         return () => {
@@ -91,6 +94,7 @@ export function RovRenderer({
         positionUrl,
         rotationUrl,
         roverId,
+        videoId,
     ]);
 
     return (
@@ -109,6 +113,7 @@ export function RovRenderer({
                 <TrajectoryRenderer
                     url={positionUrl}
                     position={positionOffset}
+                    videoId={videoId}
                     {...trajectoryProps}
                 />
             ) : null}

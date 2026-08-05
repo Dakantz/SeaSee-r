@@ -12,7 +12,7 @@ const ROVER_LEFT_ID = "test-rover-left";
 const ROVER_RIGHT_ID = "test-rover-right";
 
 const ROTATION_URL_1 =
-    "/test_jsons/rover_3/ROV-Log-2026-05-02-2026-05-05-0505205315.json";
+    "/test_jsons/rover_1/ROV-Log-2026-05-02-2026-05-05-0505205315.json";
 
 const ROTATION_URL_2 =
     "/test_jsons/rover_4/ROV-Log-2026-05-02-2026-05-05-0505214749.json";
@@ -145,6 +145,8 @@ export default function TestRover() {
                     rotationUrl={ROTATION_URL_1}
                     positionUrl={POSITION_URL_1}
                     positionOffset={[0, 0, 10]}
+                    showRover={true}
+                    showTrajectory={true}
                     trajectoryProps={{
                         color: 0xff0000,
                         lineWidth: 3,

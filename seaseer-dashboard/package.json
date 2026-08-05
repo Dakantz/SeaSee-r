@@ -14,6 +14,8 @@
     "@hey-api/client-fetch": "^0.13.1",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
+    "@types/delaunator": "^5.0.3",
+    "delaunator": "^5.1.0",
     "potree-core": "^2.0.15",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

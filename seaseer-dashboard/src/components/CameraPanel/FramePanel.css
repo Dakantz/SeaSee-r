@@ -1,0 +1,95 @@
+@keyframes floatUp {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.frame-panel-card {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    width: 280px;
+    background: rgba(20, 20, 25, 0.95);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+    color: #ffffff;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-family: 'Outfit', 'Inter', sans-serif;
+    animation: floatUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    z-index: 100;
+}
+
+.frame-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.frame-panel-title {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: #eaeaea;
+}
+
+.frame-panel-close-btn {
+    background: transparent;
+    border: none;
+    color: #aaaaaa;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    border-radius: 50%;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.frame-panel-close-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+
+.frame-panel-video-wrapper {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000000;
+    position: relative;
+    overflow: hidden;
+}
+
+.frame-panel-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.frame-panel-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 0 0 8px 8px;
+}
+
+.frame-panel-meta {
+    font-size: 11px;
+    color: #cccccc;
+}
+
+.frame-panel-meta strong {
+    color: #ffffff;
+}

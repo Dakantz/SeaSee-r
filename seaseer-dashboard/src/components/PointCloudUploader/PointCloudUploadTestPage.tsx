@@ -30,8 +30,8 @@ const UploaderInstance: React.FC<UploaderInstanceProps> = ({ title, chunkSize })
   };
 
   return (
-    <div style={{ marginBottom: '40px', padding: '24px', background: 'rgba(15, 23, 42, 0.2)', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-      <h2 style={{ fontSize: '18px', color: '#f8fafc', marginBottom: '16px', fontWeight: 500 }}>
+    <div style={{ marginBottom: 'var(--spacing-5xl)', padding: 'var(--spacing-3xl)', background: 'var(--color-bg-subtle)', borderRadius: 'var(--radius-2xl)', border: '1px solid var(--color-border-light)' }}>
+      <h2 style={{ fontSize: 'var(--font-size-2xl)', color: 'var(--color-text-primary)', marginBottom: 'var(--spacing-xl)', fontWeight: 'var(--font-weight-medium)' }}>
         {title}
       </h2>
       <PointCloudUploader
@@ -43,31 +43,31 @@ const UploaderInstance: React.FC<UploaderInstanceProps> = ({ title, chunkSize })
 
       {statusMessage && (
         <div style={{
-          marginTop: '24px',
-          padding: '16px',
-          backgroundColor: fileIds.length > 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(15, 23, 42, 0.6)',
-          borderRadius: '8px',
+          marginTop: 'var(--spacing-3xl)',
+          padding: 'var(--spacing-xl)',
+          backgroundColor: fileIds.length > 0 ? 'var(--color-success-subtle)' : 'var(--color-bg-subtle)',
+          borderRadius: 'var(--radius-lg)',
           borderStyle: 'solid',
           borderWidth: '1px',
-          borderColor: 'rgba(255, 255, 255, 0.05)',
+          borderColor: 'var(--color-border-light)',
           borderLeftWidth: '4px',
-          borderLeftColor: fileIds.length > 0 ? '#10b981' : '#3b82f6',
+          borderLeftColor: fileIds.length > 0 ? 'var(--color-success)' : 'var(--color-primary)',
           boxShadow: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)'
         }}>
-          <p style={{ margin: 0, color: '#f1f5f9', fontWeight: 500, fontSize: '15px' }}>
+          <p style={{ margin: 0, color: 'var(--color-text-primary)', fontWeight: 'var(--font-weight-medium)', fontSize: 'var(--font-size-lg)' }}>
             {statusMessage}
           </p>
           {fileIds.length > 0 && (
-            <div style={{ margin: '12px 0 0 0', color: '#94a3b8', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <div style={{ margin: 'var(--spacing-lg) 0 0 0', color: 'var(--color-text-muted)', fontSize: 'var(--font-size-md)', display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>
               File IDs:
               {fileIds.map(id => (
                 <span key={id} style={{
-                  fontFamily: 'monospace',
-                  backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                  padding: '4px 8px',
-                  borderRadius: '6px',
-                  color: '#cbd5e1',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                  fontFamily: 'var(--font-mono)',
+                  backgroundColor: 'var(--color-border-light)',
+                  padding: 'var(--spacing-2xs) var(--spacing-sm)',
+                  borderRadius: 'var(--radius-md)',
+                  color: 'var(--color-text-body)',
+                  border: '1px solid var(--color-border-default)'
                 }}>
                   {id}
                 </span>
@@ -84,26 +84,26 @@ export const PointCloudUploadTestPage: React.FC = () => {
 
   return (
     <div style={{
-      padding: '40px',
+      padding: 'var(--spacing-5xl)',
       maxWidth: '800px',
       margin: '0 auto',
-      fontFamily: "'Inter', 'Roboto', sans-serif",
-      color: '#e2e8f0',
+      fontFamily: 'var(--font-sans)',
+      color: 'var(--color-text-secondary)',
       flex: 1,
       overflowY: 'auto',
       height: '100%'
     }}>
       <div style={{
-        background: 'rgba(30, 41, 59, 0.4)',
-        border: '1px solid rgba(255, 255, 255, 0.05)',
-        borderRadius: '16px',
-        padding: '32px',
-        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+        background: 'var(--color-bg-card)',
+        border: '1px solid var(--color-border-light)',
+        borderRadius: 'var(--radius-4xl)',
+        padding: 'var(--spacing-4xl)',
+        boxShadow: 'var(--shadow-md)'
       }}>
-        <h1 style={{ fontSize: '28px', marginBottom: '8px', color: '#f8fafc', fontWeight: 600 }}>
+        <h1 style={{ fontSize: 'var(--font-size-3xl)', marginBottom: 'var(--spacing-sm)', color: 'var(--color-text-primary)', fontWeight: 'var(--font-weight-semibold)' }}>
           PointCloud Upload Test
         </h1>
-        <p style={{ color: '#f8fafc', marginBottom: '32px', fontSize: '15px' }}>
+        <p style={{ color: 'var(--color-text-primary)', marginBottom: 'var(--spacing-4xl)', fontSize: 'var(--font-size-lg)' }}>
           This is an example component to show how the upload backend for pointclouds can be used. It automatically resumes the upload after a connection issue. Only accepts .las, .laz, and .ply files.
         </p>
 

@@ -19,6 +19,7 @@ from app.services.pointcloud.pdal import (
     get_pointcloud_srs_and_stats,
     get_pointcloud_dimensions,
     build_ept_pdal_docker,
+    process_emodnet_csv,
     format_libpq_connection_string,
     ingest_pgpointcloud
 )
@@ -82,6 +83,8 @@ async def _run_background_job_async(job_id_str: str):
         return await _process_opensfm_job_async(job_id_str, payload)
     elif task_type in ("emodnet_ingest", "emodnet_append"):
         return await _process_emodnet_job_async(job_id_str, payload)
+    elif task_type in ("emodnet_csv_ingest", "emodnet_csv_process"):
+        return await _process_emodnet_csv_job_async(job_id_str, payload)
 
     # Default fallback handler
     return await _process_default_job_async(job_id_str, name)
@@ -160,6 +163,178 @@ async def _process_default_job_async(job_id_str: str, name: str):
     return res_data
 
 
+async def _ingest_pointcloud_to_db_async(
+    file_path: str,
+    file_id: str,
+    job_id: str = None,
+    is_append: bool = False
+):
+    """
+    Database Ingestion via PDAL & Metadata insertion/update.
+    Ingests point cloud at lod0, lod1, lod2, lod3 levels.
+    """
+    print(f"Ingesting pointcloud {file_id} (is_append={is_append}) to database...")
+    
+    # Extract bbox and point count via PDAL
+    bbox, number_of_points = await get_pointcloud_stats(file_path)
+    
+    connection_str = format_libpq_connection_string(settings.database_url)
+    table_uuid = file_id.replace("-", "")
+    lod0_table_name = f"pc_{table_uuid}_lod0"
+
+    pcid = None
+    if is_append:
+        async with async_session() as session:
+            try:
+                res = await session.execute(
+                    text(f"SELECT PC_PCId(patch) FROM {lod0_table_name} LIMIT 1")
+                )
+                row = res.first()
+                if row and row[0] is not None:
+                    pcid = int(row[0])
+            except Exception as e:
+                print(f"Failed to query existing pcid from {lod0_table_name}: {e}")
+
+            if pcid is None:
+                try:
+                    stmt_existing = select(PointCloud).where(PointCloud.id == uuid.UUID(file_id))
+                    res_existing = await session.execute(stmt_existing)
+                    rec = res_existing.scalar_one_or_none()
+                    if rec and rec.pcid:
+                        pcid = rec.pcid
+                except Exception as e:
+                    print(f"Failed to query existing metadata for pcid: {e}")
+
+    target_dims = None
+    if is_append and pcid:
+        try:
+            async with async_session() as session:
+                res = await session.execute(
+                    text("SELECT schema FROM pointcloud_formats WHERE pcid = :pcid"),
+                    {"pcid": pcid}
+                )
+                row = res.first()
+                if row and row[0]:
+                    import re
+                    target_dims = re.findall(r"<pc:name>(.*?)</pc:name>", row[0])
+        except Exception as e:
+            print(f"Failed to query pcid schema: {e}")
+
+    if not target_dims:
+        target_dims = ["X", "Y", "Z", "Red", "Green", "Blue"]
+        if not is_append:
+            pcid = None
+
+    source_dims = await get_pointcloud_dimensions(file_path)
+    print(f"Source file dimensions: {source_dims}")
+    print(f"Target schema dimensions: {target_dims}")
+
+    # Execute PDAL pgPointcloud ingestion for LOD levels: lod0, lod1, lod2, lod3
+    for lod in range(4):
+        dynamic_table_name = f"pc_{table_uuid}_lod{lod}"
+        step = 2 ** lod
+        await ingest_pgpointcloud(
+            file_path=file_path,
+            connection_str=connection_str,
+            table_name=dynamic_table_name,
+            capacity=400,
+            srid=4326,
+            overwrite=not is_append,
+            pcid=pcid,
+            target_dimensions=target_dims,
+            step=step
+        )
+        if lod == 0 and pcid is None:
+            # Query pcid generated for lod0 if it wasn't set yet
+            async with async_session() as session:
+                try:
+                    res = await session.execute(
+                        text(f"SELECT PC_PCId(patch) FROM {lod0_table_name} LIMIT 1")
+                    )
+                    row = res.first()
+                    if row and row[0] is not None:
+                        pcid = int(row[0])
+                except Exception as e:
+                    print(f"Failed to query pcid from {lod0_table_name}: {e}")
+
+    # Query PCID from database if still None
+    if pcid is None:
+        pcid = 1
+        async with async_session() as session:
+            try:
+                res = await session.execute(
+                    text(f"SELECT PC_PCId(patch) FROM {lod0_table_name} LIMIT 1")
+                )
+                row = res.first()
+                if row and row[0] is not None:
+                    pcid = int(row[0])
+            except Exception as e:
+                print(f"Failed to query pcid from {lod0_table_name}: {e}")
+            try:
+                res = await session.execute(
+                    text("SELECT pcid FROM pointcloud_formats ORDER BY pcid DESC LIMIT 1")
+                )
+                row = res.first()
+                if row:
+                    pcid = int(row[0])
+            except Exception as e2:
+                print(f"Failed to query pointcloud_formats: {e2}")
+
+    # Fetch job record to get original filename and update or insert metadata record
+    async with async_session() as session:
+        orig_filename = os.path.basename(file_path)
+        safe_filename = os.path.basename(file_path)
+        if job_id:
+            stmt_job = select(Job).where(Job.id == job_id)
+            res_job = await session.execute(stmt_job)
+            job_record = res_job.scalar_one_or_none()
+            if job_record and isinstance(job_record.payload, dict):
+                orig_filename = job_record.payload.get("filename", orig_filename)
+                safe_filename = job_record.payload.get("safe_filename", safe_filename)
+
+        target_uuid = uuid.UUID(file_id)
+        stmt_existing = select(PointCloud).where(PointCloud.id == target_uuid)
+        res_existing = await session.execute(stmt_existing)
+        existing_record = res_existing.scalar_one_or_none()
+
+        if is_append and existing_record:
+            # Update existing PointCloud metadata record with accumulated points and expanded bbox
+            existing_record.number_of_points = (existing_record.number_of_points or 0) + number_of_points
+            if bbox.get("min_x") is not None:
+                existing_record.min_x = min(existing_record.min_x, bbox["min_x"]) if existing_record.min_x is not None else bbox["min_x"]
+            if bbox.get("max_x") is not None:
+                existing_record.max_x = max(existing_record.max_x, bbox["max_x"]) if existing_record.max_x is not None else bbox["max_x"]
+            if bbox.get("min_y") is not None:
+                existing_record.min_y = min(existing_record.min_y, bbox["min_y"]) if existing_record.min_y is not None else bbox["min_y"]
+            if bbox.get("max_y") is not None:
+                existing_record.max_y = max(existing_record.max_y, bbox["max_y"]) if existing_record.max_y is not None else bbox["max_y"]
+            if bbox.get("min_z") is not None:
+                existing_record.min_z = min(existing_record.min_z, bbox["min_z"]) if existing_record.min_z is not None else bbox["min_z"]
+            if bbox.get("max_z") is not None:
+                existing_record.max_z = max(existing_record.max_z, bbox["max_z"]) if existing_record.max_z is not None else bbox["max_z"]
+            await session.commit()
+        else:
+            # Insert new PointCloud metadata record
+            metadata_record = PointCloud(
+                id=target_uuid,
+                job_id=uuid.UUID(job_id) if job_id else None,
+                orig_filename=orig_filename,
+                safe_filename=safe_filename,
+                number_of_points=number_of_points,
+                min_x=bbox.get("min_x"),
+                min_y=bbox.get("min_y"),
+                min_z=bbox.get("min_z"),
+                max_x=bbox.get("max_x"),
+                max_y=bbox.get("max_y"),
+                max_z=bbox.get("max_z"),
+                pcid=pcid
+            )
+            session.add(metadata_record)
+            await session.commit()
+
+    print(f"Successfully ingested pointcloud {file_id} metadata and data to database.")
+
+
 async def _ingest_pointcloud_pipeline_async(
     file_path: str,
     file_id: str,
@@ -208,143 +383,12 @@ async def _ingest_pointcloud_pipeline_async(
 
         # 2. Database Ingestion via PDAL & Metadata insertion/update if storage_type == 'database'
         if current_storage_type == StorageType.database.value:
-            print(f"Ingesting pointcloud {file_id} (is_append={is_append}) to database...")
-            
-            # Extract bbox and point count via PDAL
-            bbox, number_of_points = await get_pointcloud_stats(file_path)
-            
-            connection_str = format_libpq_connection_string(settings.database_url)
-            table_uuid = file_id.replace("-", "")
-            dynamic_table_name = f"pc_{table_uuid}_lod0"
-
-            pcid = None
-            if is_append:
-                async with async_session() as session:
-                    try:
-                        res = await session.execute(
-                            text(f"SELECT PC_PCId(patch) FROM {dynamic_table_name} LIMIT 1")
-                        )
-                        row = res.first()
-                        if row and row[0] is not None:
-                            pcid = int(row[0])
-                    except Exception as e:
-                        print(f"Failed to query existing pcid from {dynamic_table_name}: {e}")
-
-                    if pcid is None:
-                        try:
-                            stmt_existing = select(PointCloud).where(PointCloud.id == uuid.UUID(file_id))
-                            res_existing = await session.execute(stmt_existing)
-                            rec = res_existing.scalar_one_or_none()
-                            if rec and rec.pcid:
-                                pcid = rec.pcid
-                        except Exception as e:
-                            print(f"Failed to query existing metadata for pcid: {e}")
-
-            target_dims = None
-            if pcid:
-                try:
-                    async with async_session() as session:
-                        res = await session.execute(
-                            text("SELECT schema FROM pointcloud_formats WHERE pcid = :pcid"),
-                            {"pcid": pcid}
-                        )
-                        row = res.first()
-                        if row and row[0]:
-                            import re
-                            target_dims = re.findall(r"<pc:name>(.*?)</pc:name>", row[0])
-                except Exception as e:
-                    print(f"Failed to query pcid schema: {e}")
-
-            source_dims = await get_pointcloud_dimensions(file_path)
-            print(f"Source file dimensions: {source_dims}")
-            print(f"Target schema dimensions: {target_dims if target_dims else ['X', 'Y', 'Z']}")
-
-            # Execute PDAL pgPointcloud ingestion (overwrite=False if appending)
-            await ingest_pgpointcloud(
+            await _ingest_pointcloud_to_db_async(
                 file_path=file_path,
-                connection_str=connection_str,
-                table_name=dynamic_table_name,
-                capacity=400,
-                srid=4326,
-                overwrite=not is_append,
-                pcid=pcid,
-                target_dimensions=target_dims
+                file_id=file_id,
+                job_id=job_id,
+                is_append=is_append
             )
-
-            # Query PCID from database
-            if pcid is None:
-                pcid = 1
-                async with async_session() as session:
-                    try:
-                        res = await session.execute(
-                            text(f"SELECT PC_PCId(patch) FROM {dynamic_table_name} LIMIT 1")
-                        )
-                        row = res.first()
-                        if row and row[0] is not None:
-                            pcid = int(row[0])
-                    except Exception as e:
-                        print(f"Failed to query pcid from {dynamic_table_name}: {e}")
-                    try:
-                        res = await session.execute(
-                            text("SELECT pcid FROM pointcloud_formats ORDER BY pcid DESC LIMIT 1")
-                        )
-                        row = res.first()
-                        if row:
-                            pcid = int(row[0])
-                    except Exception as e2:
-                        print(f"Failed to query pointcloud_formats: {e2}")
-
-                # Fetch job record to get original filename
-                orig_filename = os.path.basename(file_path)
-                safe_filename = os.path.basename(file_path)
-                if job_id:
-                    stmt_job = select(Job).where(Job.id == job_id)
-                    res_job = await session.execute(stmt_job)
-                    job_record = res_job.scalar_one_or_none()
-                    if job_record and isinstance(job_record.payload, dict):
-                        orig_filename = job_record.payload.get("filename", orig_filename)
-                        safe_filename = job_record.payload.get("safe_filename", safe_filename)
-
-                target_uuid = uuid.UUID(file_id)
-                stmt_existing = select(PointCloud).where(PointCloud.id == target_uuid)
-                res_existing = await session.execute(stmt_existing)
-                existing_record = res_existing.scalar_one_or_none()
-
-                if is_append and existing_record:
-                    # Update existing PointCloud metadata record with accumulated points and expanded bbox
-                    existing_record.number_of_points = (existing_record.number_of_points or 0) + number_of_points
-                    if bbox.get("min_x") is not None:
-                        existing_record.min_x = min(existing_record.min_x, bbox["min_x"]) if existing_record.min_x is not None else bbox["min_x"]
-                    if bbox.get("max_x") is not None:
-                        existing_record.max_x = max(existing_record.max_x, bbox["max_x"]) if existing_record.max_x is not None else bbox["max_x"]
-                    if bbox.get("min_y") is not None:
-                        existing_record.min_y = min(existing_record.min_y, bbox["min_y"]) if existing_record.min_y is not None else bbox["min_y"]
-                    if bbox.get("max_y") is not None:
-                        existing_record.max_y = max(existing_record.max_y, bbox["max_y"]) if existing_record.max_y is not None else bbox["max_y"]
-                    if bbox.get("min_z") is not None:
-                        existing_record.min_z = min(existing_record.min_z, bbox["min_z"]) if existing_record.min_z is not None else bbox["min_z"]
-                    if bbox.get("max_z") is not None:
-                        existing_record.max_z = max(existing_record.max_z, bbox["max_z"]) if existing_record.max_z is not None else bbox["max_z"]
-                    await session.commit()
-                else:
-                    # Insert new PointCloud metadata record
-                    metadata_record = PointCloud(
-                        id=target_uuid,
-                        job_id=uuid.UUID(job_id) if job_id else None,
-                        orig_filename=orig_filename,
-                        safe_filename=safe_filename,
-                        number_of_points=number_of_points,
-                        min_x=bbox.get("min_x"),
-                        min_y=bbox.get("min_y"),
-                        min_z=bbox.get("min_z"),
-                        max_x=bbox.get("max_x"),
-                        max_y=bbox.get("max_y"),
-                        max_z=bbox.get("max_z"),
-                        pcid=pcid
-                    )
-                    session.add(metadata_record)
-                    await session.commit()
-            print(f"Successfully ingested pointcloud {file_id} metadata and data to database.")
 
         if job_id and mark_completed:
             await _update_job_status(job_id, "COMPLETED", 100.0)
@@ -635,5 +679,74 @@ async def _process_emodnet_async(
         if job_id:
             await _update_job_status(job_id, "FAILED", 0.0, error_msg)
         raise e
+
+
+async def _process_emodnet_csv_job_async(job_id_str: str, payload: dict):
+    """Processes EMODnet CSV upload task: cleans header, reprojects via PDAL, ingests to DB, and builds EPT."""
+    file_path = payload.get("file_path")
+    file_id = payload.get("file_id") or job_id_str
+    storage_type = payload.get("storage_type", settings.pointcloud_storage_type.value)
+    output_dir = os.path.join(settings.ept_dir, file_id)
+
+    if not file_path or not os.path.exists(file_path):
+        error_msg = f"EMODnet CSV file not found for job {job_id_str}: {file_path}"
+        await _update_job_status(job_id_str, "FAILED", 0.0, error_msg)
+        return {"status": "error", "message": error_msg}
+
+    try:
+        await _update_job_status(job_id_str, "RUNNING", 10.0)
+
+        # Process EMODnet CSV using PDAL pipeline (reproject to EPSG:3857), ingest into pgPointcloud DB, & build EPT
+        bbox, number_of_points, pcid = await process_emodnet_csv(
+            csv_path=file_path,
+            output_dir=output_dir,
+            out_srs="EPSG:3857",
+            storage_type=storage_type,
+            file_id=file_id
+        )
+        print(f"Successfully processed EMODnet CSV {file_path} to EPT at {output_dir} (points: {number_of_points})")
+
+        await _update_job_status(job_id_str, "RUNNING", 80.0)
+
+        # Store pointcloud metadata record in PostgreSQL pointclouds table
+        async with async_session() as session:
+            job_uuid = uuid.UUID(job_id_str)
+            target_uuid = uuid.UUID(file_id)
+            orig_filename = payload.get("filename") or os.path.basename(file_path)
+            safe_filename = payload.get("safe_filename") or os.path.basename(file_path)
+
+            metadata_record = PointCloud(
+                id=target_uuid,
+                job_id=job_uuid,
+                orig_filename=orig_filename,
+                safe_filename=safe_filename,
+                number_of_points=number_of_points,
+                min_x=bbox.get("min_x"),
+                min_y=bbox.get("min_y"),
+                min_z=bbox.get("min_z"),
+                max_x=bbox.get("max_x"),
+                max_y=bbox.get("max_y"),
+                max_z=bbox.get("max_z"),
+                pcid=pcid or 0
+            )
+            session.add(metadata_record)
+            await session.commit()
+
+        res_data = {
+            "status": "success",
+            "file_id": file_id,
+            "number_of_points": number_of_points,
+            "ept_dir": output_dir,
+            "ept_url": f"/ept/{file_id}/ept.json"
+        }
+        await _update_job_status(job_id_str, "COMPLETED", 100.0, result=res_data)
+        return res_data
+
+    except Exception as e:
+        error_msg = str(e)
+        print(f"Exception processing EMODnet CSV {file_path}: {error_msg}")
+        await _update_job_status(job_id_str, "FAILED", 0.0, error_msg)
+        raise e
+
 
 

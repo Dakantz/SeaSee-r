@@ -1,55 +1,161 @@
 import { create } from "zustand";
 
-interface VideoState {
+export interface Video {
+    id: string;
     duration: number;
     currentTime: number;
-
     playing: boolean;
-
     fps: number;
-
     width: number;
     height: number;
-
-    setDuration: (duration: number) => void;
-    setCurrentTime: (time: number) => void;
-    setPlaying: (playing: boolean) => void;
-    setFPS: (fps: number) => void;
-    setResolution: (width: number, height: number) => void;
+    videoUrl?: string;
 }
 
-export const useVideoStore = create<VideoState>((set) => ({
-    duration: 0,
-    currentTime: 0,
+export interface SelectedFrame {
+    videoId: string;
+    relativeTime: number;
+    position?: [number, number, number];
+}
 
-    playing: false,
+interface VideoStore {
+    videos: Record<string, Video>;
+    selectedFrame: SelectedFrame | null;
 
-    fps: 30,
-    currentFrame: 0,
+    addVideo: (video: Video) => void;
+    removeVideo: (id: string) => void;
 
-    width: 0,
-    height: 0,
+    setDuration: (id: string, duration: number) => void;
+    setCurrentTime: (id: string, time: number) => void;
+    setPlaying: (id: string, playing: boolean) => void;
+    setFPS: (id: string, fps: number) => void;
+    setResolution: (id: string, width: number, height: number) => void;
+    setSelectedFrame: (frame: SelectedFrame | null) => void;
+}
 
-    setDuration: (duration) =>
-        set({ duration }),
+export const useVideoStore = create<VideoStore>((set) => ({
+    videos: {},
 
-    setCurrentTime: (currentTime) =>
-        set({ currentTime }),
+    addVideo: (video) =>
+        set((state) => ({
+            videos: {
+                ...state.videos,
+                [video.id]: video,
+            },
+        })),
 
-    setPlaying: (playing) =>
-        set({ playing }),
-
-    setFPS: (fps) =>
-        set({ fps }),
-
-    setResolution: (width, height) =>
-        set({
-            width,
-            height,
+    removeVideo: (id) =>
+        set((state) => {
+            const { [id]: __, ...restVideos } = state.videos;
+            return { videos: restVideos };
         }),
+
+    setDuration: (id, duration) =>
+        set((state) => {
+            if (!state.videos[id]) {
+                console.warn(
+                    `Video with id "${id}" does not exist`
+                );
+                return state;
+            }
+
+            return {
+                videos: {
+                    ...state.videos,
+                    [id]: {
+                        ...state.videos[id],
+                        duration,
+                    },
+                },
+            };
+        }),
+
+    setCurrentTime: (id, currentTime) =>
+        set((state) => {
+            if (!state.videos[id]) {
+                console.warn(
+                    `Video with id "${id}" does not exist`
+                );
+                return state;
+            }
+
+            return {
+                videos: {
+                    ...state.videos,
+                    [id]: {
+                        ...state.videos[id],
+                        currentTime,
+                    },
+                },
+            };
+        }),
+
+    setPlaying: (id, playing) =>
+        set((state) => {
+            if (!state.videos[id]) {
+                console.warn(
+                    `Video with id "${id}" does not exist`
+                );
+                return state;
+            }
+
+            return {
+                videos: {
+                    ...state.videos,
+                    [id]: {
+                        ...state.videos[id],
+                        playing,
+                    },
+                },
+            };
+        }),
+
+    setFPS: (id, fps) =>
+        set((state) => {
+            if (!state.videos[id]) {
+                console.warn(
+                    `Video with id "${id}" does not exist`
+                );
+                return state;
+            }
+
+            return {
+                videos: {
+                    ...state.videos,
+                    [id]: {
+                        ...state.videos[id],
+                        fps,
+                    },
+                },
+            };
+        }),
+
+    setResolution: (id, width, height) =>
+        set((state) => {
+            if (!state.videos[id]) {
+                console.warn(
+                    `Video with id "${id}" does not exist`
+                );
+                return state;
+            }
+
+            return {
+                videos: {
+                    ...state.videos,
+                    [id]: {
+                        ...state.videos[id],
+                        width,
+                        height,
+                    },
+                },
+            };
+        }),
+
+    selectedFrame: null,
+    setSelectedFrame: (selectedFrame) => set({ selectedFrame }),
 }));
 
-export const useCurrentFrame = () =>
-    useVideoStore((state) =>
-        Math.floor(state.currentTime * state.fps)
-    );
+export const useCurrentFrame = (id: string) =>
+    useVideoStore((state) => {
+        const video = state.videos[id];
+        return video ? Math.floor(video.currentTime * video.fps) : 0;
+    });

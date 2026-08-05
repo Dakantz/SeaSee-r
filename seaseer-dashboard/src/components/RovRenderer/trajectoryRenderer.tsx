@@ -12,9 +12,32 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 
 import { TelemetryPositionReader } from "../TelemetoryPanel/TelemetryPositionReader";
+import { useTrajectoryHover } from "./hooks/useTrajectoryHover";
+import { useTrajectoryClosestPoint } from "./hooks/useTrajectoryClosestPoint";
+import { Billboard} from "@react-three/drei";
+import { useVideoStore } from "../../store/videoStore";
+
+let circleTexture: THREE.CanvasTexture | null = null;
+function getCircleTexture(): THREE.CanvasTexture {
+    if (!circleTexture && typeof document !== "undefined") {
+        const canvas = document.createElement("canvas");
+        canvas.width = 32;
+        canvas.height = 32;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+            ctx.beginPath();
+            ctx.arc(16, 16, 14, 0, 2 * Math.PI);
+            ctx.fillStyle = "#ffffff";
+            ctx.fill();
+        }
+        circleTexture = new THREE.CanvasTexture(canvas);
+    }
+    return circleTexture!;
+}
 
 export interface TrajectoryRendererProps {
     url: string;
+    videoId?: string;
     color?: THREE.ColorRepresentation;
     lineWidth?: number;
     opacity?: number;
@@ -22,10 +45,14 @@ export interface TrajectoryRendererProps {
     position?: [number, number, number];
     rotation?: [number, number, number];
     scale?: [number, number, number];
+    onInitialPositionLoaded?: () => void;
+    showPoints?: boolean;
+    pointSize?: number;
 }
 
 export function TrajectoryRenderer({
     url,
+    videoId,
     color = 0x00ff00,
     lineWidth = 3,
     opacity = 1,
@@ -33,17 +60,44 @@ export function TrajectoryRenderer({
     position = [0, 0, 0],
     rotation = [0, 0, 0],
     scale = [1, 1, 1],
+    onInitialPositionLoaded,
+    showPoints = true,
+    pointSize = 0.5,
 }: TrajectoryRendererProps) {
-    
-    const { size } = useThree();
+
+    const [group, setGroup] = useState<THREE.Group | null>(null);
+    const { size, gl } = useThree();
+    const { isHovered} = useTrajectoryHover(url);
+    const [samples, setSamples] = useState<any[]>([]);
+    const { hoveredPoint, hoveredSample } = useTrajectoryClosestPoint(
+        samples,
+        size,
+        30,
+        !!videoId,
+        group
+    );
+    const setSelectedFrame = useVideoStore((state) => state.setSelectedFrame);
 
     const reader = useMemo(
         () => new TelemetryPositionReader(url),
         [url]
     );
 
-    const [group, setGroup] =
-        useState<THREE.Group | null>(null);
+    useEffect(() => {
+        const handleCanvasClick = (e: MouseEvent) => {
+            if (videoId && hoveredSample) {
+                setSelectedFrame({
+                    videoId: videoId,
+                    relativeTime: hoveredSample.relativeTime,
+                    position: [hoveredSample.x, hoveredSample.y, hoveredSample.z],
+                });
+            }
+        };
+        gl.domElement.addEventListener("click", handleCanvasClick);
+        return () => {
+            gl.domElement.removeEventListener("click", handleCanvasClick);
+        };
+    }, [gl, videoId, hoveredSample, setSelectedFrame]);
 
     useEffect(() => {
         let cancelled = false;
@@ -55,6 +109,19 @@ export function TrajectoryRenderer({
             if (cancelled) {
                 return;
             }
+
+            if (samples.length > 0) {
+                TrajectoryRenderer.initialPositions[url] = [
+                    samples[0].x,
+                    samples[0].y,
+                    samples[0].z,
+                ];
+                if (onInitialPositionLoaded) {
+                    onInitialPositionLoaded();
+                }
+            }
+
+            setSamples(samples);
 
             const positions: number[] = [];
 
@@ -76,8 +143,7 @@ export function TrajectoryRenderer({
             const material =
                 new LineMaterial({
                     color,
-                    linewidth:
-                        lineWidth,
+                    linewidth: isHovered ? lineWidth * 1.5 : lineWidth,
                     opacity,
                     transparent:
                         opacity < 1,
@@ -114,6 +180,26 @@ export function TrajectoryRenderer({
             );
 
             group.add(line);
+
+            if (showPoints) {
+                const pointsGeometry = new THREE.BufferGeometry();
+                pointsGeometry.setAttribute(
+                    "position",
+                    new THREE.Float32BufferAttribute(positions, 3)
+                );
+
+                const pointsMaterial = new THREE.PointsMaterial({
+                    color,
+                    size: pointSize,
+                    map: getCircleTexture(),
+                    transparent: true,
+                    alphaTest: 0.5,
+                    sizeAttenuation: true,
+                });
+
+                const points = new THREE.Points(pointsGeometry, pointsMaterial);
+                group.add(points);
+            }
 
             setGroup(group);
         }
@@ -169,6 +255,9 @@ export function TrajectoryRenderer({
         rotation,
         scale,
         size,
+        isHovered,
+        showPoints,
+        pointSize,
     ]);
 
     if (!group) {
@@ -176,6 +265,31 @@ export function TrajectoryRenderer({
     }
 
     return (
-        <primitive object={group} />
+        <group>
+            <primitive
+                object={group}
+            />
+            {hoveredPoint && (
+                <group
+                    position={position}
+                    rotation={rotation}
+                    scale={scale}
+                >
+                    <Billboard position={hoveredPoint}>
+                        <mesh>
+                            <ringGeometry args={[0.15, 0.25, 32]} />
+                            <meshBasicMaterial
+                                color={0xffff00}
+                                depthTest={false}
+                                transparent
+                                opacity={0.8}
+                            />
+                        </mesh>
+                    </Billboard>
+                </group>
+            )}
+        </group>
     );
 }
+
+TrajectoryRenderer.initialPositions = {} as Record<string, [number, number, number]>;
