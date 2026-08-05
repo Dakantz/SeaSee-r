@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useJobSystemStatus } from '../../hooks/useJobSystemStatus';
-import type { JobResponse, JobStatus } from '../../client';
+import { retryJob, type JobResponse, type JobStatus } from '../../client';
 import './JobSystemOverview.css';
 
 export interface JobSystemOverviewProps {
@@ -121,6 +121,30 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
 
   // Track expanded completed jobs (job ID set). Completed jobs start collapsed by default.
   const [expandedCompletedIds, setExpandedCompletedIds] = useState<Set<string>>(new Set());
+
+  // Track job ID currently being retried
+  const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
+
+  const handleRetryJob = async (jobId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRetryingJobId(jobId);
+    try {
+      const response = await retryJob({
+        path: { job_id: jobId },
+      });
+      if (response.error) {
+        const errData = response.error as any;
+        alert(errData?.detail || 'Failed to retry job');
+      } else {
+        await refetch();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Network error retrying job');
+    } finally {
+      setRetryingJobId(null);
+    }
+  };
+
 
   const toggleCompletedExpand = (jobId: string) => {
     setExpandedCompletedIds((prev) => {
@@ -300,14 +324,29 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
                     )}
                   </div>
 
-                  {/* Status Badge */}
-                  <span className={`jso-status-badge ${getStatusBadgeClass(job.status)}`}>
-                    {job.status}
-                    {isCompleted && (
-                      <span className="jso-expand-arrow">{isCollapsed ? '▼' : '▲'}</span>
+                  {/* Status Badge & Actions */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {isFailed && (
+                      <button
+                        type="button"
+                        className="jso-retry-job-btn"
+                        onClick={(e) => handleRetryJob(job.id, e)}
+                        disabled={retryingJobId === job.id}
+                        title="Retry this failed job"
+                      >
+                        <span className={retryingJobId === job.id ? 'jso-spin-icon' : ''}>↻</span>
+                        <span>{retryingJobId === job.id ? 'Retrying...' : 'Retry'}</span>
+                      </button>
                     )}
-                  </span>
+                    <span className={`jso-status-badge ${getStatusBadgeClass(job.status)}`}>
+                      {job.status}
+                      {isCompleted && (
+                        <span className="jso-expand-arrow">{isCollapsed ? '▼' : '▲'}</span>
+                      )}
+                    </span>
+                  </div>
                 </div>
+
 
                 {/* Visual Progress Indicator (0.0 to 100.0) */}
                 {!isCollapsed && (

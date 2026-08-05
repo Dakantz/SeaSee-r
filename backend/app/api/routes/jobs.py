@@ -119,3 +119,48 @@ async def delete_job(
     await db.commit()
     return None
 
+
+@router.post("/{job_id}/retry", response_model=JobResponse)
+async def retry_job(
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Retry a job that has failed. Resets status to PENDING and re-enqueues it in Redis RQ.
+    """
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    if job.status != "FAILED":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only failed jobs can be retried. Current job status: '{job.status}'"
+        )
+
+    job.status = "PENDING"
+    job.progress = 0.0
+    job.error_message = None
+    job.started_at = None
+    job.completed_at = None
+    job.result = None
+
+    await db.commit()
+    await db.refresh(job)
+
+    # Re-enqueue job to Redis Queue (rq) for worker execution
+    try:
+        redis_conn = Redis.from_url(settings.redis_url)
+        q = Queue("pointcloud_tasks", connection=redis_conn)
+        q.enqueue(
+            "app.services.worker.tasks.run_background_job",
+            str(job.id),
+            job_id=str(job.id)
+        )
+    except Exception as e:
+        print(f"Warning: Could not re-enqueue job {job.id} to Redis Queue: {e}")
+
+    return job
+
+
