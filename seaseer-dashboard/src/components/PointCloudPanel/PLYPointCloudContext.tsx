@@ -2,6 +2,9 @@ import React, { createContext, useContext, useState, useCallback, type ReactNode
 import * as THREE from "three";
 import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
 
+export type MapProviderChoice = "OpenStreetMaps" | "Bathymetry" | "Debug" | "OpenMapTiles" | "MapBox" | "Bing" | "Google" | "MapTiler";
+export type HeightProviderChoice = "Bathymetry" | "None" | "Debug" | "MapBox" | "OpenMapTiles" | "Bing" | "Google" | "MapTiler";
+
 export interface PLYPointCloudContextType {
     mode: "binary" | "plyFile" | "plyUrl";
     setMode: (mode: "binary" | "plyFile" | "plyUrl") => void;
@@ -15,8 +18,12 @@ export interface PLYPointCloudContextType {
     setShowHeightmap: (show: boolean) => void;
     heightmapMode: "HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR";
     setHeightmapMode: (mode: "HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR") => void;
-    heightmapProvider: "OpenStreetMaps" | "Debug" | "OpenMapTiles" | "MapBox" | "Bing" | "Google" | "MapTiler";
-    setHeightmapProvider: (provider: "OpenStreetMaps" | "Debug" | "OpenMapTiles" | "MapBox" | "Bing" | "Google" | "MapTiler") => void;
+    heightmapMapProvider: MapProviderChoice;
+    setHeightmapMapProvider: (provider: MapProviderChoice) => void;
+    heightmapHeightProvider: HeightProviderChoice;
+    setHeightmapHeightProvider: (provider: HeightProviderChoice) => void;
+    heightmapProvider: MapProviderChoice;
+    setHeightmapProvider: (provider: MapProviderChoice) => void;
     heightmapApiToken: string;
     setHeightmapApiToken: (token: string) => void;
     identifier: string;
@@ -55,7 +62,8 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [pointSize, setPointSize] = useState<number>(0.1);
     const [showHeightmap, setShowHeightmap] = useState<boolean>(false);
     const [heightmapMode, setHeightmapMode] = useState<"HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR">("HEIGHT");
-    const [heightmapProvider, setHeightmapProvider] = useState<"OpenStreetMaps" | "Debug" | "OpenMapTiles" | "MapBox" | "Bing" | "Google" | "MapTiler">("OpenStreetMaps");
+    const [heightmapMapProvider, setHeightmapMapProvider] = useState<MapProviderChoice>("OpenStreetMaps");
+    const [heightmapHeightProvider, setHeightmapHeightProvider] = useState<HeightProviderChoice>("Bathymetry");
     const [heightmapApiToken, setHeightmapApiToken] = useState<string>("");
     const [identifier, setIdentifier] = useState<string>(DEFAULT_HARDCODED_IDENTIFIER);
     const [plyUrl, setPlyUrl] = useState<string>(DEFAULT_PLY_URL);
@@ -212,8 +220,12 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 setShowHeightmap,
                 heightmapMode,
                 setHeightmapMode,
-                heightmapProvider,
-                setHeightmapProvider,
+                heightmapMapProvider,
+                setHeightmapMapProvider,
+                heightmapHeightProvider,
+                setHeightmapHeightProvider,
+                heightmapProvider: heightmapMapProvider,
+                setHeightmapProvider: setHeightmapMapProvider,
                 heightmapApiToken,
                 setHeightmapApiToken,
                 identifier,

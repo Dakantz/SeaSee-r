@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PointCloudMetadataResponse } from "../../client";
-import { usePLYPointCloudContext } from "./PLYPointCloudContext";
+import { usePLYPointCloudContext, type MapProviderChoice, type HeightProviderChoice } from "./PLYPointCloudContext";
 
 export interface PLYPointCloudSidebarProps {
     mode?: "binary" | "plyFile" | "plyUrl";
@@ -15,8 +15,12 @@ export interface PLYPointCloudSidebarProps {
     setShowHeightmap?: (show: boolean) => void;
     heightmapMode?: "HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR";
     setHeightmapMode?: (mode: "HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR") => void;
-    heightmapProvider?: "OpenStreetMaps" | "Debug" | "OpenMapTiles" | "MapBox" | "Bing" | "Google" | "MapTiler";
-    setHeightmapProvider?: (provider: "OpenStreetMaps" | "Debug" | "OpenMapTiles" | "MapBox" | "Bing" | "Google" | "MapTiler") => void;
+    heightmapMapProvider?: MapProviderChoice;
+    setHeightmapMapProvider?: (provider: MapProviderChoice) => void;
+    heightmapHeightProvider?: HeightProviderChoice;
+    setHeightmapHeightProvider?: (provider: HeightProviderChoice) => void;
+    heightmapProvider?: MapProviderChoice;
+    setHeightmapProvider?: (provider: MapProviderChoice) => void;
     heightmapApiToken?: string;
     setHeightmapApiToken?: (token: string) => void;
     identifier?: string;
@@ -56,8 +60,11 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const setShowHeightmap = props.setShowHeightmap ?? contextState?.setShowHeightmap ?? (() => {});
     const heightmapMode = props.heightmapMode ?? contextState?.heightmapMode ?? "HEIGHT";
     const setHeightmapMode = props.setHeightmapMode ?? contextState?.setHeightmapMode ?? (() => {});
-    const heightmapProvider = props.heightmapProvider ?? contextState?.heightmapProvider ?? "OpenStreetMaps";
-    const setHeightmapProvider = props.setHeightmapProvider ?? contextState?.setHeightmapProvider ?? (() => {});
+    const heightmapMapProvider = props.heightmapMapProvider ?? contextState?.heightmapMapProvider ?? props.heightmapProvider ?? contextState?.heightmapProvider ?? "OpenStreetMaps";
+    const setHeightmapMapProvider = props.setHeightmapMapProvider ?? contextState?.setHeightmapMapProvider ?? props.setHeightmapProvider ?? contextState?.setHeightmapProvider ?? (() => {});
+    const heightmapHeightProvider = props.heightmapHeightProvider ?? contextState?.heightmapHeightProvider ?? "Bathymetry";
+    const setHeightmapHeightProvider = props.setHeightmapHeightProvider ?? contextState?.setHeightmapHeightProvider ?? (() => {});
+    const heightmapProvider = heightmapMapProvider;
     const heightmapApiToken = props.heightmapApiToken ?? contextState?.heightmapApiToken ?? "";
     const setHeightmapApiToken = props.setHeightmapApiToken ?? contextState?.setHeightmapApiToken ?? (() => {});
     const identifier = props.identifier ?? contextState?.identifier ?? "";
@@ -493,11 +500,12 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
 
                     {showHeightmap && (
                         <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-xs)", paddingLeft: "var(--spacing-xs)" }}>
+                            {/* Map Provider Select */}
                             <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                                <label style={{ fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)" }}>Map Provider:</label>
+                                <label style={{ fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)" }}>Map Imagery Provider:</label>
                                 <select
-                                    value={heightmapProvider}
-                                    onChange={(e) => setHeightmapProvider(e.target.value as any)}
+                                    value={heightmapMapProvider}
+                                    onChange={(e) => setHeightmapMapProvider(e.target.value as any)}
                                     style={{
                                         background: "var(--color-bg-subtle)",
                                         border: "1px solid var(--color-border-strong)",
@@ -510,12 +518,41 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                     }}
                                 >
                                     <option value="OpenStreetMaps" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>OpenStreetMap</option>
+                                    <option value="Bathymetry" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>SeaSee Bathymetry</option>
                                     <option value="Debug" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Debug Grid</option>
                                     <option value="OpenMapTiles" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>OpenMapTiles</option>
                                     <option value="MapBox" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>MapBox</option>
                                     <option value="Bing" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Bing Maps</option>
                                     <option value="Google" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Google Maps</option>
                                     <option value="MapTiler" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>MapTiler</option>
+                                </select>
+                            </div>
+
+                            {/* Height Provider Select */}
+                            <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
+                                <label style={{ fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)" }}>Height Data Provider:</label>
+                                <select
+                                    value={heightmapHeightProvider}
+                                    onChange={(e) => setHeightmapHeightProvider(e.target.value as any)}
+                                    style={{
+                                        background: "var(--color-bg-subtle)",
+                                        border: "1px solid var(--color-border-strong)",
+                                        color: "var(--color-text-secondary)",
+                                        padding: "var(--spacing-3xs) var(--spacing-xs)",
+                                        borderRadius: "var(--radius-xs)",
+                                        fontSize: "var(--font-size-xs)",
+                                        width: "100%",
+                                        cursor: "pointer",
+                                    }}
+                                >
+                                    <option value="Bathymetry" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>SeaSee Bathymetry</option>
+                                    <option value="None" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>None (Flat Surface)</option>
+                                    <option value="Debug" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Height Debug Grid</option>
+                                    <option value="MapBox" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>MapBox Terrain-RGB</option>
+                                    <option value="OpenMapTiles" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>OpenMapTiles Terrain-RGB</option>
+                                    <option value="Bing" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Bing Maps Terrain-RGB</option>
+                                    <option value="Google" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Google Maps Terrain-RGB</option>
+                                    <option value="MapTiler" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>MapTiler Terrain-RGB</option>
                                 </select>
                             </div>
 

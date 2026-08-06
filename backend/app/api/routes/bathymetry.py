@@ -170,25 +170,30 @@ async def get_bathymetry_tile(
     except Exception:
         target_table = "bathymetry_raster"
 
+    tile_buf = (xmax - xmin) / 128.0
+
     sql = text(f"""
         WITH envelope AS (
             SELECT ST_MakeEnvelope(:xmin, :ymin, :xmax, :ymax, 3857) AS geom
         ),
+        envelope_buffered AS (
+            SELECT ST_Expand(geom, :buf) AS geom FROM envelope
+        ),
         united AS (
             SELECT ST_Union(rast) AS rast
-            FROM {target_table}, envelope env
-            WHERE ST_Intersects(rast, env.geom)
+            FROM {target_table}, envelope_buffered env_buf
+            WHERE ST_Intersects(rast, env_buf.geom)
         ),
         clipped AS (
             SELECT ST_Resample(
-                ST_Clip(u.rast, env.geom),
+                ST_Clip(u.rast, env_buf.geom),
                 256, 256,
                 CAST(:xmin AS double precision), CAST(:ymax AS double precision),
                 0.0, 0.0,
                 'Bilinear',
                 0.125
             ) AS tile_rast
-            FROM united u, envelope env
+            FROM united u, envelope_buffered env_buf
             WHERE u.rast IS NOT NULL
         )
         SELECT ST_DumpValues(tile_rast, 1) FROM clipped WHERE tile_rast IS NOT NULL;
@@ -196,7 +201,7 @@ async def get_bathymetry_tile(
 
     elevation_grid = None
     try:
-        res = await db.execute(sql, {"xmin": xmin, "ymin": ymin, "xmax": xmax, "ymax": ymax})
+        res = await db.execute(sql, {"xmin": xmin, "ymin": ymin, "xmax": xmax, "ymax": ymax, "buf": tile_buf})
         row = res.first()
         if row and row[0]:
             raw_values = row[0]

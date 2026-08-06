@@ -84,3 +84,34 @@ def test_upload_emodnet_csv_success():
     finally:
         app.dependency_overrides.clear()
 
+
+def test_get_bathymetry_tile_success():
+    from unittest.mock import MagicMock, AsyncMock
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.core.database import get_db_session
+
+    client = TestClient(app)
+
+    mock_db = MagicMock()
+    # First query checks table existence, second executes tile query
+    mock_res_table = MagicMock()
+    mock_res_table.scalar.return_value = True
+
+    mock_res_tile = MagicMock()
+    mock_res_tile.first.return_value = [[[10.0] * 256] * 256]
+
+    mock_db.execute = AsyncMock(side_effect=[mock_res_table, mock_res_tile])
+
+    app.dependency_overrides[get_db_session] = lambda: mock_db
+
+    try:
+        response = client.get("/bathymetry/10/500/300.png")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        img = Image.open(io.BytesIO(response.content))
+        assert img.size == (256, 256)
+    finally:
+        app.dependency_overrides.clear()
+
+

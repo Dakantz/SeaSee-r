@@ -3,11 +3,11 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import { generateDelaunayTerrainMesh } from "./utils/delaunayTriangulation";
-// @ts-ignore - geo-three submodule
-import { MapView, DebugProvider, HeightDebugProvider, OpenStreetMapsProvider, OpenMapTilesProvider, MapBoxProvider, BingMapsProvider, GoogleMapsProvider, MapTilerProvider, UnitsUtils } from "../../../public/geo-three/build/geo-three.module.js";
+// @ts-expect-error - geo-three submodule
+import { MapView, DebugProvider, HeightDebugProvider, OpenStreetMapsProvider, OpenMapTilesProvider, MapBoxProvider, BingMapsProvider, GoogleMapsProvider, MapTilerProvider, BathymetryProvider, UnitsUtils } from "../../../public/geo-three/build/geo-three.module.js";
 
 function GeoThreeHeightmap() {
-    const { showHeightmap, heightmapMode, heightmapProvider, heightmapApiToken } = usePLYPointCloudContext();
+    const { showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider, heightmapProvider, heightmapApiToken } = usePLYPointCloudContext();
     const mapViewRef = useRef<any>(null);
 
     const mapView = useMemo(() => {
@@ -15,59 +15,66 @@ function GeoThreeHeightmap() {
         try {
             let provider: any;
             let heightProvider: any = null;
+            const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-            switch (heightmapProvider) {
-                case "Debug": {
-                    const debugP = new DebugProvider();
-                    provider = debugP;
-                    heightProvider = new HeightDebugProvider(debugP);
+            const mapChoice = heightmapMapProvider ?? heightmapProvider ?? "OpenStreetMaps";
+            const heightChoice = heightmapHeightProvider ?? "Bathymetry";
+
+            // 1. Map Imagery Provider
+            switch (mapChoice) {
+                case "Bathymetry":
+                    provider = new BathymetryProvider(`${apiBaseUrl}/bathymetry`);
                     break;
-                }
-                case "OpenMapTiles": {
+                case "Debug":
+                    provider = new DebugProvider();
+                    break;
+                case "OpenMapTiles":
                     provider = new OpenMapTilesProvider();
-                    heightProvider = heightmapApiToken
-                        ? new MapBoxProvider(heightmapApiToken, "mapbox.terrain-rgb", MapBoxProvider.MAP_ID, "pngraw")
-                        : null;
                     break;
-                }
-                case "MapBox": {
+                case "MapBox":
                     provider = new MapBoxProvider(heightmapApiToken, "mapbox/satellite-v9", MapBoxProvider.STYLE);
-                    heightProvider = new MapBoxProvider(heightmapApiToken, "mapbox.terrain-rgb", MapBoxProvider.MAP_ID, "pngraw");
                     break;
-                }
-                case "Bing": {
+                case "Bing":
                     provider = new BingMapsProvider(heightmapApiToken);
-                    heightProvider = heightmapApiToken
-                        ? new MapBoxProvider(heightmapApiToken, "mapbox.terrain-rgb", MapBoxProvider.MAP_ID, "pngraw")
-                        : null;
                     break;
-                }
-                case "Google": {
+                case "Google":
                     provider = new GoogleMapsProvider(heightmapApiToken);
-                    heightProvider = heightmapApiToken
-                        ? new MapBoxProvider(heightmapApiToken, "mapbox.terrain-rgb", MapBoxProvider.MAP_ID, "pngraw")
-                        : null;
                     break;
-                }
-                case "MapTiler": {
+                case "MapTiler":
                     provider = new MapTilerProvider(heightmapApiToken);
-                    heightProvider = heightmapApiToken
-                        ? new MapBoxProvider(heightmapApiToken, "mapbox.terrain-rgb", MapBoxProvider.MAP_ID, "pngraw")
-                        : null;
                     break;
-                }
                 case "OpenStreetMaps":
-                default: {
-                    const osm = new OpenStreetMapsProvider();
-                    provider = osm;
-                    heightProvider = heightmapApiToken
-                        ? new MapBoxProvider(heightmapApiToken, "mapbox.terrain-rgb", MapBoxProvider.MAP_ID, "pngraw")
-                        : new HeightDebugProvider(osm);
+                default:
+                    provider = new OpenStreetMapsProvider();
                     break;
-                }
             }
 
-            const modeCode = MapView[heightmapMode] ?? MapView.HEIGHT;
+            // 2. Height Data Provider
+            switch (heightChoice) {
+                case "Bathymetry":
+                    heightProvider = new BathymetryProvider(`${apiBaseUrl}/bathymetry`);
+                    break;
+                case "Debug":
+                    heightProvider = new HeightDebugProvider(new DebugProvider());
+                    break;
+                case "MapBox":
+                case "OpenMapTiles":
+                case "Bing":
+                case "Google":
+                case "MapTiler":
+                    heightProvider = heightmapApiToken
+                        ? new MapBoxProvider(heightmapApiToken, "mapbox.terrain-rgb", MapBoxProvider.MAP_ID, "pngraw")
+                        : null;
+                    break;
+                case "None":
+                default:
+                    heightProvider = null;
+                    break;
+            }
+
+            const modeCode = (!heightProvider || heightChoice === "None")
+                ? MapView.PLANAR
+                : (MapView[heightmapMode] ?? MapView.HEIGHT);
             const map = new MapView(modeCode, provider, heightProvider);
             map.scale.set(
                 UnitsUtils.EARTH_PERIMETER,
@@ -81,7 +88,7 @@ function GeoThreeHeightmap() {
             console.error("Failed to initialize GeoThree MapView:", err);
             return null;
         }
-    }, [showHeightmap, heightmapMode, heightmapProvider, heightmapApiToken]);
+    }, [showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider, heightmapProvider, heightmapApiToken]);
 
     useFrame(({ camera, gl, scene }) => {
         if (mapViewRef.current?.lod) {
