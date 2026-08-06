@@ -11,6 +11,14 @@ export interface PLYPointCloudContextType {
     setWireframe: (wireframe: boolean) => void;
     pointSize: number;
     setPointSize: (size: number) => void;
+    showHeightmap: boolean;
+    setShowHeightmap: (show: boolean) => void;
+    heightmapMode: "HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR";
+    setHeightmapMode: (mode: "HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR") => void;
+    heightmapProvider: "OpenStreetMaps" | "Debug" | "OpenMapTiles" | "MapBox" | "Bing" | "Google" | "MapTiler";
+    setHeightmapProvider: (provider: "OpenStreetMaps" | "Debug" | "OpenMapTiles" | "MapBox" | "Bing" | "Google" | "MapTiler") => void;
+    heightmapApiToken: string;
+    setHeightmapApiToken: (token: string) => void;
     identifier: string;
     setIdentifier: (id: string) => void;
     plyUrl: string;
@@ -45,6 +53,10 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [renderMode, setRenderMode] = useState<"points" | "mesh">("points");
     const [wireframe, setWireframe] = useState<boolean>(true);
     const [pointSize, setPointSize] = useState<number>(0.1);
+    const [showHeightmap, setShowHeightmap] = useState<boolean>(false);
+    const [heightmapMode, setHeightmapMode] = useState<"HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR">("HEIGHT");
+    const [heightmapProvider, setHeightmapProvider] = useState<"OpenStreetMaps" | "Debug" | "OpenMapTiles" | "MapBox" | "Bing" | "Google" | "MapTiler">("OpenStreetMaps");
+    const [heightmapApiToken, setHeightmapApiToken] = useState<string>("");
     const [identifier, setIdentifier] = useState<string>(DEFAULT_HARDCODED_IDENTIFIER);
     const [plyUrl, setPlyUrl] = useState<string>(DEFAULT_PLY_URL);
     const [lod, setLod] = useState<number>(0);
@@ -196,6 +208,14 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 setWireframe,
                 pointSize,
                 setPointSize,
+                showHeightmap,
+                setShowHeightmap,
+                heightmapMode,
+                setHeightmapMode,
+                heightmapProvider,
+                setHeightmapProvider,
+                heightmapApiToken,
+                setHeightmapApiToken,
                 identifier,
                 setIdentifier,
                 plyUrl,

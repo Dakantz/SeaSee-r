@@ -5,7 +5,7 @@ import {
     Separator,
 } from "react-resizable-panels";
 
-import CameraPanel from "../CameraPanel/CameraPanel";
+
 import PointCloudPanel from "../PointCloudPanel/PointCloudPanel";
 import TelemetryPanel from "../TelemetoryPanel/TrajectoryPanel";
 import { JobSystemOverview } from "../JobSystemOverview";
@@ -22,9 +22,9 @@ export default function Workspace() {
             <div className="workspace-container">
                 <Group orientation="horizontal" className="workspace">
                     {/* Left Panel: Camera Stream */}
-                    <Panel defaultSize="35%" minSize="20%">
-                        <CameraPanel />
-                    </Panel>
+                    {/*<Panel defaultSize="35%" minSize="20%">*/}
+                    {/*    <CameraPanel />*/}
+                    {/*</Panel>*/}
 
                     <Separator className="resize-handle vertical" />
 

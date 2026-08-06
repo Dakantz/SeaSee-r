@@ -84,7 +84,7 @@ export function TrajectoryRenderer({
     );
 
     useEffect(() => {
-        const handleCanvasClick = (e: MouseEvent) => {
+        const handleCanvasClick = (_e: MouseEvent) => {
             if (videoId && hoveredSample) {
                 setSelectedFrame({
                     videoId: videoId,

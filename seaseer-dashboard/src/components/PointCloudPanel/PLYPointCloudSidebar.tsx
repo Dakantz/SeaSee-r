@@ -11,6 +11,14 @@ export interface PLYPointCloudSidebarProps {
     setWireframe?: (wireframe: boolean) => void;
     pointSize?: number;
     setPointSize?: (size: number) => void;
+    showHeightmap?: boolean;
+    setShowHeightmap?: (show: boolean) => void;
+    heightmapMode?: "HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR";
+    setHeightmapMode?: (mode: "HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR") => void;
+    heightmapProvider?: "OpenStreetMaps" | "Debug" | "OpenMapTiles" | "MapBox" | "Bing" | "Google" | "MapTiler";
+    setHeightmapProvider?: (provider: "OpenStreetMaps" | "Debug" | "OpenMapTiles" | "MapBox" | "Bing" | "Google" | "MapTiler") => void;
+    heightmapApiToken?: string;
+    setHeightmapApiToken?: (token: string) => void;
     identifier?: string;
     setIdentifier?: (id: string) => void;
     plyUrl?: string;
@@ -44,6 +52,14 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const setWireframe = props.setWireframe ?? contextState?.setWireframe ?? (() => {});
     const pointSize = props.pointSize ?? contextState?.pointSize ?? 0.1;
     const setPointSize = props.setPointSize ?? contextState?.setPointSize ?? (() => {});
+    const showHeightmap = props.showHeightmap ?? contextState?.showHeightmap ?? false;
+    const setShowHeightmap = props.setShowHeightmap ?? contextState?.setShowHeightmap ?? (() => {});
+    const heightmapMode = props.heightmapMode ?? contextState?.heightmapMode ?? "HEIGHT";
+    const setHeightmapMode = props.setHeightmapMode ?? contextState?.setHeightmapMode ?? (() => {});
+    const heightmapProvider = props.heightmapProvider ?? contextState?.heightmapProvider ?? "OpenStreetMaps";
+    const setHeightmapProvider = props.setHeightmapProvider ?? contextState?.setHeightmapProvider ?? (() => {});
+    const heightmapApiToken = props.heightmapApiToken ?? contextState?.heightmapApiToken ?? "";
+    const setHeightmapApiToken = props.setHeightmapApiToken ?? contextState?.setHeightmapApiToken ?? (() => {});
     const identifier = props.identifier ?? contextState?.identifier ?? "";
     const setIdentifier = props.setIdentifier ?? contextState?.setIdentifier ?? (() => {});
     const plyUrl = props.plyUrl ?? contextState?.plyUrl ?? "";
@@ -462,6 +478,95 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                         />
                     </div>
                 )}
+
+                {/* Geo-Three Heightmap Controls */}
+                <div style={{ marginTop: "var(--spacing-xs)", paddingTop: "var(--spacing-xs)", borderTop: "1px dashed var(--color-border-subtle)", display: "flex", flexDirection: "column", gap: "var(--spacing-xs)" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: "var(--spacing-xs)", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)", cursor: "pointer", fontWeight: "var(--font-weight-medium)" }}>
+                        <input
+                            type="checkbox"
+                            checked={showHeightmap}
+                            onChange={(e) => setShowHeightmap(e.target.checked)}
+                            style={{ cursor: "pointer" }}
+                        />
+                        Geo-Three Heightmap Terrain
+                    </label>
+
+                    {showHeightmap && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-xs)", paddingLeft: "var(--spacing-xs)" }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
+                                <label style={{ fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)" }}>Map Provider:</label>
+                                <select
+                                    value={heightmapProvider}
+                                    onChange={(e) => setHeightmapProvider(e.target.value as any)}
+                                    style={{
+                                        background: "var(--color-bg-subtle)",
+                                        border: "1px solid var(--color-border-strong)",
+                                        color: "var(--color-text-secondary)",
+                                        padding: "var(--spacing-3xs) var(--spacing-xs)",
+                                        borderRadius: "var(--radius-xs)",
+                                        fontSize: "var(--font-size-xs)",
+                                        width: "100%",
+                                        cursor: "pointer",
+                                    }}
+                                >
+                                    <option value="OpenStreetMaps" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>OpenStreetMap</option>
+                                    <option value="Debug" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Debug Grid</option>
+                                    <option value="OpenMapTiles" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>OpenMapTiles</option>
+                                    <option value="MapBox" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>MapBox</option>
+                                    <option value="Bing" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Bing Maps</option>
+                                    <option value="Google" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Google Maps</option>
+                                    <option value="MapTiler" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>MapTiler</option>
+                                </select>
+                            </div>
+
+                            {(heightmapProvider === "MapBox" || heightmapProvider === "Bing" || heightmapProvider === "Google" || heightmapProvider === "MapTiler" || heightmapProvider === "OpenStreetMaps") && (
+                                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
+                                    <label style={{ fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)" }}>
+                                        API Token / Key {heightmapProvider === "OpenStreetMaps" ? "(Optional for Height Data)" : ""}:
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder={heightmapProvider === "OpenStreetMaps" ? "Optional Mapbox Token for Terrain RGB" : "Enter API Key / Access Token"}
+                                        value={heightmapApiToken}
+                                        onChange={(e) => setHeightmapApiToken(e.target.value)}
+                                        style={{
+                                            background: "var(--color-bg-subtle)",
+                                            border: "1px solid var(--color-border-strong)",
+                                            color: "var(--color-text-primary)",
+                                            padding: "var(--spacing-3xs) var(--spacing-xs)",
+                                            borderRadius: "var(--radius-xs)",
+                                            fontSize: "var(--font-size-xs)",
+                                            width: "100%",
+                                        }}
+                                    />
+                                </div>
+                            )}
+
+                            <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
+                                <label style={{ fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)" }}>Heightmap Mode:</label>
+                                <select
+                                    value={heightmapMode}
+                                    onChange={(e) => setHeightmapMode(e.target.value as any)}
+                                    style={{
+                                        background: "var(--color-bg-subtle)",
+                                        border: "1px solid var(--color-border-strong)",
+                                        color: "var(--color-text-secondary)",
+                                        padding: "var(--spacing-3xs) var(--spacing-xs)",
+                                        borderRadius: "var(--radius-xs)",
+                                        fontSize: "var(--font-size-xs)",
+                                        width: "100%",
+                                        cursor: "pointer",
+                                    }}
+                                >
+                                    <option value="HEIGHT" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>CPU Height (HeightNode)</option>
+                                    <option value="HEIGHT_SHADER" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>GPU Shader Height</option>
+                                    <option value="MARTINI" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Martini Mesh</option>
+                                    <option value="PLANAR" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Planar (2D Map)</option>
+                                </select>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Status / Errors / Stats */}
