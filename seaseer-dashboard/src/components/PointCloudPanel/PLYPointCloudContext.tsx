@@ -58,6 +58,10 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         if (!urlToLoad.trim()) return;
         setIsLoading(true);
         setError(null);
+        setGeometry((prev) => {
+            if (prev) prev.dispose();
+            return null;
+        });
 
         const loader = new PLYLoader();
         loader.load(
@@ -67,10 +71,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 geom.computeBoundingSphere();
                 const count = geom.attributes.position ? geom.attributes.position.count : 0;
 
-                setGeometry((prev) => {
-                    if (prev) prev.dispose();
-                    return geom;
-                });
+                setGeometry(geom);
                 setPointCount(count);
                 setIsLoading(false);
             },
@@ -87,6 +88,10 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         if (!idToLoad.trim()) return;
         setIsLoading(true);
         setError(null);
+        setGeometry((prev) => {
+            if (prev) prev.dispose();
+            return null;
+        });
 
         try {
             const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -139,10 +144,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
             geom.center();
             geom.computeBoundingSphere();
 
-            setGeometry((prev) => {
-                if (prev) prev.dispose();
-                return geom;
-            });
+            setGeometry(geom);
             setPointCount(count);
         } catch (err: any) {
             console.error("Binary Stream Error:", err);
@@ -159,6 +161,10 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         setIsLoading(true);
         setError(null);
         setSelectedFileName(file.name);
+        setGeometry((prev) => {
+            if (prev) prev.dispose();
+            return null;
+        });
 
         try {
             const buffer = await file.arrayBuffer();
@@ -169,10 +175,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
             geom.computeBoundingSphere();
             const count = geom.attributes.position ? geom.attributes.position.count : 0;
 
-            setGeometry((prev) => {
-                if (prev) prev.dispose();
-                return geom;
-            });
+            setGeometry(geom);
             setPointCount(count);
         } catch (err: any) {
             console.error("PLY parse error:", err);

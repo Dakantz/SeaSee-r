@@ -9,13 +9,13 @@ from urllib.parse import urlparse
 
 
 from sqlalchemy import text
-from app.core.config import settings, StorageType
+from app.core.config import settings
 from app.core.database import async_session
 from app.services.pointcloud.entwine import build_ept
 
-EMODNET_ELEVATION_MULTIPLICATION = 50.0
+EMODNET_ELEVATION_MULTIPLICATION = 100.0
 
-def get_docker_cmd() -> str:
+def get_docker_cmd() -> Optional[str]:
     """Finds the absolute path to docker executable, checking PATH and common system locations."""
     docker_bin = shutil.which("docker")
     if docker_bin:
@@ -23,7 +23,7 @@ def get_docker_cmd() -> str:
     for candidate in ["/usr/local/bin/docker", "/usr/bin/docker", "/bin/docker"]:
         if os.path.exists(candidate) and os.access(candidate, os.X_OK):
             return candidate
-    return "docker"
+    return None
 
 
 async def build_ept_pdal_docker(
@@ -77,6 +77,10 @@ async def build_ept_pdal_docker(
         except (FileNotFoundError, RuntimeError) as native_err:
             # Fall back to Docker pdal/pdal if native pdal binary is missing or fails
             docker_bin = get_docker_cmd()
+            if not docker_bin:
+                raise RuntimeError(
+                    f"Native PDAL execution failed and docker binary is not available: {native_err}"
+                ) from native_err
 
             input_dir = os.path.dirname(geotiff_abs)
             geotiff_filename = os.path.basename(geotiff_abs)
@@ -139,7 +143,8 @@ async def process_emodnet_csv(
     output_dir: str,
     out_srs: str = "EPSG:3857",
     storage_type: Optional[str] = None,
-    file_id: Optional[str] = None
+    file_id: Optional[str] = None,
+    is_append: bool = False
 ) -> Tuple[Dict[str, float], int, Optional[int]]:
     """
     Processes an EMODnet Bathymetry CSV file:
@@ -192,7 +197,7 @@ async def process_emodnet_csv(
 
                 for row in reader:
                     if row:
-                        # Multiply elevation by 100
+                        # Multiply elevation by EMODNET_ELEVATION_MULTIPLICATION
                         if elevation_idx != -1 and elevation_idx < len(row):
                             raw_val = row[elevation_idx].strip()
                             if raw_val and raw_val.lower() != "nan":
@@ -240,6 +245,10 @@ async def process_emodnet_csv(
         except (FileNotFoundError, RuntimeError) as native_err:
             # Fall back to Docker pdal/pdal if native pdal binary is missing or fails
             docker_bin = get_docker_cmd()
+            if not docker_bin:
+                raise RuntimeError(
+                    f"Native PDAL execution failed and docker binary is not available: {native_err}"
+                ) from native_err
 
             docker_pipeline_path = os.path.join(tmp_dir, "pipeline.json")
             docker_pdal_pipeline = {
@@ -285,37 +294,95 @@ async def process_emodnet_csv(
         # 3. Extract stats (bbox & number of points) from reprojected LAZ file
         bbox, number_of_points, _ = await get_pointcloud_srs_and_stats(temp_laz_path)
 
-        # 4. Ingest points into pgPointcloud database if database storage is enabled
-        pcid = None
-        current_storage_type = storage_type or settings.pointcloud_storage_type.value
-        if current_storage_type == StorageType.database.value and file_id:
-            connection_str = format_libpq_connection_string(settings.database_url)
-            table_uuid = file_id.replace("-", "")
-            dynamic_table_name = f"pc_{table_uuid}_lod0"
+        # 4. Ingest raster into PostGIS bathymetry_raster table with pyramids (-l 2,4,8,16)
+        pcid = 1
+        if file_id:
+            print(f"[EMODnet CSV Ingest] Ingesting bathymetry raster for dataset {file_id} to database bathymetry_raster table with pyramids...")
+            temp_tif_path = os.path.join(tmp_dir, "bathymetry.tif")
+            tif_pipeline = {
+                "pipeline": [
+                    {
+                        "type": "readers.text",
+                        "filename": cleaned_csv_path,
+                        "spatialreference": "EPSG:4326"
+                    },
+                    {
+                        "type": "filters.reprojection",
+                        "out_srs": out_srs
+                    },
+                    {
+                        "type": "writers.gdal",
+                        "filename": temp_tif_path,
+                        "output_type": "mean",
+                        "resolution": 100.0,
+                        "gdaldriver": "GTiff"
+                    }
+                ]
+            }
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "pdal", "pipeline", "--stdin",
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await proc.communicate(input=json.dumps(tif_pipeline).encode("utf-8"))
+                if proc.returncode != 0:
+                    print(f"[EMODnet CSV Ingest] Native PDAL TIF generation warning: {stderr.decode('utf-8')}")
+            except Exception as e:
+                print(f"[EMODnet CSV Ingest] Native PDAL TIF generation exception: {e}")
 
-            print(f"[EMODnet CSV Ingest] Ingesting pointcloud {file_id} to database table {dynamic_table_name}...")
-            await ingest_pgpointcloud(
-                file_path=temp_laz_path,
-                connection_str=connection_str,
-                table_name=dynamic_table_name,
-                capacity=400,
-                srid=3857,
-                overwrite=True
-            )
+            if not os.path.exists(temp_tif_path):
+                # Fall back to Docker pdal/pdal for TIF generation if native pdal failed
+                docker_bin = get_docker_cmd()
+                if docker_bin:
+                    docker_tif_pipeline_path = os.path.join(tmp_dir, "tif_pipeline.json")
+                    docker_tif_pipeline = {
+                        "pipeline": [
+                            {
+                                "type": "readers.text",
+                                "filename": "/config/cleaned_emodnet.csv",
+                                "spatialreference": "EPSG:4326"
+                            },
+                            {
+                                "type": "filters.reprojection",
+                                "out_srs": out_srs
+                            },
+                            {
+                                "type": "writers.gdal",
+                                "filename": "/config/bathymetry.tif",
+                                "output_type": "mean",
+                                "resolution": 100.0,
+                                "gdaldriver": "GTiff"
+                            }
+                        ]
+                    }
+                    with open(docker_tif_pipeline_path, "w") as f:
+                        json.dump(docker_tif_pipeline, f)
+                    try:
+                        d_proc = await asyncio.create_subprocess_exec(
+                            docker_bin, "run", "--rm",
+                            "-v", f"{tmp_dir}:/config",
+                            "pdal/pdal",
+                            "pdal", "pipeline", "/config/tif_pipeline.json",
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE
+                        )
+                        await d_proc.communicate()
+                    except Exception as d_err:
+                        print(f"[EMODnet CSV Ingest] Docker PDAL TIF generation exception: {d_err}")
 
-            async with async_session() as session:
-                try:
-                    res = await session.execute(
-                        text(f"SELECT PC_PCId(patch) FROM {dynamic_table_name} LIMIT 1")
-                    )
-                    row = res.first()
-                    if row and row[0] is not None:
-                        pcid = int(row[0])
-                except Exception as e:
-                    print(f"Failed to query pcid from {dynamic_table_name}: {e}")
-
-            if pcid is None:
-                pcid = 1
+            if os.path.exists(temp_tif_path):
+                await ingest_postgis_raster_pyramids(
+                    geotiff_path=temp_tif_path,
+                    table_name="bathymetry_raster",
+                    srid=3857,
+                    pyramid_levels="2,4,8,16",
+                    pointcloud_id=file_id,
+                    is_append=is_append
+                )
+            else:
+                raise RuntimeError(f"Failed to generate bathymetry GeoTIFF raster from CSV for dataset {file_id}")
 
         # 5. Build EPT dataset using Entwine
         await build_ept(
@@ -325,7 +392,6 @@ async def process_emodnet_csv(
         )
 
         return bbox, number_of_points, pcid
-
 
 
 async def get_pointcloud_stats(file_path: str) -> Tuple[Dict[str, float], int]:
@@ -377,7 +443,7 @@ async def get_pointcloud_dimensions(file_path: str) -> list:
                 "pdal/pdal",
                 "pdal", "info", "--stats"
             ]
-            if ext in ('.geotif', '.tif', '.tiff', '.geotiff', '.asc', '.nc'):
+            if ext in ('.geotif', '.tif', '.tiff', '.asc', '.nc'):
                 docker_cmd.extend(["--driver", "readers.gdal"])
             docker_cmd.append(f"/data/{file_name}")
 
@@ -585,27 +651,37 @@ def format_libpq_connection_string(db_url: str) -> str:
 async def ingest_pgpointcloud(
     file_path: str,
     connection_str: str,
-    table_name: str,
+    table_name: Optional[str] = None,
+    pointcloud_id: Optional[str] = None,
+    lod: int = 0,
     srid: int = 4326,
     capacity: int = 400,
     overwrite: bool = True,
     pcid: Optional[int] = None,
     target_dimensions: Optional[list] = None,
     step: int = 1
-) -> None:
+) -> Optional[int]:
     """
-    Executes a PDAL pipeline to chip and ingest points into PostgreSQL pgPointcloud table.
-    Supports GeoTIFF / raster formats via readers.gdal driver.
-    Logs both source and target dimensions. Supports optional decimation step.
+    Executes a PDAL pipeline to chip and ingest points into PostgreSQL pgPointcloud database.
+    If pointcloud_id is provided, ingests into a temporary staging table and transfers patches
+    into the unified `pointcloud_patches` table with (pointcloud_id, lod).
+    Returns the pcid detected/generated during ingestion.
     """
     file_abs = os.path.abspath(file_path)
     ext = os.path.splitext(file_abs)[1].lower()
+
+    if pointcloud_id:
+        clean_uuid = pointcloud_id.replace("-", "")
+        target_table = f"pc_staging_{clean_uuid}_lod{lod}"
+    else:
+        target_table = table_name or "pointcloud_patches"
 
     source_dims = await get_pointcloud_dimensions(file_abs)
     target_dims = target_dimensions or ["X", "Y", "Z", "Red", "Green", "Blue"]
 
     print(f"[PDAL Ingest] Source file dimensions: {source_dims if source_dims else 'unknown'}")
     print(f"[PDAL Ingest] Target schema dimensions: {target_dims}")
+    print(f"[PDAL Ingest] Staging table: {target_table}")
 
     if ext in ('.geotif', '.tif', '.tiff', '.geotiff', '.asc', '.nc'):
         raster_band_dims = [d for d in source_dims if str(d).lower() not in ('x', 'y')]
@@ -668,11 +744,11 @@ async def ingest_pgpointcloud(
     writer_stage = {
         "type": "writers.pgpointcloud",
         "connection": connection_str,
-        "table": table_name,
+        "table": target_table,
         "column": "patch",
         "srid": srid,
         "compression": "dimensional",
-        "overwrite": overwrite
+        "overwrite": True
     }
     if target_dims:
         writer_stage["output_dims"] = target_dims
@@ -760,6 +836,234 @@ async def ingest_pgpointcloud(
             print(f"[PDAL Ingest] Source file dimensions: {source_dims if source_dims else 'unknown'}")
             print(f"[PDAL Ingest] Target schema dimensions: {target_dims}")
             raise local_err
+
+    found_pcid = None
+    if pointcloud_id:
+        async with async_session() as session:
+            try:
+                res = await session.execute(text(f"SELECT PC_PCId(patch) FROM {target_table} LIMIT 1"))
+                row = res.first()
+                if row and row[0] is not None:
+                    found_pcid = int(row[0])
+
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS pointcloud_patches (
+                        id BIGSERIAL PRIMARY KEY,
+                        pointcloud_id UUID NOT NULL REFERENCES pointclouds(id) ON DELETE CASCADE,
+                        lod INTEGER NOT NULL DEFAULT 0,
+                        patch PCPATCH
+                    );
+                """))
+                await session.execute(text("""
+                    CREATE INDEX IF NOT EXISTS idx_pointcloud_patches_pc_lod 
+                    ON pointcloud_patches (pointcloud_id, lod);
+                """))
+
+                # Ensure parent record exists in pointclouds table to satisfy foreign key constraint
+                await session.execute(
+                    text("""
+                        INSERT INTO pointclouds (id, orig_filename, number_of_points, pcid, created_at)
+                        VALUES (:id, :filename, 0, 1, NOW())
+                        ON CONFLICT (id) DO NOTHING
+                    """),
+                    {"id": pointcloud_id, "filename": os.path.basename(file_abs)}
+                )
+
+                if overwrite:
+                    await session.execute(
+                        text("DELETE FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = :lod"),
+                        {"id": pointcloud_id, "lod": lod}
+                    )
+
+                await session.execute(
+                    text(f"""
+                        INSERT INTO pointcloud_patches (pointcloud_id, lod, patch)
+                        SELECT :pointcloud_id, :lod, patch FROM {target_table}
+                    """),
+                    {"pointcloud_id": pointcloud_id, "lod": lod}
+                )
+
+                await session.execute(text(f"DROP TABLE IF EXISTS {target_table}"))
+                await session.commit()
+            except Exception as transfer_err:
+                await session.rollback()
+                print(f"[PDAL Ingest] Error transferring patches from {target_table} to pointcloud_patches: {transfer_err}")
+                raise transfer_err
+
+    return found_pcid
+
+
+async def ingest_postgis_raster_pyramids(
+    geotiff_path: str,
+    table_name: str = "bathymetry_raster",
+    srid: int = 3857,
+    pyramid_levels: str = "2,4,8,16",
+    pointcloud_id: Optional[str] = None,
+    scale_z: float = 1.0,
+    is_append: bool = False
+) -> None:
+    """
+    Ingests a GeoTIFF bathymetry raster into PostgreSQL using raster2pgsql with raster pyramids (-l 2,4,8,16).
+    Generates overview tables (e.g. o_2_bathymetry_raster, o_4_bathymetry_raster, o_8_bathymetry_raster, o_16_bathymetry_raster)
+    for distance-based Level of Detail (LOD) querying. Optionally scales elevation Z values by scale_z.
+    """
+    geotiff_abs = os.path.abspath(geotiff_path)
+    file_name = os.path.basename(geotiff_abs)
+
+    # 1. Ensure PostGIS extensions exist and determine table mode (-c vs -a)
+    mode_flag = "-c"
+    async with async_session() as session:
+        await session.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
+        await session.execute(text("CREATE EXTENSION IF NOT EXISTS postgis_raster;"))
+        
+        tables_exist = False
+        try:
+            res_main = await session.execute(text("""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables 
+                    WHERE table_name = 'bathymetry_raster'
+                );
+            """))
+            res_ov = await session.execute(text("""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables 
+                    WHERE table_name = 'o_2_bathymetry_raster'
+                );
+            """))
+            tables_exist = bool(res_main.scalar() and res_ov.scalar())
+        except Exception:
+            tables_exist = False
+
+        if is_append and tables_exist:
+            mode_flag = "-a"
+        else:
+            mode_flag = "-c"
+            # Drop existing tables to ensure clean schema and overview creation
+            await session.execute(text("""
+                DROP TABLE IF EXISTS bathymetry_raster, 
+                                      o_2_bathymetry_raster, 
+                                      o_4_bathymetry_raster, 
+                                      o_8_bathymetry_raster, 
+                                      o_16_bathymetry_raster CASCADE;
+            """))
+
+        if pointcloud_id:
+            await session.execute(
+                text("""
+                    INSERT INTO pointclouds (id, orig_filename, number_of_points, pcid, created_at)
+                    VALUES (:id, :filename, 0, 1, NOW())
+                    ON CONFLICT (id) DO NOTHING
+                """),
+                {"id": pointcloud_id, "filename": file_name}
+            )
+        await session.commit()
+
+    # 2. Command: raster2pgsql -s <srid> -I -C -M -Y -F -l 2,4,8,16 <mode_flag> <geotiff_path> <table_name>
+    cmd_args = [
+        "raster2pgsql",
+        "-s", str(srid),
+        "-I", "-C", "-M", "-Y", "-F",
+        "-l", pyramid_levels,
+        mode_flag,
+        geotiff_abs,
+        table_name
+    ]
+
+    sql_output = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode == 0:
+            sql_output = stdout.decode('utf-8')
+        else:
+            print(f"[PostGIS Raster] Native raster2pgsql error output: {stderr.decode('utf-8')}")
+    except (FileNotFoundError, Exception) as e:
+        print(f"[PostGIS Raster] Native raster2pgsql failed or not found: {e}")
+        docker_bin = get_docker_cmd()
+        if docker_bin:
+            file_dir = os.path.dirname(geotiff_abs)
+            docker_cmd = [
+                docker_bin, "run", "--rm",
+                "-v", f"{file_dir}:/data:ro",
+                "postgis/postgis",
+                "raster2pgsql",
+                "-s", str(srid),
+                "-I", "-C", "-M", "-Y", "-F",
+                "-l", pyramid_levels,
+                mode_flag,
+                f"/data/{file_name}",
+                table_name
+            ]
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *docker_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await proc.communicate()
+                if proc.returncode == 0:
+                    sql_output = stdout.decode('utf-8')
+            except Exception as d_err:
+                print(f"[PostGIS Raster] Docker raster2pgsql failed: {d_err}")
+
+    # 3. Execute SQL statements against database via psql
+    if not sql_output:
+        err_msg = f"raster2pgsql failed to generate SQL for {file_name}. Ensure 'postgis' / 'raster2pgsql' is installed in the worker container environment."
+        print(f"[PostGIS Raster] ERROR: {err_msg}")
+        raise RuntimeError(err_msg)
+
+    conn_str = format_libpq_connection_string(settings.database_url)
+    psql_proc = await asyncio.create_subprocess_exec(
+        "psql", conn_str,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    _, psql_err = await psql_proc.communicate(input=sql_output.encode('utf-8'))
+    if psql_proc.returncode != 0:
+        err_msg = psql_err.decode('utf-8', errors='replace')
+        print(f"[PostGIS Raster] psql import error: {err_msg}")
+        raise RuntimeError(f"psql raster import failed: {err_msg}")
+
+    print(f"[PostGIS Raster] Successfully ingested raster pyramids for {file_name} into {table_name}")
+
+    # 4. Associate pointcloud_id and apply scale_z multiplier if != 1.0
+    async with async_session() as session:
+        try:
+            await session.execute(text("""
+                ALTER TABLE bathymetry_raster 
+                ADD COLUMN IF NOT EXISTS pointcloud_id UUID REFERENCES pointclouds(id) ON DELETE CASCADE;
+            """))
+        except Exception as col_err:
+            print(f"[PostGIS Raster] Warning adding pointcloud_id column: {col_err}")
+
+        if pointcloud_id:
+            try:
+                await session.execute(
+                    text("UPDATE bathymetry_raster SET pointcloud_id = :pc_id WHERE filename = :fname OR pointcloud_id IS NULL"),
+                    {"pc_id": pointcloud_id, "fname": file_name}
+                )
+            except Exception as e:
+                print(f"[PostGIS Raster] Failed to update pointcloud_id: {e}")
+
+        if scale_z != 1.0:
+            for tbl in [table_name, "o_2_bathymetry_raster", "o_4_bathymetry_raster", "o_8_bathymetry_raster", "o_16_bathymetry_raster"]:
+                try:
+                    await session.execute(
+                        text(f"UPDATE {tbl} SET rast = ST_MapAlgebra(rast, 1, NULL, '[rast] * :scale') WHERE filename = :fname OR pointcloud_id = :pc_id"),
+                        {"scale": scale_z, "fname": file_name, "pc_id": pointcloud_id}
+                    )
+                except Exception as e:
+                    print(f"[PostGIS Raster] Failed to scale Z by {scale_z} for table {tbl}: {e}")
+
+        await session.commit()
+
+
+
 
 
 
