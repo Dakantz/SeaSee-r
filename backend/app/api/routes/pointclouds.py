@@ -1,11 +1,10 @@
 import os
 import uuid
-import aiofiles
 from redis import Redis
 from rq import Queue
 
 from typing import List, Union, Optional
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from app.schemas.pointcloud import PointCloudMetadataResponse, PointCloudCameraRouteResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -521,69 +520,6 @@ async def ingest_emodnet_append(
         "message": f"Started {len(jobs_created)} EMODnet append jobs",
         "jobs": jobs_created,
         "skipped": skipped_folders
-    }
-
-
-@router.post("/upload-emodnet-csv", status_code=201)
-async def upload_emodnet_csv(
-    file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db_session)
-):
-    """
-    Upload an EMODnet Bathymetry CSV file, save it in backend/uploads,
-    and dispatch a background processing job using process_emodnet_csv.
-    """
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only .csv files are supported.")
-
-    uploads_dir = os.path.abspath(settings.upload_dir)
-    os.makedirs(uploads_dir, exist_ok=True)
-
-    file_uuid_str = str(uuid.uuid4())
-    safe_filename = f"{file_uuid_str}_{file.filename}"
-    file_path = os.path.join(uploads_dir, safe_filename)
-
-    # Save uploaded CSV file to backend/uploads
-    async with aiofiles.open(file_path, "wb") as out_file:
-        while content := await file.read(1024 * 1024):
-            await out_file.write(content)
-
-    # Create job record in database
-    job_record = Job(
-        name=f"Process EMODnet CSV {file.filename}",
-        payload={
-            "task_type": "emodnet_csv_ingest",
-            "filename": file.filename,
-            "safe_filename": safe_filename,
-            "file_id": file_uuid_str,
-            "file_path": file_path,
-            "total_bytes": os.path.getsize(file_path)
-        },
-        status="PENDING",
-        progress=0.0
-    )
-    db.add(job_record)
-    await db.commit()
-    await db.refresh(job_record)
-
-    # Enqueue job to Redis Queue for worker execution
-    try:
-        redis_conn = Redis.from_url(settings.redis_url)
-        q = Queue("pointcloud_tasks", connection=redis_conn)
-        q.enqueue(
-            "app.services.worker.tasks.run_background_job",
-            str(job_record.id),
-            job_id=str(job_record.id)
-        )
-    except Exception as e:
-        print(f"Warning: Could not enqueue job {job_record.id} to Redis Queue: {e}")
-
-    return {
-        "message": "EMODnet CSV uploaded successfully and processing job enqueued.",
-        "job_id": str(job_record.id),
-        "file_id": file_uuid_str,
-        "saved_path": file_path,
-        "status": job_record.status
     }
 
 
