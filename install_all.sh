@@ -4,7 +4,7 @@
 set -e
 
 echo "Downloading openSfM, pyslam, and potree submodules (no sub-submodules)..."
-git submodule update --init openSfM/openSfM_core pyslam/pyslam_core seaseer-dashboard/public/potree
+git submodule update --init openSfM/openSfM_core pyslam/pyslam_core seaseer-dashboard/public/potree seaseer-dashboard/public/geo-three
 
 if [ ! -d "$HOME/miniconda3" ]; then
     echo "Installing Miniconda..."

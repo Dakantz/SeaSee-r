@@ -7,3 +7,6 @@
 [submodule "seaseer-dashboard/public/potree"]
 	path = seaseer-dashboard/public/potree
 	url = https://github.com/potree/potree.git
+[submodule "seaseer-dashboard/public/geo-three"]
+	path = seaseer-dashboard/public/geo-three
+	url = git@github.com:Cott3r/geo-three-ocean.git
