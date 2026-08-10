@@ -63,7 +63,10 @@ def select_pyramid_table(z: int) -> str:
         return "bathymetry_raster"
 
 
-def encode_terrain_rgb(elevation_matrix: np.ndarray) -> bytes:
+DEBUG_TILE_BORDER: bool = True  # Toggleable debug flag to draw a 1-pixel 0xFFFFFF border on tiles
+
+
+def encode_terrain_rgb(elevation_matrix: np.ndarray, draw_border: Optional[bool] = None) -> bytes:
     """
     Encodes a 2D float numpy array of elevation values into Mapbox Terrain-RGB PNG image bytes.
     Formula: elevation = -10000 + (R * 256^2 + G * 256 + B) * 0.1
@@ -72,6 +75,9 @@ def encode_terrain_rgb(elevation_matrix: np.ndarray) -> bytes:
              G = floor((val % 65536) / 256)
              B = val % 256
     """
+    if draw_border is None:
+        draw_border = DEBUG_TILE_BORDER
+
     elevation_clean = np.nan_to_num(elevation_matrix, nan=0.0)
 
     val = np.clip(np.round((elevation_clean + 10000.0) * 10.0), 0.0, 16777215.0).astype(np.uint32)
@@ -81,6 +87,12 @@ def encode_terrain_rgb(elevation_matrix: np.ndarray) -> bytes:
     b = (val & 0xFF).astype(np.uint8)
 
     rgb = np.stack([r, g, b], axis=-1)
+
+    if draw_border:
+        rgb[0, :, :] = [255, 255, 255]
+        rgb[-1, :, :] = [255, 255, 255]
+        rgb[:, 0, :] = [255, 255, 255]
+        rgb[:, -1, :] = [255, 255, 255]
 
     img = Image.fromarray(rgb, mode="RGB")
     buf = io.BytesIO()
@@ -107,25 +119,69 @@ def bbox_to_tile(xmin: float, ymin: float, xmax: float, ymax: float, z: int) -> 
     return x, y
 
 
+async def get_connected_pointcloud_bbox(db: AsyncSession) -> Optional[Tuple[float, float, float, float]]:
+    """
+    Fetches the combined spatial bounding box (xmin, ymin, xmax, ymax) in EPSG:3857
+    from the connected pointcloud table (pointclouds).
+    """
+    try:
+        # Query bounding box of pointclouds joined with bathymetry_raster
+        res = await db.execute(text("""
+            SELECT 
+                MIN(pc.min_x),
+                MIN(pc.min_y),
+                MAX(pc.max_x),
+                MAX(pc.max_y)
+            FROM pointclouds pc
+            JOIN bathymetry_raster br ON br.pointcloud_id = pc.id
+            WHERE pc.min_x IS NOT NULL AND pc.min_y IS NOT NULL AND pc.max_x IS NOT NULL AND pc.max_y IS NOT NULL;
+        """))
+        row = res.first()
+        if row and None not in row and row[0] is not None:
+            return float(row[0]), float(row[1]), float(row[2]), float(row[3])
+
+        # Fall back to any pointcloud in pointclouds table if no joined pointcloud_id records
+        res = await db.execute(text("""
+            SELECT 
+                MIN(min_x),
+                MIN(min_y),
+                MAX(max_x),
+                MAX(max_y)
+            FROM pointclouds
+            WHERE min_x IS NOT NULL AND min_y IS NOT NULL AND max_x IS NOT NULL AND max_y IS NOT NULL;
+        """))
+        row = res.first()
+        if row and None not in row and row[0] is not None:
+            return float(row[0]), float(row[1]), float(row[2]), float(row[3])
+    except Exception as e:
+        logger.warning(f"Error querying connected pointcloud bbox: {e}")
+
+    return None
+
+
 @router.get("/info")
 async def get_bathymetry_info(db: AsyncSession = Depends(get_db_session)):
     """
     Returns spatial metadata and sample Terrain-RGB tile URLs for ingested bathymetry datasets.
     """
     try:
-        res = await db.execute(text("""
-            SELECT 
-                ST_XMin(ST_Extent(ST_Envelope(rast))),
-                ST_YMin(ST_Extent(ST_Envelope(rast))),
-                ST_XMax(ST_Extent(ST_Envelope(rast))),
-                ST_YMax(ST_Extent(ST_Envelope(rast)))
-            FROM bathymetry_raster;
-        """))
-        row = res.first()
-        if not row or None in row:
-            return {"status": "empty", "message": "No bathymetry rasters ingested yet"}
+        pc_bbox = await get_connected_pointcloud_bbox(db)
+        if pc_bbox:
+            xmin, ymin, xmax, ymax = pc_bbox
+        else:
+            res = await db.execute(text("""
+                SELECT 
+                    ST_XMin(ST_Extent(ST_Envelope(rast))),
+                    ST_YMin(ST_Extent(ST_Envelope(rast))),
+                    ST_XMax(ST_Extent(ST_Envelope(rast))),
+                    ST_YMax(ST_Extent(ST_Envelope(rast)))
+                FROM bathymetry_raster;
+            """))
+            row = res.first()
+            if not row or None in row or row[0] is None:
+                return {"status": "empty", "message": "No bathymetry rasters ingested yet"}
 
-        xmin, ymin, xmax, ymax = float(row[0]), float(row[1]), float(row[2]), float(row[3])
+            xmin, ymin, xmax, ymax = float(row[0]), float(row[1]), float(row[2]), float(row[3])
         
         sample_tiles = {}
         for z in [6, 8, 10, 12, 14]:
@@ -151,12 +207,29 @@ async def get_bathymetry_tile(
     """
     Serves bathymetry elevation tiles in Mapbox Terrain-RGB PNG format.
     Dynamically selects the PostGIS raster pyramid level based on zoom level z.
+    Filters tile requests against connected pointcloud bounding box: anything outside is empty.
     """
     max_tiles = 1 << z
     if x < 0 or x >= max_tiles or y < 0 or y >= max_tiles or z < 0 or z > 24:
         raise HTTPException(status_code=400, detail="Invalid tile coordinates for zoom level")
 
     xmin, ymin, xmax, ymax = tile_to_bbox_3857(z, x, y)
+
+    pc_bbox = await get_connected_pointcloud_bbox(db)
+    if pc_bbox:
+        pc_xmin, pc_ymin, pc_xmax, pc_ymax = pc_bbox
+        if xmax <= pc_xmin or xmin >= pc_xmax or ymax <= pc_ymin or ymin >= pc_ymax:
+            elevation_grid = np.zeros((256, 256), dtype=np.float32)
+            png_bytes = encode_terrain_rgb(elevation_grid)
+            return Response(
+                content=png_bytes,
+                media_type="image/png",
+                headers={
+                    "Cache-Control": "public, max-age=86400",
+                    "Content-Type": "image/png"
+                }
+            )
+
     target_table = select_pyramid_table(z)
 
     # Check if target table exists in DB, fallback to base table bathymetry_raster if overview not found
