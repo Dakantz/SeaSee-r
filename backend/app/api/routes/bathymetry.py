@@ -63,7 +63,7 @@ def select_pyramid_table(z: int) -> str:
         return "bathymetry_raster"
 
 
-DEBUG_TILE_BORDER: bool = True  # Toggleable debug flag to draw a 1-pixel 0xFFFFFF border on tiles
+DEBUG_TILE_BORDER: bool = False  # Toggleable debug flag to draw a 1-pixel 0xFFFFFF border on tiles
 
 
 def encode_terrain_rgb(elevation_matrix: np.ndarray, draw_border: Optional[bool] = None) -> bytes:
@@ -154,7 +154,7 @@ async def get_connected_pointcloud_bbox(db: AsyncSession) -> Optional[Tuple[floa
         if row and None not in row and row[0] is not None:
             return float(row[0]), float(row[1]), float(row[2]), float(row[3])
     except Exception as e:
-        logger.warning(f"Error querying connected pointcloud bbox: {e}")
+        logger.error(f"Error querying connected pointcloud bbox: {e}")
 
     return None
 
@@ -182,7 +182,7 @@ async def get_bathymetry_info(db: AsyncSession = Depends(get_db_session)):
                 return {"status": "empty", "message": "No bathymetry rasters ingested yet"}
 
             xmin, ymin, xmax, ymax = float(row[0]), float(row[1]), float(row[2]), float(row[3])
-        
+
         sample_tiles = {}
         for z in [6, 8, 10, 12, 14]:
             tx, ty = bbox_to_tile(xmin, ymin, xmax, ymax, z)
@@ -199,10 +199,10 @@ async def get_bathymetry_info(db: AsyncSession = Depends(get_db_session)):
 
 @router.get("/{z}/{x}/{y}.png", response_class=Response)
 async def get_bathymetry_tile(
-    z: int,
-    x: int,
-    y: int,
-    db: AsyncSession = Depends(get_db_session)
+        z: int,
+        x: int,
+        y: int,
+        db: AsyncSession = Depends(get_db_session)
 ):
     """
     Serves bathymetry elevation tiles in Mapbox Terrain-RGB PNG format.
@@ -252,49 +252,90 @@ async def get_bathymetry_tile(
         envelope_buffered AS (
             SELECT ST_Expand(geom, :buf) AS geom FROM envelope
         ),
-        united AS (
-            SELECT ST_Union(rast) AS rast
+        -- 1. CLIP EARLY: Cut the massive source tiles down to just the buffered area BEFORE unioning.
+        clipped_buffered AS (
+            SELECT ST_Clip(rast, env_buf.geom) AS rast
             FROM {target_table}, envelope_buffered env_buf
             WHERE ST_Intersects(rast, env_buf.geom)
         ),
-        clipped AS (
+        -- 2. Union only the tiny buffered clips
+        united AS (
+            SELECT ST_Union(rast, 'LAST'::text) AS rast
+            FROM clipped_buffered
+            WHERE rast IS NOT NULL
+        ),
+        -- 3. Resample the tiny unioned raster (it has the buffer, so Bilinear interpolation succeeds on the edges)
+        resampled AS (
             SELECT ST_Resample(
-                ST_Clip(u.rast, env_buf.geom),
-                256, 256,
-                CAST(:xmin AS double precision), CAST(:ymax AS double precision),
-                0.0, 0.0,
-                'Bilinear',
-                0.125
-            ) AS tile_rast
-            FROM united u, envelope_buffered env_buf
+                u.rast,
+                CAST((:xmax - :xmin) / 256.0 AS double precision),   -- scalex
+                CAST((:ymin - :ymax) / 256.0 AS double precision),   -- scaley (negative)
+                CAST(:xmin AS double precision),                     -- gridx
+                CAST(:ymax AS double precision),                     -- gridy
+                0.0, 0.0,                                            -- skewx, skewy
+                'Bilinear'
+            ) AS rast
+            FROM united u
             WHERE u.rast IS NOT NULL
+        ),
+        -- 4. CLIP TWICE: Cut the properly-resampled raster back strictly to the 256x256 envelope
+        clipped AS (
+            SELECT ST_Clip(r.rast, env.geom) AS rast
+            FROM resampled r
+            CROSS JOIN envelope env
+            WHERE r.rast IS NOT NULL
         )
-        SELECT ST_DumpValues(tile_rast, 1) FROM clipped WHERE tile_rast IS NOT NULL;
-    """)
+        SELECT
+            ST_UpperLeftX(rast) AS ulx,
+            ST_UpperLeftY(rast) AS uly,
+            ST_Width(rast) AS w,
+            ST_Height(rast) AS h,
+            ST_DumpValues(rast, 1) AS vals
+        FROM clipped
+        WHERE rast IS NOT NULL;
+        """)
 
     elevation_grid = None
     try:
         res = await db.execute(sql, {"xmin": xmin, "ymin": ymin, "xmax": xmax, "ymax": ymax, "buf": tile_buf})
         row = res.first()
-        if row and row[0]:
-            raw_values = row[0]
+        if row and row.vals:
+            raw_values = row.vals
             if raw_values and isinstance(raw_values, list):
+                raw_rows = len(raw_values)
+                raw_cols = len(raw_values[0]) if raw_rows > 0 else 0
+                logger.debug(
+                    "PostGIS returned raster dump of shape %dx%d for tile (%d,%d,%d)",
+                    raw_rows, raw_cols, z, x, y
+                )
+
+                # Pixel size of the tile grid (matches what we passed to ST_Resample)
+                px_w = (xmax - xmin) / 256.0
+                px_h = (ymax - ymin) / 256.0  # positive magnitude
+
+                # Offset of the resampled raster's upper-left corner from the tile's
+                # upper-left corner, in pixels. Should be ~0 for interior tiles but
+                # can be non-zero when source data doesn't cover the full tile.
+                col_offset = int(round((row.ulx - xmin) / px_w))
+                row_offset = int(round((ymax - row.uly) / px_h))
+                col_offset = max(0, min(256, col_offset))
+                row_offset = max(0, min(256, row_offset))
+
                 processed_rows = []
                 for r in raw_values:
                     processed_rows.append([float(val) if val is not None else 0.0 for val in r])
-                elevation_grid = np.array(processed_rows, dtype=np.float32)
+                partial_grid = np.array(processed_rows, dtype=np.float32)
+
+                elevation_grid = np.zeros((256, 256), dtype=np.float32)
+                h = min(partial_grid.shape[0], 256 - row_offset)
+                w = min(partial_grid.shape[1], 256 - col_offset)
+                if h > 0 and w > 0:
+                    elevation_grid[row_offset:row_offset + h, col_offset:col_offset + w] = partial_grid[:h, :w]
     except Exception as e:
-        logger.warning(f"Error querying PostGIS raster for tile ({z}/{x}/{y}): {e}")
+        logger.error(f"Error querying PostGIS raster for tile ({z}/{x}/{y}): {e}")
 
     if elevation_grid is None or elevation_grid.size == 0:
         elevation_grid = np.zeros((256, 256), dtype=np.float32)
-    elif elevation_grid.shape != (256, 256):
-        h, w = elevation_grid.shape
-        padded = np.zeros((256, 256), dtype=np.float32)
-        dh = min(h, 256)
-        dw = min(w, 256)
-        padded[:dh, :dw] = elevation_grid[:dh, :dw]
-        elevation_grid = padded
 
     png_bytes = encode_terrain_rgb(elevation_grid)
 
@@ -310,8 +351,8 @@ async def get_bathymetry_tile(
 
 @router.post("/upload-emodnet-csv", status_code=201)
 async def upload_emodnet_csv(
-    file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db_session)
+        file: UploadFile = File(...),
+        db: AsyncSession = Depends(get_db_session)
 ):
     """
     Upload an EMODnet Bathymetry CSV file, save it in backend/uploads,

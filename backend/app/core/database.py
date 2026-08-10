@@ -6,8 +6,13 @@ from app.core.config import settings
 
 from sqlalchemy.pool import NullPool
 
+import logging
+
+# Suppress sqlalchemy.engine SQL query logging
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+
 # Create async engine for PostgreSQL connection
-engine = create_async_engine(settings.database_url, echo=True, poolclass=NullPool)
+engine = create_async_engine(settings.database_url, echo=False, poolclass=NullPool)
 
 # Session factory for async database sessions
 async_session = sessionmaker(
