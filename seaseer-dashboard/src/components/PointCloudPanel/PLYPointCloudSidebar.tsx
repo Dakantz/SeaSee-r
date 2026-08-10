@@ -21,8 +21,6 @@ export interface PLYPointCloudSidebarProps {
     setHeightmapHeightProvider?: (provider: HeightProviderChoice) => void;
     heightmapProvider?: MapProviderChoice;
     setHeightmapProvider?: (provider: MapProviderChoice) => void;
-    heightmapApiToken?: string;
-    setHeightmapApiToken?: (token: string) => void;
     identifier?: string;
     setIdentifier?: (id: string) => void;
     plyUrl?: string;
@@ -64,9 +62,6 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const setHeightmapMapProvider = props.setHeightmapMapProvider ?? contextState?.setHeightmapMapProvider ?? props.setHeightmapProvider ?? contextState?.setHeightmapProvider ?? (() => {});
     const heightmapHeightProvider = props.heightmapHeightProvider ?? contextState?.heightmapHeightProvider ?? "Bathymetry";
     const setHeightmapHeightProvider = props.setHeightmapHeightProvider ?? contextState?.setHeightmapHeightProvider ?? (() => {});
-    const heightmapProvider = heightmapMapProvider;
-    const heightmapApiToken = props.heightmapApiToken ?? contextState?.heightmapApiToken ?? "";
-    const setHeightmapApiToken = props.setHeightmapApiToken ?? contextState?.setHeightmapApiToken ?? (() => {});
     const identifier = props.identifier ?? contextState?.identifier ?? "";
     const setIdentifier = props.setIdentifier ?? contextState?.setIdentifier ?? (() => {});
     const plyUrl = props.plyUrl ?? contextState?.plyUrl ?? "";
@@ -519,12 +514,12 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                 >
                                     <option value="OpenStreetMaps" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>OpenStreetMap</option>
                                     <option value="Bathymetry" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>SeaSee Bathymetry</option>
+                                    <option value="Emodnet" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>EMODnet Bathymetry</option>
                                     <option value="Debug" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Debug Grid</option>
-                                    <option value="OpenMapTiles" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>OpenMapTiles</option>
-                                    <option value="MapBox" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>MapBox</option>
+                                    <option value="MapTilerBasic" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Vector Map Tiler Basic</option>
+                                    <option value="MapTilerOutdoor" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Vector Map Tiler Outdoor</option>
+                                    <option value="MapTilerSatellite" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Satellite Maps Tiler</option>
                                     <option value="Bing" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Bing Maps</option>
-                                    <option value="Google" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Google Maps</option>
-                                    <option value="MapTiler" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>MapTiler</option>
                                 </select>
                             </div>
 
@@ -545,39 +540,13 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                         cursor: "pointer",
                                     }}
                                 >
-                                    <option value="Bathymetry" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>SeaSee Bathymetry</option>
+                                    <option value="Bathymetry" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>SeaSeer Bathymetry</option>
+                                    <option value="Emodnet" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>EMODnet Bathymetry</option>
                                     <option value="None" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>None (Flat Surface)</option>
                                     <option value="Debug" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Height Debug Grid</option>
-                                    <option value="MapBox" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>MapBox Terrain-RGB</option>
-                                    <option value="OpenMapTiles" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>OpenMapTiles Terrain-RGB</option>
-                                    <option value="Bing" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Bing Maps Terrain-RGB</option>
-                                    <option value="Google" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Google Maps Terrain-RGB</option>
-                                    <option value="MapTiler" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>MapTiler Terrain-RGB</option>
+                                    <option value="MapTiler" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Height Map Tiler</option>
                                 </select>
                             </div>
-
-                            {(heightmapProvider === "MapBox" || heightmapProvider === "Bing" || heightmapProvider === "Google" || heightmapProvider === "MapTiler" || heightmapProvider === "OpenStreetMaps") && (
-                                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                                    <label style={{ fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)" }}>
-                                        API Token / Key {heightmapProvider === "OpenStreetMaps" ? "(Optional for Height Data)" : ""}:
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder={heightmapProvider === "OpenStreetMaps" ? "Optional Mapbox Token for Terrain RGB" : "Enter API Key / Access Token"}
-                                        value={heightmapApiToken}
-                                        onChange={(e) => setHeightmapApiToken(e.target.value)}
-                                        style={{
-                                            background: "var(--color-bg-subtle)",
-                                            border: "1px solid var(--color-border-strong)",
-                                            color: "var(--color-text-primary)",
-                                            padding: "var(--spacing-3xs) var(--spacing-xs)",
-                                            borderRadius: "var(--radius-xs)",
-                                            fontSize: "var(--font-size-xs)",
-                                            width: "100%",
-                                        }}
-                                    />
-                                </div>
-                            )}
 
                             <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
                                 <label style={{ fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)" }}>Heightmap Mode:</label>

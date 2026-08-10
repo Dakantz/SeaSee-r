@@ -4,10 +4,10 @@ import * as THREE from "three";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import { generateDelaunayTerrainMesh } from "./utils/delaunayTriangulation";
 // @ts-expect-error - geo-three submodule
-import { MapView, DebugProvider, HeightDebugProvider, OpenStreetMapsProvider, OpenMapTilesProvider, MapBoxProvider, BingMapsProvider, GoogleMapsProvider, MapTilerProvider, BathymetryProvider, UnitsUtils } from "../../../public/geo-three/build/geo-three.module.js";
+import { MapView, DebugProvider, HeightDebugProvider, OpenStreetMapsProvider, OpenMapTilesProvider, MapTilerProvider, BingMapsProvider, BathymetryProvider, EmodnetProvider, UnitsUtils } from "../../../public/geo-three/build/geo-three.module.js";
 
 function GeoThreeHeightmap() {
-    const { showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider, heightmapProvider, heightmapApiToken } = usePLYPointCloudContext();
+    const { showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider, heightmapProvider } = usePLYPointCloudContext();
     const mapViewRef = useRef<any>(null);
 
     const mapView = useMemo(() => {
@@ -25,23 +25,24 @@ function GeoThreeHeightmap() {
                 case "Bathymetry":
                     provider = new BathymetryProvider(`${apiBaseUrl}/bathymetry`);
                     break;
+                case "Emodnet":
+                    provider = new EmodnetProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", "", "image/png", "WMS");
+                    break;
                 case "Debug":
                     provider = new DebugProvider();
                     break;
-                case "OpenMapTiles":
-                    provider = new OpenMapTilesProvider();
+                case "MapTilerBasic":
+                    provider = new MapTilerProvider("6XkbBH0nwlhrFrcr1xa3", "maps", "basic", "png");
                     break;
-                case "MapBox":
-                    provider = new MapBoxProvider(heightmapApiToken, "mapbox/satellite-v9", MapBoxProvider.STYLE);
+                case "MapTilerOutdoor":
+                    provider = new MapTilerProvider("6XkbBH0nwlhrFrcr1xa3", "maps", "outdoor", "png");
                     break;
+                case "MapTilerSatellite":
+                    provider = new MapTilerProvider("6XkbBH0nwlhrFrcr1xa3", "maps", "hybrid", "jpg");
+                    break;
+
                 case "Bing":
-                    provider = new BingMapsProvider(heightmapApiToken);
-                    break;
-                case "Google":
-                    provider = new GoogleMapsProvider(heightmapApiToken);
-                    break;
-                case "MapTiler":
-                    provider = new MapTilerProvider(heightmapApiToken);
+                    provider = new BingMapsProvider();
                     break;
                 case "OpenStreetMaps":
                 default:
@@ -54,17 +55,14 @@ function GeoThreeHeightmap() {
                 case "Bathymetry":
                     heightProvider = new BathymetryProvider(`${apiBaseUrl}/bathymetry`);
                     break;
+                case "Emodnet":
+                    heightProvider = new EmodnetProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", "", "image/png", "WCS", 1.0);
+                    break;
                 case "Debug":
                     heightProvider = new HeightDebugProvider(new DebugProvider());
                     break;
-                case "MapBox":
-                case "OpenMapTiles":
-                case "Bing":
-                case "Google":
                 case "MapTiler":
-                    heightProvider = heightmapApiToken
-                        ? new MapBoxProvider(heightmapApiToken, "mapbox.terrain-rgb", MapBoxProvider.MAP_ID, "pngraw")
-                        : null;
+                    heightProvider = new MapTilerProvider("6XkbBH0nwlhrFrcr1xa3", "tiles", "terrain-rgb", "png");
                     break;
                 case "None":
                 default:
@@ -88,7 +86,7 @@ function GeoThreeHeightmap() {
             console.error("Failed to initialize GeoThree MapView:", err);
             return null;
         }
-    }, [showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider, heightmapProvider, heightmapApiToken]);
+    }, [showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider, heightmapProvider]);
 
     useFrame(({ camera, gl, scene }) => {
         if (mapViewRef.current?.lod) {

@@ -2,8 +2,8 @@ import React, { createContext, useContext, useState, useCallback, type ReactNode
 import * as THREE from "three";
 import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
 
-export type MapProviderChoice = "OpenStreetMaps" | "Bathymetry" | "Debug" | "OpenMapTiles" | "MapBox" | "Bing" | "Google" | "MapTiler";
-export type HeightProviderChoice = "Bathymetry" | "None" | "Debug" | "MapBox" | "OpenMapTiles" | "Bing" | "Google" | "MapTiler";
+export type MapProviderChoice = "OpenStreetMaps" | "Bathymetry" | "Emodnet" | "Debug" | "MapTilerBasic" | "MapTilerOutdoor" | "MapTilerSatellite" | "Bing";
+export type HeightProviderChoice = "Bathymetry" | "Emodnet" | "None" | "Debug" | "MapTiler" | "Bing";
 
 export interface PLYPointCloudContextType {
     mode: "binary" | "plyFile" | "plyUrl";
@@ -24,8 +24,6 @@ export interface PLYPointCloudContextType {
     setHeightmapHeightProvider: (provider: HeightProviderChoice) => void;
     heightmapProvider: MapProviderChoice;
     setHeightmapProvider: (provider: MapProviderChoice) => void;
-    heightmapApiToken: string;
-    setHeightmapApiToken: (token: string) => void;
     identifier: string;
     setIdentifier: (id: string) => void;
     plyUrl: string;
@@ -64,7 +62,6 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [heightmapMode, setHeightmapMode] = useState<"HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR">("HEIGHT");
     const [heightmapMapProvider, setHeightmapMapProvider] = useState<MapProviderChoice>("OpenStreetMaps");
     const [heightmapHeightProvider, setHeightmapHeightProvider] = useState<HeightProviderChoice>("Bathymetry");
-    const [heightmapApiToken, setHeightmapApiToken] = useState<string>("");
     const [identifier, setIdentifier] = useState<string>(DEFAULT_HARDCODED_IDENTIFIER);
     const [plyUrl, setPlyUrl] = useState<string>(DEFAULT_PLY_URL);
     const [lod, setLod] = useState<number>(0);
@@ -226,8 +223,6 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 setHeightmapHeightProvider,
                 heightmapProvider: heightmapMapProvider,
                 setHeightmapProvider: setHeightmapMapProvider,
-                heightmapApiToken,
-                setHeightmapApiToken,
                 identifier,
                 setIdentifier,
                 plyUrl,
