@@ -10,9 +10,9 @@ from app.services.pointcloud.pdal import (
     build_ept_pdal_docker,
     process_emodnet_csv,
     format_libpq_connection_string,
-    ingest_pgpointcloud,
-    ingest_postgis_raster_pyramids
+    ingest_pgpointcloud
 )
+from app.services.pointcloud.postgis_raster import PostGISRaster
 from app.services.pointcloud.db_utils import (
     query_existing_pcid,
     query_target_dimensions_for_pcid,
@@ -71,9 +71,9 @@ class EMODnetGeoTIFFTaskHandler(BaseTaskHandler):
             source_dims = await get_pointcloud_dimensions(geotiff_path)
             logger.info(f"Source file dimensions: {source_dims}")
 
-            await ingest_postgis_raster_pyramids(
+            await PostGISRaster.ingest_pyramids(
                 geotiff_path=geotiff_path,
-                table_name="bathymetry_raster",
+                table_name=PostGISRaster.DEFAULT_TABLE_NAME,
                 srid=3857,
                 pyramid_levels="2,4,8,16",
                 pointcloud_id=file_id,

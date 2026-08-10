@@ -2,12 +2,13 @@ import os
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from app.services.worker.handlers.emodnet import EMODnetCSVTaskHandler
-from app.services.pointcloud.pdal import ingest_postgis_raster_pyramids, process_emodnet_csv
+from app.services.pointcloud.pdal import process_emodnet_csv
+from app.services.pointcloud.postgis_raster import PostGISRaster, ingest_postgis_raster_pyramids
 from app.models.pointcloud import BathymetryRaster
 
 @pytest.mark.anyio
 async def test_ingest_postgis_raster_pyramids_mocked():
-    with patch("app.services.pointcloud.pdal.async_session") as mock_session_ctx, \
+    with patch("app.services.pointcloud.postgis_raster.async_session") as mock_session_ctx, \
          patch("asyncio.create_subprocess_exec") as mock_subproc:
         
         mock_session = AsyncMock()
@@ -21,9 +22,9 @@ async def test_ingest_postgis_raster_pyramids_mocked():
         mock_proc.returncode = 0
         mock_subproc.return_value = mock_proc
 
-        await ingest_postgis_raster_pyramids(
+        await PostGISRaster.ingest_pyramids(
             geotiff_path="test_raster.tif",
-            table_name="bathymetry_raster",
+            table_name=PostGISRaster.DEFAULT_TABLE_NAME,
             srid=3857,
             pyramid_levels="2,4,8,16",
             pointcloud_id="11111111-1111-1111-1111-111111111111"

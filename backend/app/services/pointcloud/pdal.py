@@ -1,29 +1,133 @@
 import os
 import csv
 import json
-import shutil
 import asyncio
 import tempfile
 from typing import Dict, Any, Tuple, Optional
 from urllib.parse import urlparse
 
-
 from sqlalchemy import text
 from app.core.config import settings
 from app.core.database import async_session
 from app.services.pointcloud.entwine import build_ept
+from app.services.pointcloud.postgis_raster import (
+    PostGISRaster,
+    ingest_postgis_raster_pyramids,
+    format_libpq_connection_string
+)
 
 EMODNET_ELEVATION_MULTIPLICATION = 100.0
 
-def get_docker_cmd() -> Optional[str]:
-    """Finds the absolute path to docker executable, checking PATH and common system locations."""
-    docker_bin = shutil.which("docker")
-    if docker_bin:
-        return docker_bin
-    for candidate in ["/usr/local/bin/docker", "/usr/bin/docker", "/bin/docker"]:
-        if os.path.exists(candidate) and os.access(candidate, os.X_OK):
-            return candidate
-    return None
+
+async def run_pdal_subprocess(
+    cmd: list,
+    stdin_data: Optional[bytes] = None,
+    docker_fallback_cmd: Optional[list] = None,
+    raise_on_error: bool = True,
+    error_prefix: str = "PDAL execution failed"
+) -> Tuple[int, str, str]:
+    """
+    Executes a PDAL subprocess command natively via asyncio.create_subprocess_exec.
+    Returns (returncode, stdout, stderr).
+    If raise_on_error is True and returncode != 0, raises RuntimeError.
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE if stdin_data is not None else None,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout_b, stderr_b = await proc.communicate(input=stdin_data)
+        stdout_str = stdout_b.decode('utf-8', errors='replace')
+        stderr_str = stderr_b.decode('utf-8', errors='replace')
+
+        if proc.returncode == 0:
+            return proc.returncode, stdout_str, stderr_str
+
+        err_msg = stderr_str or stdout_str
+        err = RuntimeError(f"{error_prefix}: {err_msg}")
+        if raise_on_error:
+            raise err
+        return proc.returncode, stdout_str, stderr_str
+    except Exception as e:
+        if raise_on_error:
+            if not isinstance(e, RuntimeError):
+                raise RuntimeError(f"{error_prefix}: {e}") from e
+            raise e
+        return 1, "", str(e)
+
+
+async def run_pdal_pipeline(
+    pipeline: dict,
+    docker_pipeline: Optional[dict] = None,
+    docker_mounts: Optional[list] = None,
+    tmp_dir: Optional[str] = None,
+    raise_on_error: bool = True,
+    error_prefix: str = "PDAL pipeline failed"
+) -> Tuple[int, str, str]:
+    """
+    Executes a PDAL pipeline dictionary asynchronously natively via `pdal pipeline --stdin`.
+    """
+    cmd = ["pdal", "pipeline", "--stdin"]
+    stdin_data = json.dumps(pipeline).encode("utf-8")
+
+    return await run_pdal_subprocess(
+        cmd=cmd,
+        stdin_data=stdin_data,
+        raise_on_error=raise_on_error,
+        error_prefix=error_prefix
+    )
+
+
+async def run_pdal_info(
+    file_path: str,
+    driver: Optional[str] = None,
+    stats: bool = True,
+    raise_on_error: bool = True
+) -> dict:
+    """
+    Runs `pdal info` on a point cloud or raster file natively.
+    Supports auto-retry with `--driver readers.gdal` if initial attempt fails.
+    Returns parsed JSON dict.
+    """
+    file_abs = os.path.abspath(file_path)
+
+    def build_args(use_driver: Optional[str]):
+        args = ["pdal", "info"]
+        if stats:
+            args.append("--stats")
+        if use_driver:
+            args.extend(["--driver", use_driver])
+        args.append(file_abs)
+        return args
+
+    cmd_args = build_args(use_driver=driver)
+
+    try:
+        retcode, stdout, stderr = await run_pdal_subprocess(
+            cmd=cmd_args,
+            raise_on_error=True,
+            error_prefix="PDAL info failed"
+        )
+        return json.loads(stdout)
+    except Exception as first_err:
+        if driver is None:
+            try:
+                cmd_retry = build_args(use_driver="readers.gdal")
+                retcode, stdout, stderr = await run_pdal_subprocess(
+                    cmd=cmd_retry,
+                    raise_on_error=True,
+                    error_prefix="PDAL info retry failed"
+                )
+                return json.loads(stdout)
+            except Exception as retry_err:
+                if raise_on_error:
+                    raise retry_err from first_err
+        if raise_on_error:
+            raise first_err
+        return {}
+
 
 
 async def build_ept_pdal_docker(
@@ -58,74 +162,10 @@ async def build_ept_pdal_docker(
             ]
         }
 
-        pipeline_json = json.dumps(pdal_pipeline)
-
-        # 1. Convert GeoTIFF to reprojected LAZ via native PDAL
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "pdal", "pipeline", "--stdin",
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await proc.communicate(input=pipeline_json.encode('utf-8'))
-
-            if proc.returncode != 0:
-                err_msg = stderr.decode('utf-8', errors='replace') or stdout.decode('utf-8', errors='replace')
-                raise RuntimeError(f"Native PDAL pipeline failed: {err_msg}")
-
-        except (FileNotFoundError, RuntimeError) as native_err:
-            # Fall back to Docker pdal/pdal if native pdal binary is missing or fails
-            docker_bin = get_docker_cmd()
-            if not docker_bin:
-                raise RuntimeError(
-                    f"Native PDAL execution failed and docker binary is not available: {native_err}"
-                ) from native_err
-
-            input_dir = os.path.dirname(geotiff_abs)
-            geotiff_filename = os.path.basename(geotiff_abs)
-
-            docker_pipeline_path = os.path.join(tmp_dir, "pipeline.json")
-            docker_pdal_pipeline = {
-                "pipeline": [
-                    {
-                        "type": "readers.gdal",
-                        "filename": f"/input/{geotiff_filename}",
-                        "spatialreference": "EPSG:4326"
-                    },
-                    {
-                        "type": "filters.reprojection",
-                        "out_srs": out_srs
-                    },
-                    "/config/reprojected.laz"
-                ]
-            }
-            with open(docker_pipeline_path, "w") as f:
-                json.dump(docker_pdal_pipeline, f)
-
-            cmd = [
-                docker_bin, "run", "--rm",
-                "-v", f"{input_dir}:/input:ro",
-                "-v", f"{tmp_dir}:/config",
-                "pdal/pdal",
-                "pdal", "pipeline", "/config/pipeline.json"
-            ]
-
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                stdout, stderr = await proc.communicate()
-
-                if proc.returncode != 0:
-                    err_msg = stderr.decode('utf-8', errors='replace') or stdout.decode('utf-8', errors='replace')
-                    raise RuntimeError(f"PDAL Docker pipeline failed: {err_msg}") from native_err
-            except FileNotFoundError:
-                raise RuntimeError(
-                    f"Neither native 'pdal' command nor '{docker_bin}' binary was found."
-                ) from native_err
+        await run_pdal_pipeline(
+            pipeline=pdal_pipeline,
+            error_prefix="pipeline failed"
+        )
 
         # 2. Build EPT dataset using Entwine
         await build_ept(
@@ -153,7 +193,6 @@ async def process_emodnet_csv(
     2. Runs PDAL (readers.text -> filters.reprojection -> writers.las/laz) to generate a temporary reprojected .laz file.
     3. Extracts point cloud statistics (bbox and point count).
     4. Ingests point cloud into PostgreSQL pgPointcloud table if database storage is enabled.
-    5. Uses Entwine (build_ept) to convert the .laz file into an EPT dataset.
     Returns (bbox_dict, number_of_points, pcid).
     """
     csv_abs = os.path.abspath(csv_path)
@@ -172,10 +211,8 @@ async def process_emodnet_csv(
 
             header = next(reader, None)
             if header is not None:
-                # Strip out second header line (units row)
                 next(reader, None)
 
-                # Rename columns longitude -> X, latitude -> Y, elevation -> Z
                 header_mapped = []
                 elevation_idx = -1
                 for idx, col in enumerate(header):
@@ -190,14 +227,11 @@ async def process_emodnet_csv(
                     else:
                         header_mapped.append(col_name)
 
-                # Append Red, Green, Blue columns for bright blue color
                 header_mapped.extend(["Red", "Green", "Blue"])
-
                 writer.writerow(header_mapped)
 
                 for row in reader:
                     if row:
-                        # Multiply elevation by EMODNET_ELEVATION_MULTIPLICATION
                         if elevation_idx != -1 and elevation_idx < len(row):
                             raw_val = row[elevation_idx].strip()
                             if raw_val and raw_val.lower() != "nan":
@@ -207,7 +241,6 @@ async def process_emodnet_csv(
                                 except (ValueError, TypeError):
                                     pass
 
-                        # Append 8-bit bright blue RGB values (Red: 0, Green: 191, Blue: 255)
                         row.extend(["0", "191", "255"])
                         writer.writerow(row)
 
@@ -227,69 +260,10 @@ async def process_emodnet_csv(
             ]
         }
 
-        pipeline_json = json.dumps(pdal_pipeline)
-
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "pdal", "pipeline", "--stdin",
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await proc.communicate(input=pipeline_json.encode("utf-8"))
-
-            if proc.returncode != 0:
-                err_msg = stderr.decode("utf-8", errors="replace") or stdout.decode("utf-8", errors="replace")
-                raise RuntimeError(f"Native PDAL pipeline failed: {err_msg}")
-
-        except (FileNotFoundError, RuntimeError) as native_err:
-            # Fall back to Docker pdal/pdal if native pdal binary is missing or fails
-            docker_bin = get_docker_cmd()
-            if not docker_bin:
-                raise RuntimeError(
-                    f"Native PDAL execution failed and docker binary is not available: {native_err}"
-                ) from native_err
-
-            docker_pipeline_path = os.path.join(tmp_dir, "pipeline.json")
-            docker_pdal_pipeline = {
-                "pipeline": [
-                    {
-                        "type": "readers.text",
-                        "filename": "/config/cleaned_emodnet.csv",
-                        "spatialreference": "EPSG:4326"
-                    },
-                    {
-                        "type": "filters.reprojection",
-                        "out_srs": out_srs
-                    },
-                    "/config/reprojected.laz"
-                ]
-            }
-            with open(docker_pipeline_path, "w") as f:
-                json.dump(docker_pdal_pipeline, f)
-
-            cmd = [
-                docker_bin, "run", "--rm",
-                "-v", f"{tmp_dir}:/config",
-                "pdal/pdal",
-                "pdal", "pipeline", "/config/pipeline.json"
-            ]
-
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                stdout, stderr = await proc.communicate()
-
-                if proc.returncode != 0:
-                    err_msg = stderr.decode("utf-8", errors="replace") or stdout.decode("utf-8", errors="replace")
-                    raise RuntimeError(f"PDAL Docker pipeline failed: {err_msg}") from native_err
-            except FileNotFoundError:
-                raise RuntimeError(
-                    f"Neither native 'pdal' command nor '{docker_bin}' binary was found."
-                ) from native_err
+        await run_pdal_pipeline(
+            pipeline=pdal_pipeline,
+            error_prefix="pipeline failed"
+        )
 
         # 3. Extract stats (bbox & number of points) from reprojected LAZ file
         bbox, number_of_points, _ = await get_pointcloud_srs_and_stats(temp_laz_path)
@@ -319,63 +293,20 @@ async def process_emodnet_csv(
                     }
                 ]
             }
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    "pdal", "pipeline", "--stdin",
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                stdout, stderr = await proc.communicate(input=json.dumps(tif_pipeline).encode("utf-8"))
-                if proc.returncode != 0:
-                    print(f"[EMODnet CSV Ingest] Native PDAL TIF generation warning: {stderr.decode('utf-8')}")
-            except Exception as e:
-                print(f"[EMODnet CSV Ingest] Native PDAL TIF generation exception: {e}")
 
-            if not os.path.exists(temp_tif_path):
-                # Fall back to Docker pdal/pdal for TIF generation if native pdal failed
-                docker_bin = get_docker_cmd()
-                if docker_bin:
-                    docker_tif_pipeline_path = os.path.join(tmp_dir, "tif_pipeline.json")
-                    docker_tif_pipeline = {
-                        "pipeline": [
-                            {
-                                "type": "readers.text",
-                                "filename": "/config/cleaned_emodnet.csv",
-                                "spatialreference": "EPSG:4326"
-                            },
-                            {
-                                "type": "filters.reprojection",
-                                "out_srs": out_srs
-                            },
-                            {
-                                "type": "writers.gdal",
-                                "filename": "/config/bathymetry.tif",
-                                "output_type": "mean",
-                                "resolution": 100.0,
-                                "gdaldriver": "GTiff"
-                            }
-                        ]
-                    }
-                    with open(docker_tif_pipeline_path, "w") as f:
-                        json.dump(docker_tif_pipeline, f)
-                    try:
-                        d_proc = await asyncio.create_subprocess_exec(
-                            docker_bin, "run", "--rm",
-                            "-v", f"{tmp_dir}:/config",
-                            "pdal/pdal",
-                            "pdal", "pipeline", "/config/tif_pipeline.json",
-                            stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.PIPE
-                        )
-                        await d_proc.communicate()
-                    except Exception as d_err:
-                        print(f"[EMODnet CSV Ingest] Docker PDAL TIF generation exception: {d_err}")
+            try:
+                await run_pdal_pipeline(
+                    pipeline=tif_pipeline,
+                    raise_on_error=False,
+                    error_prefix="TIF generation failed"
+                )
+            except Exception as e:
+                print(f"[EMODnet CSV Ingest] PDAL TIF generation exception: {e}")
 
             if os.path.exists(temp_tif_path):
-                await ingest_postgis_raster_pyramids(
+                await PostGISRaster.ingest_pyramids(
                     geotiff_path=temp_tif_path,
-                    table_name="bathymetry_raster",
+                    table_name=PostGISRaster.DEFAULT_TABLE_NAME,
                     srid=3857,
                     pyramid_levels="2,4,8,16",
                     pointcloud_id=file_id,
@@ -384,18 +315,10 @@ async def process_emodnet_csv(
             else:
                 raise RuntimeError(f"Failed to generate bathymetry GeoTIFF raster from CSV for dataset {file_id}")
 
-        # 5. Build EPT dataset using Entwine
-        await build_ept(
-            file_path=temp_laz_path,
-            output_dir=output_abs,
-            scale="0.001"
-        )
-
         return bbox, number_of_points, pcid
 
 
 async def get_pointcloud_stats(file_path: str) -> Tuple[Dict[str, float], int]:
-
     """
     Runs `pdal info --stats` to extract bounding box coordinates (min_x, min_y, min_z, max_x, max_y, max_z)
     and total point count from a point cloud file.
@@ -410,64 +333,17 @@ async def get_pointcloud_dimensions(file_path: str) -> list:
     """
     file_abs = os.path.abspath(file_path)
     ext = os.path.splitext(file_abs)[1].lower()
+    driver = "readers.gdal" if ext in ('.geotif', '.tif', '.tiff', '.geotiff', '.asc', '.nc') else None
 
-    cmd_args = ["pdal", "info", "--stats"]
-    if ext in ('.geotif', '.tif', '.tiff', '.geotiff', '.asc', '.nc'):
-        cmd_args.extend(["--driver", "readers.gdal"])
-    cmd_args.append(file_abs)
-
-    info_stdout = None
     try:
-        info_proc = await asyncio.create_subprocess_exec(
-            *cmd_args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        info_stdout, _ = await info_proc.communicate()
-        if info_proc.returncode != 0 and "--driver" not in cmd_args:
-            retry_cmd = ["pdal", "info", "--driver", "readers.gdal", "--stats", file_abs]
-            info_proc2 = await asyncio.create_subprocess_exec(
-                *retry_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            info_stdout, _ = await info_proc2.communicate()
+        info_data = await run_pdal_info(file_abs, driver=driver, stats=True, raise_on_error=False)
+        stats = info_data.get("stats", {}).get("statistic", [])
+        dims = [dim.get("name") for dim in stats if dim.get("name")]
+        if dims:
+            return dims
     except Exception:
-        docker_bin = get_docker_cmd()
-        if shutil.which("docker") or (os.path.exists(docker_bin) and os.access(docker_bin, os.X_OK)):
-            file_dir = os.path.dirname(file_abs)
-            file_name = os.path.basename(file_abs)
-            docker_cmd = [
-                docker_bin, "run", "--rm",
-                "-v", f"{file_dir}:/data:ro",
-                "pdal/pdal",
-                "pdal", "info", "--stats"
-            ]
-            if ext in ('.geotif', '.tif', '.tiff', '.asc', '.nc'):
-                docker_cmd.extend(["--driver", "readers.gdal"])
-            docker_cmd.append(f"/data/{file_name}")
-
-            try:
-                info_proc = await asyncio.create_subprocess_exec(
-                    *docker_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                info_stdout, _ = await info_proc.communicate()
-            except Exception:
-                pass
-
-    if info_stdout:
-        try:
-            info_data = json.loads(info_stdout.decode('utf-8'))
-            stats = info_data.get("stats", {}).get("statistic", [])
-            dims = [dim.get("name") for dim in stats if dim.get("name")]
-            if dims:
-                return dims
-        except Exception:
-            pass
+        pass
     return []
-
 
 
 async def get_pointcloud_srs_and_stats(file_path: str) -> Tuple[Dict[str, float], int, str]:
@@ -477,77 +353,14 @@ async def get_pointcloud_srs_and_stats(file_path: str) -> Tuple[Dict[str, float]
     """
     file_abs = os.path.abspath(file_path)
     ext = os.path.splitext(file_abs)[1].lower()
+    driver = "readers.gdal" if ext in ('.geotif', '.tif', '.tiff', '.asc', '.nc') else None
 
-    # Base pdal info command arguments
-    cmd_args = ["pdal", "info", "--stats"]
-    if ext in ('.geotif', '.tif', '.tiff', '.asc', '.nc'):
-        cmd_args.extend(["--driver", "readers.gdal"])
-    cmd_args.append(file_abs)
+    info_data = await run_pdal_info(file_abs, driver=driver, stats=True, raise_on_error=True)
 
-    info_stdout = None
-    info_stderr = None
-    local_err = None
-
-    try:
-        info_proc = await asyncio.create_subprocess_exec(
-            *cmd_args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        info_stdout, info_stderr = await info_proc.communicate()
-        if info_proc.returncode != 0:
-            err_msg = info_stderr.decode('utf-8', errors='replace')
-            # If auto-driver detection failed, retry once with --driver readers.gdal if not already passed
-            if "--driver" not in cmd_args:
-                retry_cmd = ["pdal", "info", "--driver", "readers.gdal", "--stats", file_abs]
-                info_proc2 = await asyncio.create_subprocess_exec(
-                    *retry_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                info_stdout2, info_stderr2 = await info_proc2.communicate()
-                if info_proc2.returncode == 0:
-                    info_stdout = info_stdout2
-                else:
-                    raise RuntimeError(f"PDAL info failed: {err_msg}")
-            else:
-                raise RuntimeError(f"PDAL info failed: {err_msg}")
-    except (FileNotFoundError, RuntimeError) as e:
-        local_err = e
-        docker_bin = get_docker_cmd()
-        # Only attempt Docker fallback if docker binary actually exists on system
-        if shutil.which("docker") or (os.path.exists(docker_bin) and os.access(docker_bin, os.X_OK)):
-            file_dir = os.path.dirname(file_abs)
-            file_name = os.path.basename(file_abs)
-            docker_cmd = [
-                docker_bin, "run", "--rm",
-                "-v", f"{file_dir}:/data:ro",
-                "pdal/pdal",
-                "pdal", "info", "--stats"
-            ]
-            if ext in ('.geotif', '.tif', '.tiff', '.asc', '.nc'):
-                docker_cmd.extend(["--driver", "readers.gdal"])
-            docker_cmd.append(f"/data/{file_name}")
-
-            try:
-                info_proc = await asyncio.create_subprocess_exec(
-                    *docker_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                info_stdout, info_stderr = await info_proc.communicate()
-                if info_proc.returncode != 0:
-                    raise RuntimeError(f"PDAL info via Docker failed: {info_stderr.decode('utf-8', errors='replace')}") from local_err
-            except Exception as docker_err:
-                raise local_err from docker_err
-        else:
-            raise local_err
-
-    info_data = json.loads(info_stdout.decode('utf-8'))
     stats = info_data.get("stats", {})
     native_bbox = stats.get("bbox", {}).get("native", {})
     bbox = native_bbox.get("bbox", {})
-    
+
     bbox_dict = {
         "min_x": bbox.get("minx"),
         "min_y": bbox.get("miny"),
@@ -557,7 +370,6 @@ async def get_pointcloud_srs_and_stats(file_path: str) -> Tuple[Dict[str, float]
         "max_z": bbox.get("maxz"),
     }
 
-    # Fallback to stats.statistic for formats like GeoTIFF where stats.bbox is absent
     if bbox_dict["min_x"] is None or bbox_dict["min_y"] is None:
         for dim in stats.get("statistic", []):
             dim_name = str(dim.get("name", "")).strip().lower()
@@ -596,7 +408,6 @@ def check_bbox_within_or_overlapping(existing_bbox: Dict[str, Any], candidate_bb
     ex_min_y, ex_max_y = existing_bbox.get("min_y"), existing_bbox.get("max_y")
     ex_min_z, ex_max_z = existing_bbox.get("min_z"), existing_bbox.get("max_z")
 
-    # If existing bounding box is not fully initialized, condition is satisfied
     if None in (ex_min_x, ex_max_x, ex_min_y, ex_max_y):
         return True
 
@@ -626,26 +437,6 @@ def check_coordinate_systems_match(existing_srs: str, candidate_srs: str) -> boo
         return True
     return existing_srs.strip().lower() == candidate_srs.strip().lower()
 
-
-def format_libpq_connection_string(db_url: str) -> str:
-    """
-    Converts a SQLAlchemy database URL (e.g. postgresql+asyncpg://...) to a libpq connection string
-    used by PDAL writers.pgpointcloud (e.g. host=... port=... user=... password=... dbname=...).
-    """
-    clean_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
-    parsed = urlparse(clean_url)
-    conn_parts = []
-    if parsed.hostname:
-        conn_parts.append(f"host={parsed.hostname}")
-    if parsed.port:
-        conn_parts.append(f"port={parsed.port}")
-    if parsed.username:
-        conn_parts.append(f"user={parsed.username}")
-    if parsed.password:
-        conn_parts.append(f"password={parsed.password}")
-    if parsed.path:
-        conn_parts.append(f"dbname={parsed.path.lstrip('/')}")
-    return " ".join(conn_parts)
 
 
 async def ingest_pgpointcloud(
@@ -702,7 +493,6 @@ async def ingest_pgpointcloud(
 
     pipeline_stages = [reader_stage]
 
-    # Map color dimensions if source uses alternative cases (e.g. red, green, blue or r, g, b)
     s_dims_lower = [str(d).lower() for d in source_dims]
     ferry_pairs = []
     if "red" in s_dims_lower and "Red" not in source_dims:
@@ -765,77 +555,10 @@ async def ingest_pgpointcloud(
 
     pdal_write_pipeline = {"pipeline": pipeline_stages}
 
-    pipeline_json = json.dumps(pdal_write_pipeline)
-    local_err = None
-    try:
-        write_proc = await asyncio.create_subprocess_exec(
-            "pdal", "pipeline", "--stdin",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        write_stdout, write_stderr = await write_proc.communicate(input=pipeline_json.encode('utf-8'))
-        if write_proc.returncode != 0:
-            err = write_stderr.decode('utf-8', errors='replace')
-            print(f"[PDAL Ingest] Ingestion failed for {file_abs}.")
-            print(f"[PDAL Ingest] Source file dimensions: {source_dims if source_dims else 'unknown'}")
-            print(f"[PDAL Ingest] Target schema dimensions: {target_dims}")
-            raise RuntimeError(f"PDAL pgpointcloud ingestion failed: {err}")
-    except (FileNotFoundError, RuntimeError) as e:
-        local_err = e
-        docker_bin = get_docker_cmd()
-        if shutil.which("docker") or (os.path.exists(docker_bin) and os.access(docker_bin, os.X_OK)):
-            file_dir = os.path.dirname(file_abs)
-            file_name = os.path.basename(file_abs)
-
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                docker_pipeline_path = os.path.join(tmp_dir, "pipeline.json")
-
-                docker_stages = []
-                for stage in pipeline_stages:
-                    stage_copy = dict(stage) if isinstance(stage, dict) else stage
-                    if isinstance(stage_copy, dict) and stage_copy.get("type") == "readers.gdal":
-                        stage_copy["filename"] = f"/data/{file_name}"
-                        docker_stages.append(stage_copy)
-                    elif isinstance(stage_copy, str) and stage_copy == file_abs:
-                        docker_stages.append(f"/data/{file_name}")
-                    else:
-                        docker_stages.append(stage_copy)
-
-                with open(docker_pipeline_path, "w") as f:
-                    json.dump({"pipeline": docker_stages}, f)
-
-                docker_cmd = [
-                    docker_bin, "run", "--rm",
-                    "-v", f"{file_dir}:/data:ro",
-                    "-v", f"{tmp_dir}:/config:ro",
-                    "pdal/pdal",
-                    "pdal", "pipeline", "/config/pipeline.json"
-                ]
-
-                try:
-                    docker_proc = await asyncio.create_subprocess_exec(
-                        *docker_cmd,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE
-                    )
-                    d_stdout, d_stderr = await docker_proc.communicate()
-                    if docker_proc.returncode != 0:
-                        d_err = d_stderr.decode('utf-8', errors='replace')
-                        print(f"[PDAL Ingest] Docker ingestion failed for {file_abs}.")
-                        print(f"[PDAL Ingest] Source file dimensions: {source_dims if source_dims else 'unknown'}")
-                        print(f"[PDAL Ingest] Target schema dimensions: {target_dims}")
-                        raise RuntimeError(f"PDAL pgpointcloud ingestion via Docker failed: {d_err}") from local_err
-                except Exception as docker_err:
-                    print(f"[PDAL Ingest] Docker ingestion exception for {file_abs}.")
-                    print(f"[PDAL Ingest] Source file dimensions: {source_dims if source_dims else 'unknown'}")
-                    print(f"[PDAL Ingest] Target schema dimensions: {target_dims}")
-                    raise local_err from docker_err
-        else:
-            print(f"[PDAL Ingest] Ingestion failed for {file_abs}.")
-            print(f"[PDAL Ingest] Source file dimensions: {source_dims if source_dims else 'unknown'}")
-            print(f"[PDAL Ingest] Target schema dimensions: {target_dims}")
-            raise local_err
+    await run_pdal_pipeline(
+        pipeline=pdal_write_pipeline,
+        error_prefix="pgpointcloud ingestion failed"
+    )
 
     found_pcid = None
     if pointcloud_id:
@@ -859,7 +582,6 @@ async def ingest_pgpointcloud(
                     ON pointcloud_patches (pointcloud_id, lod);
                 """))
 
-                # Ensure parent record exists in pointclouds table to satisfy foreign key constraint
                 await session.execute(
                     text("""
                         INSERT INTO pointclouds (id, orig_filename, number_of_points, pcid, created_at)
@@ -891,179 +613,6 @@ async def ingest_pgpointcloud(
                 raise transfer_err
 
     return found_pcid
-
-
-async def ingest_postgis_raster_pyramids(
-    geotiff_path: str,
-    table_name: str = "bathymetry_raster",
-    srid: int = 3857,
-    pyramid_levels: str = "2,4,8,16",
-    pointcloud_id: Optional[str] = None,
-    scale_z: float = 1.0,
-    is_append: bool = False
-) -> None:
-    """
-    Ingests a GeoTIFF bathymetry raster into PostgreSQL using raster2pgsql with raster pyramids (-l 2,4,8,16).
-    Generates overview tables (e.g. o_2_bathymetry_raster, o_4_bathymetry_raster, o_8_bathymetry_raster, o_16_bathymetry_raster)
-    for distance-based Level of Detail (LOD) querying. Optionally scales elevation Z values by scale_z.
-    """
-    geotiff_abs = os.path.abspath(geotiff_path)
-    file_name = os.path.basename(geotiff_abs)
-
-    # 1. Ensure PostGIS extensions exist and determine table mode (-c vs -a)
-    mode_flag = "-c"
-    async with async_session() as session:
-        await session.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
-        await session.execute(text("CREATE EXTENSION IF NOT EXISTS postgis_raster;"))
-        
-        tables_exist = False
-        try:
-            res_main = await session.execute(text("""
-                SELECT EXISTS (
-                    SELECT 1 FROM information_schema.tables 
-                    WHERE table_name = 'bathymetry_raster'
-                );
-            """))
-            res_ov = await session.execute(text("""
-                SELECT EXISTS (
-                    SELECT 1 FROM information_schema.tables 
-                    WHERE table_name = 'o_2_bathymetry_raster'
-                );
-            """))
-            tables_exist = bool(res_main.scalar() and res_ov.scalar())
-        except Exception:
-            tables_exist = False
-
-        if is_append and tables_exist:
-            mode_flag = "-a"
-        else:
-            mode_flag = "-c"
-            # Drop existing tables to ensure clean schema and overview creation
-            await session.execute(text("""
-                DROP TABLE IF EXISTS bathymetry_raster, 
-                                      o_2_bathymetry_raster, 
-                                      o_4_bathymetry_raster, 
-                                      o_8_bathymetry_raster, 
-                                      o_16_bathymetry_raster CASCADE;
-            """))
-
-        if pointcloud_id:
-            await session.execute(
-                text("""
-                    INSERT INTO pointclouds (id, orig_filename, number_of_points, pcid, created_at)
-                    VALUES (:id, :filename, 0, 1, NOW())
-                    ON CONFLICT (id) DO NOTHING
-                """),
-                {"id": pointcloud_id, "filename": file_name}
-            )
-        await session.commit()
-
-    # 2. Command: raster2pgsql -s <srid> -I -C -M -Y -F -l 2,4,8,16 <mode_flag> <geotiff_path> <table_name>
-    cmd_args = [
-        "raster2pgsql",
-        "-s", str(srid),
-        "-I", "-C", "-M", "-Y", "-F",
-        "-l", pyramid_levels,
-        mode_flag,
-        geotiff_abs,
-        table_name
-    ]
-
-    sql_output = None
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd_args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode == 0:
-            sql_output = stdout.decode('utf-8')
-        else:
-            print(f"[PostGIS Raster] Native raster2pgsql error output: {stderr.decode('utf-8')}")
-    except (FileNotFoundError, Exception) as e:
-        print(f"[PostGIS Raster] Native raster2pgsql failed or not found: {e}")
-        docker_bin = get_docker_cmd()
-        if docker_bin:
-            file_dir = os.path.dirname(geotiff_abs)
-            docker_cmd = [
-                docker_bin, "run", "--rm",
-                "-v", f"{file_dir}:/data:ro",
-                "postgis/postgis",
-                "raster2pgsql",
-                "-s", str(srid),
-                "-I", "-C", "-M", "-Y", "-F",
-                "-l", pyramid_levels,
-                mode_flag,
-                f"/data/{file_name}",
-                table_name
-            ]
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    *docker_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                stdout, stderr = await proc.communicate()
-                if proc.returncode == 0:
-                    sql_output = stdout.decode('utf-8')
-            except Exception as d_err:
-                print(f"[PostGIS Raster] Docker raster2pgsql failed: {d_err}")
-
-    # 3. Execute SQL statements against database via psql
-    if not sql_output:
-        err_msg = f"raster2pgsql failed to generate SQL for {file_name}. Ensure 'postgis' / 'raster2pgsql' is installed in the worker container environment."
-        print(f"[PostGIS Raster] ERROR: {err_msg}")
-        raise RuntimeError(err_msg)
-
-    conn_str = format_libpq_connection_string(settings.database_url)
-    psql_proc = await asyncio.create_subprocess_exec(
-        "psql", conn_str,
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    _, psql_err = await psql_proc.communicate(input=sql_output.encode('utf-8'))
-    if psql_proc.returncode != 0:
-        err_msg = psql_err.decode('utf-8', errors='replace')
-        print(f"[PostGIS Raster] psql import error: {err_msg}")
-        raise RuntimeError(f"psql raster import failed: {err_msg}")
-
-    print(f"[PostGIS Raster] Successfully ingested raster pyramids for {file_name} into {table_name}")
-
-    # 4. Associate pointcloud_id and apply scale_z multiplier if != 1.0
-    async with async_session() as session:
-        try:
-            await session.execute(text("""
-                ALTER TABLE bathymetry_raster 
-                ADD COLUMN IF NOT EXISTS pointcloud_id UUID REFERENCES pointclouds(id) ON DELETE CASCADE;
-            """))
-        except Exception as col_err:
-            print(f"[PostGIS Raster] Warning adding pointcloud_id column: {col_err}")
-
-        if pointcloud_id:
-            try:
-                await session.execute(
-                    text("UPDATE bathymetry_raster SET pointcloud_id = :pc_id WHERE filename = :fname OR pointcloud_id IS NULL"),
-                    {"pc_id": pointcloud_id, "fname": file_name}
-                )
-            except Exception as e:
-                print(f"[PostGIS Raster] Failed to update pointcloud_id: {e}")
-
-        if scale_z != 1.0:
-            for tbl in [table_name, "o_2_bathymetry_raster", "o_4_bathymetry_raster", "o_8_bathymetry_raster", "o_16_bathymetry_raster"]:
-                try:
-                    await session.execute(
-                        text(f"UPDATE {tbl} SET rast = ST_MapAlgebra(rast, 1, NULL, '[rast] * :scale') WHERE filename = :fname OR pointcloud_id = :pc_id"),
-                        {"scale": scale_z, "fname": file_name, "pc_id": pointcloud_id}
-                    )
-                except Exception as e:
-                    print(f"[PostGIS Raster] Failed to scale Z by {scale_z} for table {tbl}: {e}")
-
-        await session.commit()
-
-
-
 
 
 
