@@ -114,9 +114,9 @@ def upgrade() -> None:
         sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
     )
 
-    # 7. Videos Table
+    # 7. Video Metadata Table
     op.create_table(
-        'videos',
+        'video_metadata',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column('upload_metadata_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('upload_metadata.id', ondelete='CASCADE'), nullable=False),
         sa.Column('content_type', sa.String(length=100), nullable=True),
@@ -125,9 +125,26 @@ def upgrade() -> None:
         sa.Column('video_stop_at', sa.DateTime(timezone=True), nullable=False),
     )
 
+    # 8. Log Data Table
+    op.create_table(
+        'log_data',
+        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column('video_metadata_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('video_metadata.id', ondelete='CASCADE'), nullable=False),
+        sa.Column('timestamp', sa.BigInteger(), nullable=False),
+        sa.Column('time_recorded', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('payload', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+    )
+    op.create_index('ix_log_data_timestamp', 'log_data', ['timestamp'])
+    op.create_index('ix_log_data_time_recorded', 'log_data', ['time_recorded'])
+    op.create_index('ix_log_data_payload', 'log_data', ['payload'], postgresql_using='gin')
+
 
 def downgrade() -> None:
-    op.drop_table('videos')
+    op.drop_index('ix_log_data_payload', table_name='log_data')
+    op.drop_index('ix_log_data_time_recorded', table_name='log_data')
+    op.drop_index('ix_log_data_timestamp', table_name='log_data')
+    op.drop_table('log_data')
+    op.drop_table('video_metadata')
     op.drop_table('upload_metadata')
     op.execute("DROP TABLE IF EXISTS bathymetry_raster CASCADE;")
     op.drop_table('pointcloud_camera_routes')

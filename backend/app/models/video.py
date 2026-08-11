@@ -29,7 +29,7 @@ class UploadMetadata(Base):
 
 
 class Video(Base):
-    __tablename__ = "videos"
+    __tablename__ = "video_metadata"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     upload_metadata_id = Column(UUID(as_uuid=True), ForeignKey("upload_metadata.id", ondelete="CASCADE"), nullable=False)
@@ -39,3 +39,5 @@ class Video(Base):
     video_stop_at = Column(DateTime(timezone=True), nullable=False)
 
     upload_metadata = relationship("UploadMetadata", back_populates="videos")
+    log_data = relationship("LogData", back_populates="video_metadata", cascade="all, delete-orphan")
+
