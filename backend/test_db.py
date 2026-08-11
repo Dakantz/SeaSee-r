@@ -3,10 +3,11 @@ from app.core.database import async_session
 from app.models.video import Video
 from app.schemas.video import VideoResponse
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 async def main():
     async with async_session() as db:
-        stmt = select(Video).limit(10)
+        stmt = select(Video).options(selectinload(Video.upload_metadata)).limit(10)
         result = await db.execute(stmt)
         videos = result.scalars().all()
         for v in videos:

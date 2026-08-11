@@ -8,8 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db_session
-from app.models.video import Video, VideoMetadata
-from app.schemas.video import VideoResponse, VideoMetadataResponse
+from app.models.video import Video, UploadMetadata
+from app.schemas.video import VideoResponse, UploadMetadataResponse
 
 router = APIRouter(
     prefix="/videos",
@@ -29,7 +29,7 @@ async def get_videos(
     """
     Get a list of all videos.
     """
-    stmt = select(Video).offset(skip).limit(limit)
+    stmt = select(Video).options(selectinload(Video.upload_metadata)).offset(skip).limit(limit)
     result = await db.execute(stmt)
     videos = result.scalars().all()
     return videos
@@ -43,7 +43,7 @@ async def get_video(
     """
     Get information about a specific video by ID.
     """
-    stmt = select(Video).where(Video.id == video_id)
+    stmt = select(Video).options(selectinload(Video.upload_metadata)).where(Video.id == video_id)
     result = await db.execute(stmt)
     video = result.scalar_one_or_none()
     
@@ -53,15 +53,15 @@ async def get_video(
     return video
 
 
-@router.get("/metadata/{metadata_id}", response_model=VideoMetadataResponse)
-async def get_video_metadata(
+@router.get("/metadata/{metadata_id}", response_model=UploadMetadataResponse)
+async def get_upload_metadata(
     metadata_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session)
 ):
     """
-    Get information about a specific metadata file by ID.
+    Get information about a specific upload metadata record by ID.
     """
-    stmt = select(VideoMetadata).where(VideoMetadata.id == metadata_id)
+    stmt = select(UploadMetadata).where(UploadMetadata.id == metadata_id)
     result = await db.execute(stmt)
     metadata = result.scalar_one_or_none()
     

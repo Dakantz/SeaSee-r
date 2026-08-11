@@ -1,13 +1,13 @@
 import uuid
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
-from app.models.video import Video, VideoStatus, VideoMetadata
+from app.models.video import Video, VideoStatus, UploadMetadata
 from app.services.tusd.base_upload_service import WebhookPayload
 from app.utils.file_manager import FileManager
 
@@ -17,6 +17,7 @@ class VideoUploadService:
         filename = payload.metadata.get("filename", "")
         file_uuid_str = payload.file_id
         batch_id_str = payload.metadata.get("batch_id")
+        content_type = payload.metadata.get("filetype", "video/mp4")
         
         if not file_uuid_str:
             return {"status": "ignored", "reason": "Missing file_id"}
@@ -37,13 +38,30 @@ class VideoUploadService:
         extension = pathlib.Path(filename).suffix if filename else ""
         new_safe_filename = f"{file_uuid}{extension}"
 
-        video = Video(
+        upload_meta = UploadMetadata(
             id=file_uuid,
             batch_id=batch_id,
             orig_filename=filename,
             safe_filename=new_safe_filename,
+            content_type=content_type,
             status=VideoStatus.UPLOADING,
-            total_bytes=payload.total_bytes
+        )
+        db.add(upload_meta)
+
+        video_start_at_str = payload.metadata.get("video_start_at")
+        video_stop_at_str = payload.metadata.get("video_stop_at")
+        now = datetime.now(timezone.utc)
+        
+        start_at = datetime.fromisoformat(video_start_at_str) if video_start_at_str else now
+        stop_at = datetime.fromisoformat(video_stop_at_str) if video_stop_at_str else now
+
+        video = Video(
+            id=uuid.uuid4(),
+            upload_metadata_id=upload_meta.id,
+            content_type=content_type,
+            total_bytes=payload.total_bytes,
+            video_start_at=start_at,
+            video_stop_at=stop_at,
         )
         db.add(video)
         await db.commit()
@@ -58,29 +76,29 @@ class VideoUploadService:
         except ValueError:
             return {"status": "ignored", "reason": "Invalid file_id"}
             
-        stmt = select(Video).where(Video.id == file_uuid)
+        stmt = select(UploadMetadata).options(selectinload(UploadMetadata.videos)).where(UploadMetadata.id == file_uuid)
         result = await db.execute(stmt)
-        video = result.scalar_one_or_none()
+        upload_meta = result.scalar_one_or_none()
         
-        if video:
-            video.status = VideoStatus.COMPLETED
-            video.completed_at = datetime.utcnow()
+        if upload_meta:
+            upload_meta.status = VideoStatus.COMPLETED
+            upload_meta.completed_at = datetime.now(timezone.utc)
             await db.commit()
 
         try:
-            if video:
+            if upload_meta:
                 FileManager.move_file(
                     src=payload.original_file_path, 
                     dest_dir=settings.video_dir, 
-                    safe_filename=video.safe_filename
+                    safe_filename=upload_meta.safe_filename
                 )
                 FileManager.remove_file(f"{payload.original_file_path}.info")
             else:
-                raise HTTPException(status_code=404, detail="Video not found")
+                raise HTTPException(status_code=404, detail="Upload metadata not found")
         except Exception as e:
-            if video:
-                video.status = VideoStatus.UPLOADING
-                video.completed_at = None
+            if upload_meta:
+                upload_meta.status = VideoStatus.UPLOADING
+                upload_meta.completed_at = None
                 await db.commit()
             raise HTTPException(status_code=500, detail="Failed to move uploaded file")
             
@@ -95,10 +113,10 @@ class VideoUploadService:
         except ValueError:
             return {"status": "ignored", "reason": "Invalid file_id"}
             
-        stmt = select(Video).where(Video.id == file_uuid)
+        stmt = select(UploadMetadata).where(UploadMetadata.id == file_uuid)
         result = await db.execute(stmt)
-        video = result.scalar_one_or_none()
-        if video:
-            await db.delete(video)
+        upload_meta = result.scalar_one_or_none()
+        if upload_meta:
+            await db.delete(upload_meta)
             await db.commit()
         return {"status": "ok", "action": "terminated_video"}

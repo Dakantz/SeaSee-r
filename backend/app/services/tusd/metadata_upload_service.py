@@ -1,12 +1,12 @@
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 
 from app.core.config import settings
-from app.models.video import Video, VideoStatus, VideoMetadata
+from app.models.video import VideoStatus, UploadMetadata
 from app.services.tusd.base_upload_service import WebhookPayload
 from app.utils.file_manager import FileManager
 
@@ -37,13 +37,12 @@ class MetadataUploadService:
         extension = pathlib.Path(filename).suffix if filename else ""
         new_safe_filename = f"{file_uuid}{extension}"
 
-        metadata_file = VideoMetadata(
+        metadata_file = UploadMetadata(
             id=file_uuid,
             batch_id=batch_id,
             orig_filename=filename,
             safe_filename=new_safe_filename,
             content_type=content_type,
-            total_bytes=payload.total_bytes,
             status=VideoStatus.UPLOADING
         )
         db.add(metadata_file)
@@ -60,13 +59,13 @@ class MetadataUploadService:
         except ValueError:
             return {"status": "ignored", "reason": "Invalid file_id"}
 
-        stmt = select(VideoMetadata).where(VideoMetadata.id == file_uuid)
+        stmt = select(UploadMetadata).where(UploadMetadata.id == file_uuid)
         result = await db.execute(stmt)
         metadata_file_db = result.scalar_one_or_none()
         
         if metadata_file_db:
             metadata_file_db.status = VideoStatus.COMPLETED
-            metadata_file_db.completed_at = datetime.utcnow()
+            metadata_file_db.completed_at = datetime.now(timezone.utc)
             await db.commit()
 
         try:
@@ -87,7 +86,7 @@ class MetadataUploadService:
                 await db.commit()
             raise HTTPException(status_code=500, detail="Failed to move uploaded file")
                 
-        return {"status": "ok", "type": "video_metadata"}
+        return {"status": "ok", "type": "upload_metadata"}
 
     @staticmethod
     async def handle_terminate(payload: WebhookPayload, db: AsyncSession) -> dict:
@@ -97,7 +96,7 @@ class MetadataUploadService:
         except ValueError:
             return {"status": "ignored", "reason": "Invalid file_id"}
             
-        stmt = select(VideoMetadata).where(VideoMetadata.id == file_uuid)
+        stmt = select(UploadMetadata).where(UploadMetadata.id == file_uuid)
         result = await db.execute(stmt)
         mf = result.scalar_one_or_none()
         if mf:
