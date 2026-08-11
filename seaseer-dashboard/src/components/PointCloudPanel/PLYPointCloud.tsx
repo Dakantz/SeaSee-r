@@ -7,7 +7,7 @@ import { generateDelaunayTerrainMesh } from "./utils/delaunayTriangulation";
 import { MapView, DebugProvider, HeightDebugProvider, OpenStreetMapsProvider, OpenMapTilesProvider, MapTilerProvider, BingMapsProvider, BathymetryProvider, EmodnetProvider, UnitsUtils, MapNodeGeometry, MapHeightNodeShader, MapHeightNode, MapNodeHeightGeometry, MapPlaneNode, CanvasUtils } from "../../../public/geo-three/build/geo-three.module.js";
 
 // Set skirt depth to 100.0 so the skirt extends down to height -100
-MapHeightNodeShader.geometry = new MapNodeGeometry(1.0, 1.0, MapHeightNodeShader.geometrySize, MapHeightNodeShader.geometrySize, true, 200.0);
+MapHeightNodeShader.geometry = new MapNodeGeometry(1.0, 1.0, MapHeightNodeShader.geometrySize, MapHeightNodeShader.geometrySize, true, 2000.0);
 
 if (MapHeightNode.prototype.loadHeightGeometry) {
     MapHeightNode.prototype.loadHeightGeometry = async function () {
@@ -31,7 +31,7 @@ if (MapHeightNode.prototype.loadHeightGeometry) {
             const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
 
             // Use skirtDepth = 100.0 so skirt extends down to height -100
-            this.geometry = new MapNodeHeightGeometry(1, 1, this.geometrySize, this.geometrySize, true, 200.0, imageData, true);
+            this.geometry = new MapNodeHeightGeometry(1, 1, this.geometrySize, this.geometrySize, true, 2000.0, imageData, true);
         } catch (e) {
             if (this.disposed) return;
             this.geometry = MapPlaneNode.baseGeometry;
@@ -279,7 +279,7 @@ function GeoThreeHeightmap() {
                     provider = new BathymetryProvider(`${apiBaseUrl}/bathymetry`);
                     break;
                 case "Emodnet":
-                    provider = new EmodnetProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", "", "image/png", "WMS");
+                    provider = new EmodnetProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", "", "image/png", "WCS");
                     break;
                 case "Debug":
                     provider = new DebugProvider();

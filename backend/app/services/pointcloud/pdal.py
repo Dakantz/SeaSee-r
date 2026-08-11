@@ -16,7 +16,7 @@ from app.services.pointcloud.postgis_raster import (
     format_libpq_connection_string
 )
 
-EMODNET_ELEVATION_MULTIPLICATION = 100.0
+EMODNET_ELEVATION_MULTIPLICATION = 5.0
 
 
 async def run_pdal_subprocess(
