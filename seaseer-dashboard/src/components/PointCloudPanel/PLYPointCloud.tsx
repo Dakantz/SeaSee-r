@@ -41,7 +41,7 @@ if (MapHeightNode.prototype.loadHeightGeometry) {
 }
 
 const TARGET_X = 1622520.9730428709;
-const TARGET_Z = -5622707.795739262;
+const TARGET_Z = -5522707.795739262;
 
 function SceneLighting() {
     const {
@@ -101,6 +101,12 @@ function SceneLighting() {
     );
 }
 
+function getHeightFactor(y: number): number {
+    return y > 0
+        ? Math.max(0.1, y / 1000)
+        : Math.max(0.0001, 0.1 * Math.exp(y / 1000));
+}
+
 function CameraPositionControls() {
     const { camera, gl } = useThree();
     const isDragging = useRef(false);
@@ -146,7 +152,7 @@ function CameraPositionControls() {
                 camera.quaternion.setFromEuler(euler.current);
             } else if (dragButton.current === 2 || dragButton.current === 1) {
                 // Right or middle click: Pan camera position
-                const heightFactor = camera.position.y > 0 ? Math.max(1, camera.position.y / 1000) : 1;
+                const heightFactor = getHeightFactor(camera.position.y);
                 const panSpeed = 2.0 * heightFactor;
                 const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
                 const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
@@ -168,7 +174,7 @@ function CameraPositionControls() {
 
         const onWheel = (e: WheelEvent) => {
             e.preventDefault();
-            const heightFactor = camera.position.y > 0 ? Math.max(1, camera.position.y / 1000) : 1;
+            const heightFactor = getHeightFactor(camera.position.y);
             const zoomSpeed = 1.0 * heightFactor;
             const dir = new THREE.Vector3();
             camera.getWorldDirection(dir);
@@ -222,7 +228,7 @@ function CameraPositionControls() {
         if (!keys) return;
 
         const isShift = keys["ShiftLeft"] || keys["ShiftRight"];
-        const heightFactor = camera.position.y > 0 ? Math.max(1, camera.position.y / 1000) : 1;
+        const heightFactor = getHeightFactor(camera.position.y);
         const moveSpeed = (isShift ? 3000 : 800) * heightFactor * delta;
 
         const forward = new THREE.Vector3();
