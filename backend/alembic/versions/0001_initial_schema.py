@@ -11,6 +11,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from app.core.config import settings
+
 # revision identifiers, used by Alembic.
 revision: str = '0001_initial_schema'
 down_revision: Union[str, None] = None
@@ -72,24 +74,43 @@ def upgrade() -> None:
         ON pointcloud_patches (pointcloud_id, lod);
     """)
 
-    # 4. PointCloud Camera Routes Table
+    # 4a. Camera Headers Table
     op.create_table(
-        'pointcloud_camera_routes',
+        'camera_headers',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column('pointcloud_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('pointclouds.id', ondelete='CASCADE'), nullable=False),
-        sa.Column('orig_filename', sa.String(length=255), nullable=False),
-        sa.Column('safe_filename', sa.String(length=255), nullable=True),
-        sa.Column('number_of_points', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('min_x', sa.Float(), nullable=True),
-        sa.Column('min_y', sa.Float(), nullable=True),
-        sa.Column('min_z', sa.Float(), nullable=True),
-        sa.Column('max_x', sa.Float(), nullable=True),
-        sa.Column('max_y', sa.Float(), nullable=True),
-        sa.Column('max_z', sa.Float(), nullable=True),
+        sa.Column('focal', sa.Float(), nullable=True),
+        sa.Column('width', sa.Integer(), nullable=True),
+        sa.Column('height', sa.Integer(), nullable=True),
+        sa.Column('camera', sa.String(length=255), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
-        sa.Column('pcid', sa.Integer(), nullable=False),
-        sa.Column('transform_matrix', postgresql.ARRAY(sa.Float()), nullable=False),
     )
+
+    # 4b. Camera Frames Table
+    srid = settings.backend_srid
+    op.execute(f"""
+        CREATE TABLE IF NOT EXISTS camera_frames (
+            id UUID PRIMARY KEY,
+            camera_header_id UUID NOT NULL REFERENCES camera_headers(id) ON DELETE CASCADE,
+            timestamp BIGINT NOT NULL,
+            position geometry(PointZ, {srid}),
+            direction geometry(PointZ, {srid}),
+            relative_time DOUBLE PRECISION,
+            filename VARCHAR(255)
+        );
+    """)
+    op.execute("""
+        CREATE INDEX IF NOT EXISTS idx_camera_frames_header_id
+        ON camera_frames (camera_header_id);
+    """)
+    op.execute("""
+        CREATE INDEX IF NOT EXISTS idx_camera_frames_timestamp
+        ON camera_frames (timestamp);
+    """)
+    op.execute("""
+        CREATE INDEX IF NOT EXISTS idx_camera_frames_position
+        ON camera_frames USING GIST (position);
+    """)
 
     # 5. Bathymetry Raster Table
     op.execute("""
@@ -147,7 +168,11 @@ def downgrade() -> None:
     op.drop_table('video_metadata')
     op.drop_table('upload_metadata')
     op.execute("DROP TABLE IF EXISTS bathymetry_raster CASCADE;")
-    op.drop_table('pointcloud_camera_routes')
+    op.execute("DROP INDEX IF EXISTS idx_camera_frames_position;")
+    op.execute("DROP INDEX IF EXISTS idx_camera_frames_timestamp;")
+    op.execute("DROP INDEX IF EXISTS idx_camera_frames_header_id;")
+    op.execute("DROP TABLE IF EXISTS camera_frames CASCADE;")
+    op.drop_table('camera_headers')
     op.execute("DROP INDEX IF EXISTS idx_pointcloud_patches_pc_lod;")
     op.execute("DROP TABLE IF EXISTS pointcloud_patches CASCADE;")
     op.drop_table('pointclouds')

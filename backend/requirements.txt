@@ -15,4 +15,5 @@ httpx
 psutil
 pillow
 numpy
+geoalchemy2
 

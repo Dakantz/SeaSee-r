@@ -6,7 +6,7 @@ from rq import Queue
 from typing import List, Union, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from app.schemas.pointcloud import PointCloudMetadataResponse, PointCloudCameraRouteResponse
+from app.schemas.pointcloud import PointCloudMetadataResponse, CameraHeaderResponse, CameraFrameResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, conlist
@@ -16,7 +16,8 @@ from app.api.dependencies.pointcloud import get_pointcloud_service
 from app.core.config import settings
 from app.core.database import get_db_session
 from app.models.job import Job
-from app.models.pointcloud import PointCloud, PointCloudCameraRoute
+from app.models.pointcloud import PointCloud
+from app.models.camera import CameraHeader, CameraFrame
 
 class TransformUpdate(BaseModel):
     matrix: conlist(float, min_length=16, max_length=16)
@@ -97,8 +98,8 @@ async def delete_pointcloud(
         
     return {"message": "Point cloud deleted successfully from available storages"}
 
-@router.get("/{identifier}/camera-routes", response_model=List[PointCloudCameraRouteResponse])
-async def get_camera_routes(
+@router.get("/{identifier}/camera-headers", response_model=List[CameraHeaderResponse])
+async def get_camera_headers(
     identifier: str,
     db: AsyncSession = Depends(get_db_session)
 ):
@@ -107,11 +108,104 @@ async def get_camera_routes(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid UUID format")
         
-    query = select(PointCloudCameraRoute).where(PointCloudCameraRoute.pointcloud_id == pc_uuid)
+    query = select(CameraHeader).where(CameraHeader.pointcloud_id == pc_uuid)
     result = await db.execute(query)
-    routes = result.scalars().all()
+    headers = result.scalars().all()
     
-    return list(routes)
+    return list(headers)
+
+@router.get("/camera-headers/{header_id}/frames", response_model=List[CameraFrameResponse])
+async def get_camera_frames(
+    header_id: str,
+    db: AsyncSession = Depends(get_db_session)
+):
+    import json
+    from geoalchemy2.functions import ST_AsGeoJSON
+
+    try:
+        h_uuid = uuid.UUID(header_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+        
+    query = select(
+        CameraFrame.id,
+        CameraFrame.camera_header_id,
+        CameraFrame.timestamp,
+        ST_AsGeoJSON(CameraFrame.position).label("pos_geojson"),
+        ST_AsGeoJSON(CameraFrame.direction).label("dir_geojson"),
+        CameraFrame.relative_time,
+        CameraFrame.filename
+    ).where(CameraFrame.camera_header_id == h_uuid).order_by(CameraFrame.timestamp.asc())
+    
+    result = await db.execute(query)
+    rows = result.all()
+    
+    frames = []
+    for r in rows:
+        pos_coords = json.loads(r.pos_geojson)["coordinates"] if r.pos_geojson else None
+        dir_coords = json.loads(r.dir_geojson)["coordinates"] if r.dir_geojson else None
+        
+        frames.append(CameraFrameResponse(
+            id=r.id,
+            camera_header_id=r.camera_header_id,
+            timestamp=r.timestamp,
+            position=pos_coords,
+            direction=dir_coords,
+            relative_time=r.relative_time,
+            filename=r.filename
+        ))
+        
+    return frames
+
+@router.get("/{identifier}/camera-routes", response_model=List[CameraFrameResponse])
+async def get_camera_routes(
+    identifier: str,
+    db: AsyncSession = Depends(get_db_session)
+):
+    import json
+    from geoalchemy2.functions import ST_AsGeoJSON
+
+    try:
+        pc_uuid = uuid.UUID(identifier)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    headers_query = select(CameraHeader.id).where(CameraHeader.pointcloud_id == pc_uuid)
+    headers_res = await db.execute(headers_query)
+    header_ids = headers_res.scalars().all()
+
+    if not header_ids:
+        return []
+
+    query = select(
+        CameraFrame.id,
+        CameraFrame.camera_header_id,
+        CameraFrame.timestamp,
+        ST_AsGeoJSON(CameraFrame.position).label("pos_geojson"),
+        ST_AsGeoJSON(CameraFrame.direction).label("dir_geojson"),
+        CameraFrame.relative_time,
+        CameraFrame.filename
+    ).where(CameraFrame.camera_header_id.in_(header_ids)).order_by(CameraFrame.timestamp.asc())
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    frames = []
+    for r in rows:
+        pos_coords = json.loads(r.pos_geojson)["coordinates"] if r.pos_geojson else None
+        dir_coords = json.loads(r.dir_geojson)["coordinates"] if r.dir_geojson else None
+
+        frames.append(CameraFrameResponse(
+            id=r.id,
+            camera_header_id=r.camera_header_id,
+            timestamp=r.timestamp,
+            position=pos_coords,
+            direction=dir_coords,
+            relative_time=r.relative_time,
+            filename=r.filename
+        ))
+
+    return frames
 
 @router.patch("/{id}/transform")
 async def update_transform(

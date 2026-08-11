@@ -59,3 +59,41 @@ def extract_camera_route_csv(data: Dict[str, Any], csv_file_path: str) -> int:
             valid_count += 1
 
     return valid_count
+
+def parse_shots_geojson(geojson_path: str) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Reads a shots.geojson file and returns (header_info, frames_list)."""
+    if not os.path.exists(geojson_path):
+        return {}, []
+    with open(geojson_path, "r") as f:
+        data = json.load(f)
+    
+    features = data.get("features", [])
+    if not features:
+        return {}, []
+
+    first_props = features[0].get("properties", {})
+    header_info = {
+        "focal": first_props.get("focal", 0.48455320009205993),
+        "width": first_props.get("width", 3840),
+        "height": first_props.get("height", 2160),
+        "camera": first_props.get("camera", "v2 unknown unknown 3840 2160 brown 0.85"),
+    }
+
+    frames = []
+    for feat in features:
+        props = feat.get("properties", {})
+        geometry = feat.get("geometry", {})
+        coords = geometry.get("coordinates", [0.0, 0.0, 0.0])
+        rotation = props.get("rotation", [0.0, 0.0, 0.0])
+        capture_time = props.get("capture_time", 0.0)
+        timestamp_val = int(capture_time * 1000) if capture_time > 1e8 else int(capture_time)
+        
+        frames.append({
+            "filename": props.get("filename"),
+            "timestamp": timestamp_val,
+            "position": coords,
+            "direction": rotation,
+            "relative_time": props.get("relative_time", 0.0)
+        })
+
+    return header_info, frames

@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres_secure_password@localhost:5432/seaseer"
     redis_url: str = "redis://localhost:6379/0"
     
+    # Spatial reference system for camera positions and directions (default EPSG:3857 or EPSG:3765)
+    camera_srid: int = 3857
+    backend_srid: int = 3857
+    
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

@@ -92,8 +92,8 @@ class PostGISRaster:
             if pointcloud_id:
                 await session.execute(
                     text("""
-                        INSERT INTO pointclouds (id, orig_filename, number_of_points, pcid, created_at)
-                        VALUES (:id, :filename, 0, 1, NOW())
+                        INSERT INTO pointclouds (id, orig_filename, number_of_points, pcid, created_at, transform_matrix)
+                        VALUES (:id, :filename, 0, 1, NOW(), '{1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0}')
                         ON CONFLICT (id) DO NOTHING
                     """),
                     {"id": pointcloud_id, "filename": file_name}
