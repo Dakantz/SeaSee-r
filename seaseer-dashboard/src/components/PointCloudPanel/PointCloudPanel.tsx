@@ -1,5 +1,5 @@
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Grid} from "@react-three/drei";
+import { Grid } from "@react-three/drei";
 
 import "./PointCloudPanel.css";
 import PLYPointCloud from "./PLYPointCloud";
@@ -12,7 +12,7 @@ type PointCloudPanelProps = {
 };
 
 const TARGET_X = 1622520.9730428709;
-const TARGET_Z = -5622707.795739262;
+const TARGET_Z = -5522707.795739262;
 
 export default function PointCloudPanel({ children }: PointCloudPanelProps)  {
     return (
@@ -30,7 +30,7 @@ export default function PointCloudPanel({ children }: PointCloudPanelProps)  {
                 <ambientLight intensity={2} />
 
                 {/* Target Location Beacon Marker */}
-                <mesh position={[TARGET_X, 50, TARGET_Z]}>
+                <mesh position={[TARGET_X, 0, TARGET_Z]}>
                     <sphereGeometry args={[100, 32, 32]} />
                     <meshStandardMaterial color="#ff2233" emissive="#ff1122" emissiveIntensity={0.8} />
                 </mesh>
@@ -49,8 +49,6 @@ export default function PointCloudPanel({ children }: PointCloudPanelProps)  {
                 <PLYPointCloud />
 
                 {children}
-
-                <OrbitControls target={[TARGET_X, 0, TARGET_Z]} />
 
             </Canvas>
         </div>
