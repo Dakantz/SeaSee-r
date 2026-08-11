@@ -43,6 +43,64 @@ if (MapHeightNode.prototype.loadHeightGeometry) {
 const TARGET_X = 1622520.9730428709;
 const TARGET_Z = -5622707.795739262;
 
+function SceneLighting() {
+    const {
+        keyLightIntensity,
+        fillLightIntensity,
+        hemisphereLightIntensity,
+        ambientLightIntensity,
+    } = usePLYPointCloudContext();
+
+    const keyLightRef = useRef<THREE.DirectionalLight>(null);
+    const fillLightRef = useRef<THREE.DirectionalLight>(null);
+    const targetRef = useRef<THREE.Object3D>(null);
+
+    useEffect(() => {
+        if (targetRef.current) {
+            if (keyLightRef.current) {
+                keyLightRef.current.target = targetRef.current;
+            }
+            if (fillLightRef.current) {
+                fillLightRef.current.target = targetRef.current;
+            }
+        }
+    }, []);
+
+    return (
+        <group>
+            {/* Base ambient illumination */}
+            <ambientLight intensity={ambientLightIntensity} />
+
+            {/* Target object for directional lights */}
+            <object3D ref={targetRef} position={[TARGET_X, 0, TARGET_Z]} />
+
+            {/* Hemisphere light to create natural sky/ground vertical gradient */}
+            <hemisphereLight
+                color="#ffffff"
+                groundColor="#334455"
+                intensity={hemisphereLightIntensity}
+                position={[TARGET_X, 10000, TARGET_Z]}
+            />
+
+            {/* Main directional key light angled from North-West to produce cartographic hillshading */}
+            <directionalLight
+                ref={keyLightRef}
+                position={[TARGET_X - 5000, 8000, TARGET_Z - 5000]}
+                intensity={keyLightIntensity}
+                color="#ffffff"
+            />
+
+            {/* Secondary fill light angled from South-East to soften deep shadows */}
+            <directionalLight
+                ref={fillLightRef}
+                position={[TARGET_X + 5000, 4000, TARGET_Z + 5000]}
+                intensity={fillLightIntensity}
+                color="#cce0ff"
+            />
+        </group>
+    );
+}
+
 function CameraPositionControls() {
     const { camera, gl } = useThree();
     const isDragging = useRef(false);
@@ -323,6 +381,7 @@ export default function PLYPointCloud() {
     return (
         <group>
             <CameraPositionControls />
+            <SceneLighting />
             <GeoThreeHeightmap />
             {geometry && (
                 <group position={[TARGET_X, 0, TARGET_Z]}>

@@ -27,8 +27,6 @@ export default function PointCloudPanel({ children }: PointCloudPanelProps)  {
                 }}
             >
 
-                <ambientLight intensity={2} />
-
                 {/* Target Location Beacon Marker */}
                 <mesh position={[TARGET_X, 0, TARGET_Z]}>
                     <sphereGeometry args={[100, 32, 32]} />

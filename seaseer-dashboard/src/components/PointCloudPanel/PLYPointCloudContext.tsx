@@ -35,6 +35,14 @@ export interface PLYPointCloudContextType {
     error: string | null;
     pointCount: number | null;
     selectedFileName: string | null;
+    keyLightIntensity: number;
+    setKeyLightIntensity: (val: number) => void;
+    fillLightIntensity: number;
+    setFillLightIntensity: (val: number) => void;
+    hemisphereLightIntensity: number;
+    setHemisphereLightIntensity: (val: number) => void;
+    ambientLightIntensity: number;
+    setAmbientLightIntensity: (val: number) => void;
     loadBinaryPointCloud: (idToLoad: string, lodToLoad?: number) => Promise<void>;
     loadPlyUrl: (urlToLoad: string) => void;
     loadPlyFile: (file: File) => Promise<void>;
@@ -61,7 +69,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [showHeightmap, setShowHeightmap] = useState<boolean>(false);
     const [heightmapMode, setHeightmapMode] = useState<"HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR">("HEIGHT");
     const [heightmapMapProvider, setHeightmapMapProvider] = useState<MapProviderChoice>("OpenStreetMaps");
-    const [heightmapHeightProvider, setHeightmapHeightProvider] = useState<HeightProviderChoice>("Bathymetry");
+    const [heightmapHeightProvider, setHeightmapHeightProvider] = useState<HeightProviderChoice>("Emodnet");
     const [identifier, setIdentifier] = useState<string>(DEFAULT_HARDCODED_IDENTIFIER);
     const [plyUrl, setPlyUrl] = useState<string>(DEFAULT_PLY_URL);
     const [lod, setLod] = useState<number>(0);
@@ -70,6 +78,10 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [error, setError] = useState<string | null>(null);
     const [pointCount, setPointCount] = useState<number | null>(null);
     const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+    const [keyLightIntensity, setKeyLightIntensity] = useState<number>(1.5);
+    const [fillLightIntensity, setFillLightIntensity] = useState<number>(0.5);
+    const [hemisphereLightIntensity, setHemisphereLightIntensity] = useState<number>(0.6);
+    const [ambientLightIntensity, setAmbientLightIntensity] = useState<number>(0.4);
 
     const loadPlyUrl = useCallback((urlToLoad: string) => {
         if (!urlToLoad.trim()) return;
@@ -234,6 +246,14 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 error,
                 pointCount,
                 selectedFileName,
+                keyLightIntensity,
+                setKeyLightIntensity,
+                fillLightIntensity,
+                setFillLightIntensity,
+                hemisphereLightIntensity,
+                setHemisphereLightIntensity,
+                ambientLightIntensity,
+                setAmbientLightIntensity,
                 loadBinaryPointCloud,
                 loadPlyUrl,
                 loadPlyFile,

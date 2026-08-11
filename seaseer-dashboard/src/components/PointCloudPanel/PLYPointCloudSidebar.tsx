@@ -31,6 +31,14 @@ export interface PLYPointCloudSidebarProps {
     error?: string | null;
     pointCount?: number | null;
     selectedFileName?: string | null;
+    keyLightIntensity?: number;
+    setKeyLightIntensity?: (val: number) => void;
+    fillLightIntensity?: number;
+    setFillLightIntensity?: (val: number) => void;
+    hemisphereLightIntensity?: number;
+    setHemisphereLightIntensity?: (val: number) => void;
+    ambientLightIntensity?: number;
+    setAmbientLightIntensity?: (val: number) => void;
     onLoadBinary?: (id: string, lod: number) => void;
     onLoadPlyUrl?: (url: string) => void;
     onLoadPlyFile?: (file: File) => void;
@@ -72,6 +80,14 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const error = props.error ?? contextState?.error ?? null;
     const pointCount = props.pointCount ?? contextState?.pointCount ?? null;
     const selectedFileName = props.selectedFileName ?? contextState?.selectedFileName ?? null;
+    const keyLightIntensity = props.keyLightIntensity ?? contextState?.keyLightIntensity ?? 1.5;
+    const setKeyLightIntensity = props.setKeyLightIntensity ?? contextState?.setKeyLightIntensity ?? (() => {});
+    const fillLightIntensity = props.fillLightIntensity ?? contextState?.fillLightIntensity ?? 0.5;
+    const setFillLightIntensity = props.setFillLightIntensity ?? contextState?.setFillLightIntensity ?? (() => {});
+    const hemisphereLightIntensity = props.hemisphereLightIntensity ?? contextState?.hemisphereLightIntensity ?? 0.6;
+    const setHemisphereLightIntensity = props.setHemisphereLightIntensity ?? contextState?.setHemisphereLightIntensity ?? (() => {});
+    const ambientLightIntensity = props.ambientLightIntensity ?? contextState?.ambientLightIntensity ?? 0.4;
+    const setAmbientLightIntensity = props.setAmbientLightIntensity ?? contextState?.setAmbientLightIntensity ?? (() => {});
     const onLoadBinary = props.onLoadBinary ?? contextState?.loadBinaryPointCloud ?? (() => {});
     const onLoadPlyUrl = props.onLoadPlyUrl ?? contextState?.loadPlyUrl ?? (() => {});
     const onLoadPlyFile = props.onLoadPlyFile ?? contextState?.loadPlyFile ?? (() => {});
@@ -570,9 +586,86 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                     <option value="PLANAR" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Planar (2D Map)</option>
                                 </select>
                             </div>
+
+                            {/* Lighting Intensity Controls */}
+                            <div style={{ marginTop: "var(--spacing-xs)", paddingTop: "var(--spacing-xs)", borderTop: "1px dashed var(--color-border-subtle)", display: "flex", flexDirection: "column", gap: "var(--spacing-xs)" }}>
+                                <div style={{ fontWeight: "var(--font-weight-semibold)", fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                    Lighting Intensity Controls
+                                </div>
+
+                                {/* Key Sun Light (NW) */}
+                                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                                        <span>Key Sun Light (NW):</span>
+                                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--font-size-2xs)" }}>{keyLightIntensity.toFixed(1)}</span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="4.0"
+                                        step="0.1"
+                                        value={keyLightIntensity}
+                                        onChange={(e) => setKeyLightIntensity(parseFloat(e.target.value))}
+                                        style={{ width: "100%", cursor: "pointer" }}
+                                    />
+                                </div>
+
+                                {/* Fill Light (SE) */}
+                                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                                        <span>Fill Light (SE):</span>
+                                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--font-size-2xs)" }}>{fillLightIntensity.toFixed(1)}</span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="3.0"
+                                        step="0.1"
+                                        value={fillLightIntensity}
+                                        onChange={(e) => setFillLightIntensity(parseFloat(e.target.value))}
+                                        style={{ width: "100%", cursor: "pointer" }}
+                                    />
+                                </div>
+
+                                {/* Hemisphere Sky/Ground Light */}
+                                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                                        <span>Hemisphere Light:</span>
+                                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--font-size-2xs)" }}>{hemisphereLightIntensity.toFixed(1)}</span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="3.0"
+                                        step="0.1"
+                                        value={hemisphereLightIntensity}
+                                        onChange={(e) => setHemisphereLightIntensity(parseFloat(e.target.value))}
+                                        style={{ width: "100%", cursor: "pointer" }}
+                                    />
+                                </div>
+
+                                {/* Ambient Base Light */}
+                                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                                        <span>Ambient Light:</span>
+                                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--font-size-2xs)" }}>{ambientLightIntensity.toFixed(1)}</span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="3.0"
+                                        step="0.1"
+                                        value={ambientLightIntensity}
+                                        onChange={(e) => setAmbientLightIntensity(parseFloat(e.target.value))}
+                                        style={{ width: "100%", cursor: "pointer" }}
+                                    />
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>
+
+
             </div>
 
             {/* Status / Errors / Stats */}
