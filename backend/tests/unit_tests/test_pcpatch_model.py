@@ -24,3 +24,15 @@ def test_pcpatch_comparator_expressions():
 
     stmt_summary = select(PointCloudPatch.patch.summary())
     assert "PC_Summary" in str(stmt_summary)
+
+
+def test_pointcloud_metadata_model_and_center_wkt():
+    from app.models.pointcloud import PointCloudMetadata
+    from app.services.pointcloud.db_utils import _compute_center_wkt
+
+    assert PointCloudMetadata.__tablename__ == "pointcloud_metadata"
+
+    wkt = _compute_center_wkt(0.0, 10.0, 0.0, 20.0, 0.0, 30.0)
+    assert wkt is not None
+    assert "POINT Z (5.0 10.0 15.0)" in str(wkt)
+

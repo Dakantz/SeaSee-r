@@ -36,7 +36,7 @@ class EMODnetGeoTIFFTaskHandler(BaseTaskHandler):
         1. Converts GeoTIFF to EPSG:3857 EPT format using PDAL Docker pipeline.
         2. Extracts bounding box & point count via PDAL stats.
         3. Ingests points into pgPointcloud table.
-        4. Writes or updates metadata record in pointclouds table.
+        4. Writes or updates metadata record in pointcloud_metadata table.
         """
         if job_id:
             await self.update_job_status(job_id, "RUNNING", 10.0)

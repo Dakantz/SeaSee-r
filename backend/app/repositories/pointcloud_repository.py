@@ -3,7 +3,7 @@ import uuid
 from typing import List, Optional, AsyncGenerator, Tuple, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select
-from app.models.pointcloud import PointCloud
+from app.models.pointcloud import PointCloudMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ class PointCloudRepository:
         """
         try:
             result = await self.db.execute(
-                text("SELECT id, orig_filename FROM pointclouds WHERE id = :id"),
+                text("SELECT id, orig_filename FROM pointcloud_metadata WHERE id = :id"),
                 {"id": pointcloud_id}
             )
             row = result.first()
@@ -28,12 +28,12 @@ class PointCloudRepository:
             logger.error(f"Error querying pointcloud metadata for {pointcloud_id}: {e}", exc_info=True)
             raise e
 
-    async def list_all(self) -> List[PointCloud]:
+    async def list_all(self) -> List[PointCloudMetadata]:
         """
         Retrieves all point cloud metadata records.
         """
         try:
-            stmt = select(PointCloud)
+            stmt = select(PointCloudMetadata)
             result = await self.db.execute(stmt)
             return list(result.scalars().all())
         except Exception as e:
@@ -46,7 +46,7 @@ class PointCloudRepository:
         """
         try:
             result = await self.db.execute(
-                text("DELETE FROM pointclouds WHERE id = :id RETURNING id"),
+                text("DELETE FROM pointcloud_metadata WHERE id = :id RETURNING id"),
                 {"id": pointcloud_id}
             )
             deleted = result.first()

@@ -132,7 +132,7 @@ async def get_connected_pointcloud_bbox(db: AsyncSession) -> Optional[Tuple[floa
                 MIN(pc.min_y),
                 MAX(pc.max_x),
                 MAX(pc.max_y)
-            FROM pointclouds pc
+            FROM pointcloud_metadata pc
             JOIN bathymetry_raster br ON br.pointcloud_id = pc.id
             WHERE pc.min_x IS NOT NULL AND pc.min_y IS NOT NULL AND pc.max_x IS NOT NULL AND pc.max_y IS NOT NULL;
         """))
@@ -140,14 +140,14 @@ async def get_connected_pointcloud_bbox(db: AsyncSession) -> Optional[Tuple[floa
         if row and None not in row and row[0] is not None:
             return float(row[0]), float(row[1]), float(row[2]), float(row[3])
 
-        # Fall back to any pointcloud in pointclouds table if no joined pointcloud_id records
+        # Fall back to any pointcloud in pointcloud_metadata table if no joined pointcloud_id records
         res = await db.execute(text("""
             SELECT 
                 MIN(min_x),
                 MIN(min_y),
                 MAX(max_x),
                 MAX(max_y)
-            FROM pointclouds
+            FROM pointcloud_metadata
             WHERE min_x IS NOT NULL AND min_y IS NOT NULL AND max_x IS NOT NULL AND max_y IS NOT NULL;
         """))
         row = res.first()

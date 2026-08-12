@@ -16,7 +16,7 @@ from app.api.dependencies.pointcloud import get_pointcloud_service
 from app.core.config import settings
 from app.core.database import get_db_session
 from app.models.job import Job
-from app.models.pointcloud import PointCloud
+from app.models.pointcloud import PointCloudMetadata
 from app.models.camera import CameraHeader, CameraFrame
 
 class TransformUpdate(BaseModel):
@@ -218,7 +218,7 @@ async def update_transform(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid UUID format")
         
-    query = select(PointCloud).where(PointCloud.id == pc_uuid)
+    query = select(PointCloudMetadata).where(PointCloudMetadata.id == pc_uuid)
     result = await db.execute(query)
     pointcloud = result.scalar_one_or_none()
     
@@ -305,7 +305,7 @@ async def ingest_opensfm_append(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid UUID format for existing point cloud.")
 
-    query = select(PointCloud).where(PointCloud.id == pc_uuid)
+    query = select(PointCloudMetadata).where(PointCloudMetadata.id == pc_uuid)
     result = await db.execute(query)
     existing_pc = result.scalar_one_or_none()
 
@@ -508,7 +508,7 @@ async def ingest_emodnet_append(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid UUID format for existing point cloud.")
 
-    query = select(PointCloud).where(PointCloud.id == pc_uuid)
+    query = select(PointCloudMetadata).where(PointCloudMetadata.id == pc_uuid)
     result = await db.execute(query)
     existing_pc = result.scalar_one_or_none()
 

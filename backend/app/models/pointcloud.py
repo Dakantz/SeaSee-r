@@ -4,7 +4,9 @@ from sqlalchemy import Column, String, Integer, Float, DateTime, ForeignKey, Ind
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.types import NullType, UserDefinedType
 
+from geoalchemy2 import Geometry
 from app.core.database import Base
+from app.core.config import settings
 
 
 class PCPatch(UserDefinedType):
@@ -50,8 +52,8 @@ class PCPatch(UserDefinedType):
             return func.PC_Summary(self.expr)
 
 
-class PointCloud(Base):
-    __tablename__ = "pointclouds"
+class PointCloudMetadata(Base):
+    __tablename__ = "pointcloud_metadata"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     job_id = Column(UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True)
@@ -67,6 +69,9 @@ class PointCloud(Base):
     max_y = Column(Float, nullable=True)
     max_z = Column(Float, nullable=True)
 
+    # Center point geometry
+    center = Column(Geometry(geometry_type="POINTZ", srid=settings.backend_srid), nullable=True)
+
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     pcid = Column(Integer, nullable=False)  # pgPointcloud format format schema ID
     
@@ -76,7 +81,7 @@ class PointCloudPatch(Base):
     __tablename__ = "pointcloud_patches"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    pointcloud_id = Column(UUID(as_uuid=True), ForeignKey("pointclouds.id", ondelete="CASCADE"), nullable=False)
+    pointcloud_id = Column(UUID(as_uuid=True), ForeignKey("pointcloud_metadata.id", ondelete="CASCADE"), nullable=False)
     lod = Column(Integer, nullable=False, default=0)
     patch = Column(PCPatch())
 
@@ -85,14 +90,13 @@ class PointCloudPatch(Base):
     )
 
 
-
-
 class BathymetryRaster(Base):
     __tablename__ = "bathymetry_raster"
 
     rid = Column(Integer, primary_key=True, autoincrement=True)
     rast = Column(NullType)
     filename = Column(String(255), nullable=True)
-    pointcloud_id = Column(UUID(as_uuid=True), ForeignKey("pointclouds.id", ondelete="CASCADE"), nullable=True)
+    pointcloud_id = Column(UUID(as_uuid=True), ForeignKey("pointcloud_metadata.id", ondelete="CASCADE"), nullable=True)
+
 
 

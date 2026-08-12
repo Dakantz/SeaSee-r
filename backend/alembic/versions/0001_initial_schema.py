@@ -42,30 +42,37 @@ def upgrade() -> None:
         sa.Column('error_message', sa.Text(), nullable=True),
     )
 
-    # 2. PointClouds Table
-    op.create_table(
-        'pointclouds',
-        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column('job_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('jobs.id', ondelete='SET NULL'), nullable=True),
-        sa.Column('orig_filename', sa.String(length=255), nullable=False),
-        sa.Column('safe_filename', sa.String(length=255), nullable=True),
-        sa.Column('number_of_points', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('min_x', sa.Float(), nullable=True),
-        sa.Column('min_y', sa.Float(), nullable=True),
-        sa.Column('min_z', sa.Float(), nullable=True),
-        sa.Column('max_x', sa.Float(), nullable=True),
-        sa.Column('max_y', sa.Float(), nullable=True),
-        sa.Column('max_z', sa.Float(), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
-        sa.Column('pcid', sa.Integer(), nullable=False),
-        sa.Column('transform_matrix', postgresql.ARRAY(sa.Float()), nullable=False),
-    )
+    # 2. PointCloud Metadata Table
+    srid = settings.backend_srid
+    op.execute(f"""
+        CREATE TABLE IF NOT EXISTS pointcloud_metadata (
+            id UUID PRIMARY KEY,
+            job_id UUID REFERENCES jobs(id) ON DELETE SET NULL,
+            orig_filename VARCHAR(255) NOT NULL,
+            safe_filename VARCHAR(255),
+            number_of_points INTEGER NOT NULL DEFAULT 0,
+            min_x DOUBLE PRECISION,
+            min_y DOUBLE PRECISION,
+            min_z DOUBLE PRECISION,
+            max_x DOUBLE PRECISION,
+            max_y DOUBLE PRECISION,
+            max_z DOUBLE PRECISION,
+            center geometry(PointZ, {srid}),
+            created_at TIMESTAMPTZ NOT NULL,
+            pcid INTEGER NOT NULL,
+            transform_matrix DOUBLE PRECISION[] NOT NULL
+        );
+    """)
+    op.execute("""
+        CREATE INDEX IF NOT EXISTS idx_pointcloud_metadata_center
+        ON pointcloud_metadata USING GIST (center);
+    """)
 
     # 3. PointCloud Patches Table
     op.execute("""
         CREATE TABLE IF NOT EXISTS pointcloud_patches (
             id BIGSERIAL PRIMARY KEY,
-            pointcloud_id UUID NOT NULL REFERENCES pointclouds(id) ON DELETE CASCADE,
+            pointcloud_id UUID NOT NULL REFERENCES pointcloud_metadata(id) ON DELETE CASCADE,
             lod INTEGER NOT NULL DEFAULT 0,
             patch PCPATCH
         );
@@ -79,7 +86,7 @@ def upgrade() -> None:
     op.create_table(
         'camera_headers',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column('pointcloud_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('pointclouds.id', ondelete='CASCADE'), nullable=False),
+        sa.Column('pointcloud_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('pointcloud_metadata.id', ondelete='CASCADE'), nullable=False),
         sa.Column('focal', sa.Float(), nullable=True),
         sa.Column('width', sa.Integer(), nullable=True),
         sa.Column('height', sa.Integer(), nullable=True),
@@ -88,7 +95,6 @@ def upgrade() -> None:
     )
 
     # 4b. Camera Frames Table
-    srid = settings.backend_srid
     op.execute(f"""
         CREATE TABLE IF NOT EXISTS camera_frames (
             id UUID PRIMARY KEY,
@@ -119,7 +125,7 @@ def upgrade() -> None:
             rid SERIAL PRIMARY KEY,
             rast RASTER,
             filename VARCHAR(255),
-            pointcloud_id UUID REFERENCES pointclouds(id) ON DELETE CASCADE
+            pointcloud_id UUID REFERENCES pointcloud_metadata(id) ON DELETE CASCADE
         );
     """)
 
@@ -176,7 +182,8 @@ def downgrade() -> None:
     op.drop_table('camera_headers')
     op.execute("DROP INDEX IF EXISTS idx_pointcloud_patches_pc_lod;")
     op.execute("DROP TABLE IF EXISTS pointcloud_patches CASCADE;")
-    op.drop_table('pointclouds')
+    op.execute("DROP INDEX IF EXISTS idx_pointcloud_metadata_center;")
+    op.execute("DROP TABLE IF EXISTS pointcloud_metadata CASCADE;")
     op.drop_table('jobs')
     op.execute("DROP TYPE IF EXISTS jobstatus")
     op.execute("DROP TYPE IF EXISTS videostatus")

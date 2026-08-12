@@ -46,7 +46,7 @@ async def clean_database_records(file_id: str, job_id: str):
         except Exception:
             pass
         # Delete pointcloud metadata
-        await session.execute(text("DELETE FROM pointclouds WHERE id = :id"), {"id": file_id})
+        await session.execute(text("DELETE FROM pointcloud_metadata WHERE id = :id"), {"id": file_id})
         # Delete job record
         if job_id and job_id.lower() != "none":
             await session.execute(text("DELETE FROM jobs WHERE id = :job_id"), {"job_id": job_id})
@@ -71,9 +71,9 @@ async def test_pointcloud_database_flow(async_client):
             f.write(PLY_CONTENT)
             
         # 1. Create PointCloud metadata record in DB
-        from app.models import PointCloud
+        from app.models import PointCloudMetadata
         async with async_session() as session:
-            pc = PointCloud(
+            pc = PointCloudMetadata(
                 id=uuid.UUID(file_id),
                 orig_filename="test_db.ply",
                 safe_filename=f"{file_id}.ply",
