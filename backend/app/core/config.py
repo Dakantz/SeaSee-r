@@ -1,9 +1,12 @@
+import logging
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     # API version
     version: str = "1.0.0"
+    # Logging configuration
+    log_level: str = "INFO"
     # directory for local .ply files
     pointcloud_local_dir: str = "./data/pointclouds"
     # directory for raw resumable uploads before processing
@@ -31,3 +34,10 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Initialize logging configuration
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+

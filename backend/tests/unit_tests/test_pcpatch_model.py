@@ -1,0 +1,26 @@
+from sqlalchemy import select
+from app.models.pointcloud import PCPatch, PointCloudPatch
+
+
+def test_pcpatch_col_spec():
+    patch_type = PCPatch()
+    assert patch_type.get_col_spec() == "PCPATCH"
+
+    patch_type_with_pcid = PCPatch(pcid=42)
+    assert patch_type_with_pcid.get_col_spec() == "PCPATCH(42)"
+
+
+def test_pointcloud_patch_model_column_type():
+    col_type = PointCloudPatch.patch.property.columns[0].type
+    assert isinstance(col_type, PCPatch)
+
+
+def test_pcpatch_comparator_expressions():
+    stmt_num_points = select(PointCloudPatch.patch.num_points())
+    assert "PC_NumPoints" in str(stmt_num_points)
+
+    stmt_envelope = select(PointCloudPatch.patch.envelope())
+    assert "PC_Envelope" in str(stmt_envelope)
+
+    stmt_summary = select(PointCloudPatch.patch.summary())
+    assert "PC_Summary" in str(stmt_summary)
