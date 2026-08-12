@@ -260,8 +260,8 @@ async def ingest_opensfm_init(
                 
                 job_record = Job(
                     name=f"Ingest OpenSfM {f_name}",
+                    task_type="opensfm_ingest",
                     payload={
-                        "task_type": "opensfm_ingest",
                         "filename": f_name, # orig_filename will be the folder name
                         "safe_filename": f"{file_uuid_str}.ply",
                         "total_bytes": os.path.getsize(fused_ply_path),
@@ -365,8 +365,8 @@ async def ingest_opensfm_append(
 
                 job_record = Job(
                     name=f"Append OpenSfM {f_name} to {existing_id}",
+                    task_type="opensfm_append",
                     payload={
-                        "task_type": "opensfm_append",
                         "filename": f_name,
                         "folder_path": folder_path,
                         "existing_id": str(existing_pc.id),
@@ -457,8 +457,8 @@ async def ingest_emodnet_init(
 
             job_record = Job(
                 name=f"Ingest EMODnet {f_name}",
+                task_type="emodnet_ingest",
                 payload={
-                    "task_type": "emodnet_ingest",
                     "filename": f_name,
                     "file_id": file_uuid_str,
                     "geotiff_path": geotiff_path,
@@ -579,8 +579,8 @@ async def ingest_emodnet_append(
 
             job_record = Job(
                 name=f"Append EMODnet {f_name} to {existing_id}",
+                task_type="emodnet_append",
                 payload={
-                    "task_type": "emodnet_append",
                     "filename": f_name,
                     "geotiff_path": geotiff_path,
                     "folder_path": item_path if os.path.isdir(item_path) else os.path.dirname(item_path),

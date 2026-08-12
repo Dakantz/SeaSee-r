@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class VideoTaskHandler(BaseTaskHandler):
     task_types = ["video_upload", "video_reconstruction"]
 
-    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "") -> Dict[str, Any]:
+    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:
         file_id_str = payload.get("file_id") or payload.get("video_id")
         batch_id_str = payload.get("batch_id")
         file_path_override = payload.get("file_path") or payload.get("log_file_path")

@@ -61,8 +61,8 @@ export const PointCloudUploader: React.FC<PointCloudUploaderProps> = ({
           const jobRes = await createJob({
             body: {
               name: `PointCloud Ingestion: ${file.name}`,
+              task_type: 'pointcloud_upload',
               payload: {
-                task_type: 'pointcloud_upload',
                 filename: file.name,
                 safe_filename: safeFilename,
                 total_bytes: file.size,

@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class DefaultTaskHandler(BaseTaskHandler):
     task_types = []
 
-    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "") -> Dict[str, Any]:
+    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:
         await self.update_job_status(job_id, "RUNNING", 10.0)
         await asyncio.sleep(1)
         await self.update_job_status(job_id, "RUNNING", 50.0)

@@ -33,11 +33,11 @@ class TaskRegistry:
         """
         return self._handlers.get(task_type, self._default_handler)
 
-    async def dispatch(self, job_id_str: str, payload: Dict[str, Any], name: str = "") -> Dict[str, Any]:
+    async def dispatch(self, job_id_str: str, task_type: str = "", payload: Dict[str, Any] = None, name: str = "") -> Dict[str, Any]:
         """
-        Dispatches job execution to registered TaskHandler based on payload task_type.
+        Dispatches job execution to registered TaskHandler based on task_type.
         """
-        task_type = payload.get("task_type") or payload.get("type") or ""
+        payload = payload or {}
         handler = self.get_handler(task_type)
 
         if not handler:
@@ -46,7 +46,7 @@ class TaskRegistry:
             return {"status": "error", "message": error_msg}
 
         logger.info(f"Dispatching job {job_id_str} (type: '{task_type}') to handler '{handler.__class__.__name__}'")
-        return await handler.execute(job_id_str, payload, name=name)
+        return await handler.execute(job_id_str, payload, name=name, task_type=task_type)
 
 
 def _init_default_registry() -> TaskRegistry:

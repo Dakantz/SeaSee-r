@@ -25,6 +25,7 @@ async def test_video_task_handler_processes_associated_log_file(tmp_path):
         job = Job(
             id=job_id,
             name="test_video_job",
+            task_type="video_reconstruction",
             status=JobStatus.PENDING,
             progress=0.0,
             created_at=datetime.now(timezone.utc),

@@ -129,9 +129,9 @@ class OpenSfMTaskHandler(BaseTaskHandler):
             await self.update_job_status(job_id, "COMPLETED", 100.0)
         return {"status": "success", "file_id": file_id}
 
-    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "") -> Dict[str, Any]:
+    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:
         folder_path = payload.get("folder_path")
-        is_append = payload.get("is_append", False) or (payload.get("task_type") == "opensfm_append")
+        is_append = payload.get("is_append", False) or (task_type == "opensfm_append")
         file_id = (payload.get("existing_id") or payload.get("file_id")) if is_append else (payload.get("file_id") or job_id)
         fused_ply_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.ply") if folder_path else payload.get("file_path")
 

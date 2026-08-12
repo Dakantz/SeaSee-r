@@ -63,8 +63,8 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
           const jobRes = await createJob({
             body: {
               name: `Video Reconstruction (PySLAM): ${file.name}`,
+              task_type: 'video_reconstruction',
               payload: {
-                task_type: 'video_reconstruction',
                 filename: file.name,
                 safe_filename: safeFilename,
                 total_bytes: file.size,

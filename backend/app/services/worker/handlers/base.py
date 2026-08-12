@@ -38,9 +38,9 @@ class BaseTaskHandler(ABC):
             await session.commit()
 
     @abstractmethod
-    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "") -> Dict[str, Any]:
+    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:
         """
-        Executes the background task logic for a given job ID and payload.
+        Executes the background task logic for a given job ID, payload, and task_type.
         """
         pass
 

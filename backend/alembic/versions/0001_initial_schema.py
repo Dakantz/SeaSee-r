@@ -31,6 +31,7 @@ def upgrade() -> None:
         'jobs',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column('name', sa.String(length=255), nullable=False),
+        sa.Column('task_type', sa.String(length=100), nullable=True),
         sa.Column('status', sa.Enum('PENDING', 'RUNNING', 'COMPLETED', 'FAILED', name='jobstatus'), nullable=False),
         sa.Column('progress', sa.Float(), nullable=False, server_default='0.0'),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),

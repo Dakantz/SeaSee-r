@@ -376,8 +376,8 @@ async def upload_emodnet_csv(
     # Create job record in database
     job_record = Job(
         name=f"Process EMODnet CSV {file.filename}",
+        task_type="emodnet_csv_ingest",
         payload={
-            "task_type": "emodnet_csv_ingest",
             "filename": file.filename,
             "safe_filename": safe_filename,
             "file_id": file_uuid_str,

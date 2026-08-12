@@ -145,7 +145,7 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
                 await self.update_job_status(job_id, "FAILED", 0.0, error_msg)
             raise e
 
-    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "") -> Dict[str, Any]:
+    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:
         file_id = payload.get("file_id")
         safe_filename = payload.get("safe_filename")
         file_path = payload.get("file_path")
