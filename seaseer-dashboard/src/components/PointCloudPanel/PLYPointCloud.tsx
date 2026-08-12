@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import { generateDelaunayTerrainMesh } from "./utils/delaunayTriangulation";
+import { TrajectoryRenderer } from "../RovRenderer/trajectoryRenderer";
 // @ts-expect-error - geo-three submodule
 import { MapView, DebugProvider, HeightDebugProvider, OpenStreetMapsProvider, OpenMapTilesProvider, MapTilerProvider, BingMapsProvider, BathymetryProvider, EmodnetProvider, UnitsUtils, MapNodeGeometry, MapHeightNodeShader, MapHeightNode, MapNodeHeightGeometry, MapPlaneNode, CanvasUtils } from "../../../public/geo-three/build/geo-three.module.js";
 
@@ -388,18 +389,23 @@ function PointCloudCenterMarkers() {
 
     const meshRef = useRef<THREE.InstancedMesh>(null);
     const dummy = useMemo(() => new THREE.Object3D(), []);
+    const centerVec = useMemo(() => new THREE.Vector3(), []);
 
-    useEffect(() => {
+    useFrame(({ camera }) => {
         if (!meshRef.current || catalog.length === 0) return;
 
         catalog.forEach((item, index) => {
             const [cx, cy, cz] = getItemCenter(item);
-            dummy.position.set(cx, cy, cz);
+            centerVec.set(cx, cy, cz);
+            const dist = camera.position.distanceTo(centerVec);
 
             const isSelected = item.id === selectedId;
             const isHovered = item.id === hoveredId;
 
-            const scale = isSelected ? 40 : isHovered ? 30 : 20;
+            const baseFactor = isSelected ? 0.025 : isHovered ? 0.02 : 0.012;
+            const scale = Math.max(0.01, dist * baseFactor);
+
+            dummy.position.set(cx, cy, cz);
             dummy.scale.set(scale, scale, scale);
             dummy.updateMatrix();
             meshRef.current!.setMatrixAt(index, dummy.matrix);
@@ -414,7 +420,7 @@ function PointCloudCenterMarkers() {
         if (meshRef.current.instanceColor) {
             meshRef.current.instanceColor.needsUpdate = true;
         }
-    }, [catalog, selectedId, hoveredId, dummy]);
+    });
 
     if (catalog.length === 0) return null;
 
@@ -480,6 +486,54 @@ function CameraFocusController() {
     return null;
 }
 
+function DBCameraTrajectoryDisplay() {
+    const {
+        showCameraTrajectories,
+        selectedId,
+        identifier,
+        loadedGeometries,
+        geometry,
+    } = usePLYPointCloudContext();
+
+    const activeIds = useMemo(() => {
+        const set = new Set<string>();
+        if (selectedId) set.add(selectedId);
+        if (identifier && identifier.trim().length > 0) set.add(identifier);
+        for (const id of loadedGeometries.keys()) {
+            if (id) set.add(id);
+        }
+        return Array.from(set);
+    }, [selectedId, identifier, loadedGeometries]);
+
+    if (!showCameraTrajectories || activeIds.length === 0) return null;
+
+    const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+    return (
+        <group>
+            {activeIds.map((id) => {
+                const position: [number, number, number] =
+                    geometry && (id === identifier || activeIds.length === 1)
+                        ? [TARGET_X, 0, TARGET_Z]
+                        : [0, 0, 0];
+
+                return (
+                    <TrajectoryRenderer
+                        key={id}
+                        url={`${apiBaseUrl}/pointclouds/${id}/camera-routes`}
+                        position={position}
+                        rotation={[-Math.PI / 2, 0, 0]}
+                        color={0x00ffcc}
+                        lineWidth={3}
+                        showPoints={true}
+                        pointSize={1.5}
+                    />
+                );
+            })}
+        </group>
+    );
+}
+
 export default function PLYPointCloud() {
     const {
         geometry,
@@ -516,6 +570,7 @@ export default function PLYPointCloud() {
             <SceneLighting />
             <GeoThreeHeightmap />
             <PointCloudCenterMarkers />
+            <DBCameraTrajectoryDisplay />
 
             {/* Render legacy / single active pointcloud geometry */}
             {geometry && (

@@ -3,6 +3,8 @@ export interface PositionSample {
     x: number;
     y: number;
     z: number;
+    filename?: string;
+    id?: string;
 }
 
 export interface PositionSamplePair {
@@ -49,21 +51,36 @@ export class TelemetryPositionReader {
             );
         }
 
-        const data =
-            (await response.json()) as RawPositionGeoJSON;
+        const data = await response.json();
 
-        return data.features.map((feature) => {
-            const [x, y, z] =
-                feature.properties.translation;
+        // Handle direct CameraFrameResponse[] from database API endpoint
+        if (Array.isArray(data)) {
+            return data
+                .filter((item: any) => item.position && Array.isArray(item.position) && item.position.length === 3)
+                .map((item: any) => ({
+                    relativeTime: item.relative_time ?? item.timestamp ?? 0,
+                    x: item.position[0],
+                    y: item.position[1],
+                    z: item.position[2],
+                    filename: item.filename,
+                    id: item.id,
+                }));
+        }
 
-            return {
-                relativeTime:
-                    feature.properties.relative_time,
-                x,
-                y,
-                z,
-            };
-        });
+        // Handle GeoJSON FeatureCollection format
+        if (data && Array.isArray(data.features)) {
+            return (data as RawPositionGeoJSON).features.map((feature) => {
+                const [x, y, z] = feature.properties.translation;
+                return {
+                    relativeTime: feature.properties.relative_time,
+                    x,
+                    y,
+                    z,
+                };
+            });
+        }
+
+        return [];
     }
 
     async getPositionData(): Promise<PositionSample[]> {

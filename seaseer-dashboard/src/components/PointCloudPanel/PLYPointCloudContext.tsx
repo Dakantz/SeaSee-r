@@ -47,6 +47,8 @@ export interface PLYPointCloudContextType {
     loadBinaryPointCloud: (idToLoad: string, lodToLoad?: number) => Promise<void>;
     loadPlyUrl: (urlToLoad: string) => void;
     loadPlyFile: (file: File) => Promise<void>;
+    showCameraTrajectories: boolean;
+    setShowCameraTrajectories: (show: boolean) => void;
 
     // Multi-pointcloud extension state & methods
     catalog: PointCloudMetadataResponse[];
@@ -98,6 +100,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [fillLightIntensity, setFillLightIntensity] = useState<number>(0.5);
     const [hemisphereLightIntensity, setHemisphereLightIntensity] = useState<number>(0.6);
     const [ambientLightIntensity, setAmbientLightIntensity] = useState<number>(0.4);
+    const [showCameraTrajectories, setShowCameraTrajectories] = useState<boolean>(true);
 
     // Multi-pointcloud states
     const [catalog, setCatalog] = useState<PointCloudMetadataResponse[]>([]);
@@ -362,6 +365,8 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 loadBinaryPointCloud,
                 loadPlyUrl,
                 loadPlyFile,
+                showCameraTrajectories,
+                setShowCameraTrajectories,
 
                 // Multi-pointcloud exports
                 catalog,

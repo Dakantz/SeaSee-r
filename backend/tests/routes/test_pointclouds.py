@@ -247,4 +247,36 @@ def test_endpoint_stream_binary():
         app.dependency_overrides.clear()
 
 
+def test_ingest_opensfm_init_laz_file():
+    mock_db = MagicMock()
+    mock_db.commit = AsyncMock()
+    mock_db.refresh = AsyncMock()
+
+    from app.core.database import get_db_session
+    app.dependency_overrides[get_db_session] = lambda: mock_db
+
+    folder_dir = os.path.join(settings.opensfm_ingestion_dir, "test_folder", "undistorted", "depthmaps")
+    os.makedirs(folder_dir, exist_ok=True)
+    laz_file = os.path.join(folder_dir, "fused.laz")
+    with open(laz_file, "w") as f:
+        f.write("dummy laz content")
+
+    from unittest.mock import patch
+    with patch("app.api.routes.pointclouds.Redis.from_url"), \
+         patch("app.api.routes.pointclouds.Queue"):
+        try:
+            response = client.post("/pointclouds/ingest-opensfm/init?folder_name=test_folder")
+            assert response.status_code == 200
+            data = response.json()
+            assert "jobs" in data
+            assert len(data["jobs"]) == 1
+            assert data["jobs"][0]["folder"] == "test_folder"
+        finally:
+            if os.path.exists(laz_file):
+                os.remove(laz_file)
+            shutil.rmtree(os.path.join(settings.opensfm_ingestion_dir, "test_folder"), ignore_errors=True)
+            app.dependency_overrides.clear()
+
+
+
 

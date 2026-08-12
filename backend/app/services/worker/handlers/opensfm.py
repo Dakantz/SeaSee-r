@@ -26,7 +26,7 @@ class OpenSfMTaskHandler(BaseTaskHandler):
         is_append: bool = False
     ) -> Dict[str, Any]:
         """Async implementation for OpenSfM pointcloud and camera trajectory processing."""
-        # 1. Ingest fused.ply point cloud using PointCloudUploadTaskHandler
+        # 1. Ingest fused.laz point cloud using PointCloudUploadTaskHandler
         pc_handler = PointCloudUploadTaskHandler()
         await pc_handler.ingest_pointcloud_pipeline(
             file_path=file_path,
@@ -133,10 +133,10 @@ class OpenSfMTaskHandler(BaseTaskHandler):
         folder_path = payload.get("folder_path")
         is_append = payload.get("is_append", False) or (task_type == "opensfm_append")
         file_id = (payload.get("existing_id") or payload.get("file_id")) if is_append else (payload.get("file_id") or job_id)
-        fused_ply_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.ply") if folder_path else payload.get("file_path")
+        fused_laz_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz") if folder_path else payload.get("file_path")
 
         return await self.process_opensfm(
-            file_path=fused_ply_path,
+            file_path=fused_laz_path,
             file_id=file_id,
             job_id=job_id,
             folder_path=folder_path,

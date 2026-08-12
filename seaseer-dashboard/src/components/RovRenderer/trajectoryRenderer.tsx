@@ -110,15 +110,19 @@ export function TrajectoryRenderer({
                 return;
             }
 
-            if (samples.length > 0) {
-                TrajectoryRenderer.initialPositions[url] = [
-                    samples[0].x,
-                    samples[0].y,
-                    samples[0].z,
-                ];
-                if (onInitialPositionLoaded) {
-                    onInitialPositionLoaded();
-                }
+            if (samples.length === 0) {
+                setSamples([]);
+                setGroup(null);
+                return;
+            }
+
+            TrajectoryRenderer.initialPositions[url] = [
+                samples[0].x,
+                samples[0].y,
+                samples[0].z,
+            ];
+            if (onInitialPositionLoaded) {
+                onInitialPositionLoaded();
             }
 
             setSamples(samples);

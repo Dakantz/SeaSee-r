@@ -254,8 +254,8 @@ async def ingest_opensfm_init(
             
         folder_path = os.path.join(ingestion_dir, f_name)
         if os.path.isdir(folder_path):
-            fused_ply_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.ply")
-            if os.path.isfile(fused_ply_path):
+            fused_laz_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz")
+            if os.path.isfile(fused_laz_path):
                 file_uuid_str = str(uuid.uuid4())
                 
                 job_record = Job(
@@ -263,8 +263,8 @@ async def ingest_opensfm_init(
                     task_type="opensfm_ingest",
                     payload={
                         "filename": f_name, # orig_filename will be the folder name
-                        "safe_filename": f"{file_uuid_str}.ply",
-                        "total_bytes": os.path.getsize(fused_ply_path),
+                        "safe_filename": f"{file_uuid_str}.laz",
+                        "total_bytes": os.path.getsize(fused_laz_path),
                         "file_id": file_uuid_str,
                         "folder_path": folder_path
                     },
@@ -344,10 +344,10 @@ async def ingest_opensfm_append(
             
         folder_path = os.path.join(ingestion_dir, f_name)
         if os.path.isdir(folder_path):
-            fused_ply_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.ply")
-            if os.path.isfile(fused_ply_path):
+            fused_laz_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz")
+            if os.path.isfile(fused_laz_path):
                 try:
-                    cand_bbox, cand_points, cand_srs = await get_pointcloud_srs_and_stats(fused_ply_path)
+                    cand_bbox, cand_points, cand_srs = await get_pointcloud_srs_and_stats(fused_laz_path)
                 except Exception as e:
                     skipped_folders.append({"folder": f_name, "reason": f"Failed to parse PDAL stats: {str(e)}"})
                     continue
@@ -372,7 +372,7 @@ async def ingest_opensfm_append(
                         "existing_id": str(existing_pc.id),
                         "file_id": str(existing_pc.id),
                         "is_append": True,
-                        "total_bytes": os.path.getsize(fused_ply_path)
+                        "total_bytes": os.path.getsize(fused_laz_path)
                     },
                     status="PENDING",
                     progress=0.0
