@@ -94,6 +94,17 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
 
     const [datasets, setDatasets] = useState<PointCloudMetadataResponse[]>([]);
     const [_fetchingDatasets, setFetchingDatasets] = useState<boolean>(false);
+    const [searchQuery, setSearchQuery] = useState<string>("");
+
+    const catalog = contextState?.catalog ?? datasets;
+    const selectedId = contextState?.selectedId ?? null;
+    const selectPointcloud = contextState?.selectPointcloud ?? (() => {});
+    const hoveredId = contextState?.hoveredId ?? null;
+    const hoverPointcloud = contextState?.hoverPointcloud ?? (() => {});
+    const focusPointcloud = contextState?.focusPointcloud ?? (() => {});
+    const loadedGeometries = contextState?.loadedGeometries ?? new Map();
+    const loadingIds = contextState?.loadingIds ?? new Set();
+    const toggleStreamPointCloud = contextState?.toggleStreamPointCloud ?? (async () => {});
 
     useEffect(() => {
         const fetchDatasets = async () => {
@@ -119,11 +130,6 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
             setMode("plyFile");
             onLoadPlyFile(e.target.files[0]);
         }
-    };
-
-    const handleSelectDataset = (id: string) => {
-        setIdentifier(id);
-        onLoadBinary(id, lod);
     };
 
     return (
@@ -224,44 +230,144 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
             {/* Mode Content */}
             {mode === "binary" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-xs)" }}>
-                    {datasets.length > 0 && (
-                        <>
-                            <label style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>
-                                Available Datasets:
+                    {/* Multi-PointCloud Catalog List */}
+                    <div style={{ marginTop: "var(--spacing-3xs)", display: "flex", flexDirection: "column", gap: "var(--spacing-xs)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <label style={{ fontSize: "var(--font-size-xs)", fontWeight: "var(--font-weight-semibold)", color: "var(--color-accent-text)" }}>
+                                PointCloud Catalog ({catalog.length})
                             </label>
-                            <select
-                                value={identifier}
-                                onChange={(e) => handleSelectDataset(e.target.value)}
-                                style={{
-                                    background: "var(--color-bg-subtle)",
-                                    border: "1px solid var(--color-border-strong)",
-                                    color: "var(--color-text-secondary)",
-                                    padding: "var(--spacing-xs) var(--spacing-sm)",
-                                    borderRadius: "var(--radius-sm)",
-                                    fontSize: "var(--font-size-xs)",
-                                    width: "100%",
-                                    boxSizing: "border-box",
-                                    cursor: "pointer",
-                                }}
-                            >
-                                <option value="" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>
-                                    -- Select Dataset --
-                                </option>
-                                {datasets.map((d) => {
-                                    const label = d.orig_filename || d.safe_filename || d.id;
-                                    return (
-                                        <option
-                                            key={d.id}
-                                            value={d.id}
-                                            style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}
-                                        >
-                                            {label} ({d.number_of_points?.toLocaleString() ?? "N/A"} pts)
-                                        </option>
-                                    );
-                                })}
-                            </select>
-                        </>
-                    )}
+                        </div>
+
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Search point clouds..."
+                            style={{
+                                background: "var(--color-bg-subtle)",
+                                border: "1px solid var(--color-border-strong)",
+                                color: "var(--color-text-secondary)",
+                                padding: "var(--spacing-2xs) var(--spacing-xs)",
+                                borderRadius: "var(--radius-sm)",
+                                fontSize: "var(--font-size-xs)",
+                                width: "100%",
+                                boxSizing: "border-box",
+                            }}
+                        />
+
+                        <div
+                            style={{
+                                maxHeight: "220px",
+                                overflowY: "auto",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "var(--spacing-3xs)",
+                                background: "var(--color-bg-subtle)",
+                                border: "1px solid var(--color-border-subtle)",
+                                borderRadius: "var(--radius-sm)",
+                                padding: "var(--spacing-3xs)",
+                            }}
+                        >
+                            {catalog.length === 0 ? (
+                                <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", padding: "var(--spacing-xs)", textAlign: "center" }}>
+                                    No point clouds available.
+                                </div>
+                            ) : (
+                                catalog
+                                    .filter((item) => {
+                                        if (!searchQuery.trim()) return true;
+                                        const name = item.orig_filename || item.safe_filename || item.id;
+                                        return name.toLowerCase().includes(searchQuery.toLowerCase());
+                                    })
+                                    .map((item) => {
+                                        const name = item.orig_filename || item.safe_filename || item.id;
+                                        const isSelected = item.id === selectedId;
+                                        const isHovered = item.id === hoveredId;
+                                        const isStreamed = loadedGeometries.has(item.id);
+                                        const isLoadingStream = loadingIds.has(item.id);
+
+                                        return (
+                                            <div
+                                                key={item.id}
+                                                onMouseEnter={() => hoverPointcloud(item.id)}
+                                                onMouseLeave={() => hoverPointcloud(null)}
+                                                onClick={() => {
+                                                    selectPointcloud(item.id);
+                                                    setIdentifier(item.id);
+                                                }}
+                                                style={{
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    justifyContent: "space-between",
+                                                    padding: "var(--spacing-2xs) var(--spacing-xs)",
+                                                    borderRadius: "var(--radius-xs)",
+                                                    background: isSelected
+                                                        ? "rgba(255, 51, 68, 0.2)"
+                                                        : isHovered
+                                                        ? "rgba(255, 170, 0, 0.15)"
+                                                        : "transparent",
+                                                    borderLeft: isSelected ? "3px solid #ff3344" : isHovered ? "3px solid #ffaa00" : "3px solid transparent",
+                                                    cursor: "pointer",
+                                                    transition: "all 0.15s ease",
+                                                }}
+                                            >
+                                                <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", marginRight: "var(--spacing-xs)", flex: 1 }}>
+                                                    <span style={{ fontSize: "var(--font-size-xs)", fontWeight: "var(--font-weight-medium)", color: "var(--color-text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                                        {name}
+                                                    </span>
+                                                    <span style={{ fontSize: "10px", color: "var(--color-text-muted)" }}>
+                                                        {item.number_of_points?.toLocaleString() ?? 0} pts
+                                                    </span>
+                                                </div>
+
+                                                <div style={{ display: "flex", gap: "var(--spacing-3xs)", flexShrink: 0 }}>
+                                                    <button
+                                                        type="button"
+                                                        title="Focus 3D Camera"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            focusPointcloud(item.id);
+                                                        }}
+                                                        style={{
+                                                            background: "rgba(0, 229, 255, 0.15)",
+                                                            border: "1px solid rgba(0, 229, 255, 0.4)",
+                                                            color: "#00e5ff",
+                                                            borderRadius: "var(--radius-xs)",
+                                                            padding: "2px 6px",
+                                                            fontSize: "11px",
+                                                            cursor: "pointer",
+                                                        }}
+                                                    >
+                                                        🎯 Focus
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        title={isStreamed ? "Unload Stream" : "Stream Full Geometry"}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            toggleStreamPointCloud(item.id, lod);
+                                                        }}
+                                                        disabled={isLoadingStream}
+                                                        style={{
+                                                            background: isStreamed ? "rgba(0, 230, 118, 0.2)" : "var(--color-bg-card)",
+                                                            border: isStreamed ? "1px solid #00e676" : "1px solid var(--color-border-strong)",
+                                                            color: isStreamed ? "#00e676" : "var(--color-text-muted)",
+                                                            borderRadius: "var(--radius-xs)",
+                                                            padding: "2px 6px",
+                                                            fontSize: "11px",
+                                                            cursor: "pointer",
+                                                        }}
+                                                    >
+                                                        {isLoadingStream ? "⏳" : isStreamed ? "👁️ Loaded" : "⚡ Stream"}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                            )}
+                        </div>
+                    </div>
+
 
                     <label style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>
                         Backend Identifier / UUID:

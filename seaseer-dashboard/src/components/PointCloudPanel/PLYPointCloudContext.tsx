@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import * as THREE from "three";
 import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
+import type { PointCloudMetadataResponse } from "../../client";
 
 export type MapProviderChoice = "OpenStreetMaps" | "Bathymetry" | "Emodnet" | "Debug" | "MapTilerBasic" | "MapTilerOutdoor" | "MapTilerSatellite" | "Bing";
 export type HeightProviderChoice = "Bathymetry" | "Emodnet" | "None" | "Debug" | "MapTiler" | "Bing";
@@ -46,6 +47,21 @@ export interface PLYPointCloudContextType {
     loadBinaryPointCloud: (idToLoad: string, lodToLoad?: number) => Promise<void>;
     loadPlyUrl: (urlToLoad: string) => void;
     loadPlyFile: (file: File) => Promise<void>;
+
+    // Multi-pointcloud extension state & methods
+    catalog: PointCloudMetadataResponse[];
+    isFetchingCatalog: boolean;
+    fetchCatalog: () => Promise<void>;
+    selectedId: string | null;
+    selectPointcloud: (id: string | null) => void;
+    hoveredId: string | null;
+    hoverPointcloud: (id: string | null) => void;
+    focusedId: string | null;
+    focusPointcloud: (id: string | null) => void;
+    loadedGeometries: Map<string, THREE.BufferGeometry>;
+    loadingIds: Set<string>;
+    toggleStreamPointCloud: (id: string, lodToLoad?: number) => Promise<void>;
+    unloadPointCloud: (id: string) => void;
 }
 
 const DEFAULT_HARDCODED_IDENTIFIER = "";
@@ -82,6 +98,143 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [fillLightIntensity, setFillLightIntensity] = useState<number>(0.5);
     const [hemisphereLightIntensity, setHemisphereLightIntensity] = useState<number>(0.6);
     const [ambientLightIntensity, setAmbientLightIntensity] = useState<number>(0.4);
+
+    // Multi-pointcloud states
+    const [catalog, setCatalog] = useState<PointCloudMetadataResponse[]>([]);
+    const [isFetchingCatalog, setIsFetchingCatalog] = useState<boolean>(false);
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [hoveredId, setHoveredId] = useState<string | null>(null);
+    const [focusedId, setFocusedId] = useState<string | null>(null);
+    const [loadedGeometries, setLoadedGeometries] = useState<Map<string, THREE.BufferGeometry>>(new Map());
+    const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
+
+    const selectPointcloud = useCallback((id: string | null) => {
+        setSelectedId(id);
+    }, []);
+
+    const hoverPointcloud = useCallback((id: string | null) => {
+        setHoveredId(id);
+    }, []);
+
+    const focusPointcloud = useCallback((id: string | null) => {
+        setFocusedId(id);
+        if (id) setSelectedId(id);
+    }, []);
+
+    const fetchCatalog = useCallback(async () => {
+        setIsFetchingCatalog(true);
+        try {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+            const res = await fetch(`${API_BASE_URL}/pointclouds/`);
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    // Filter metadata items vs raw strings
+                    const items: PointCloudMetadataResponse[] = data.filter(
+                        (item): item is PointCloudMetadataResponse => typeof item === "object" && item !== null && "id" in item
+                    );
+                    setCatalog(items);
+                }
+            }
+        } catch (err) {
+            console.error("Failed to fetch pointcloud catalog:", err);
+        } finally {
+            setIsFetchingCatalog(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchCatalog();
+    }, [fetchCatalog]);
+
+    const fetchBinaryGeometry = useCallback(async (idToLoad: string, lodToLoad: number = 0): Promise<THREE.BufferGeometry> => {
+        const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+        const cleanId = idToLoad.trim().split("?")[0];
+        const url = `${API_BASE_URL}/pointclouds/${encodeURIComponent(cleanId)}/stream-binary?lod=${lodToLoad}`;
+
+        const res = await fetch(url);
+        if (!res.ok) {
+            throw new Error(`Backend returned status ${res.status}: ${res.statusText}`);
+        }
+
+        const buffer = await res.arrayBuffer();
+        const pointSizeInBytes = 15;
+        const count = Math.floor(buffer.byteLength / pointSizeInBytes);
+
+        if (count === 0) {
+            throw new Error("Received empty point cloud data buffer");
+        }
+
+        const positions = new Float32Array(count * 3);
+        const colors = new Float32Array(count * 3);
+        const dataView = new DataView(buffer);
+        const colorScale = 255;
+        const tempColor = new THREE.Color();
+
+        for (let i = 0; i < count; i++) {
+            const offset = i * 15;
+            positions[i * 3] = dataView.getFloat32(offset, true);
+            positions[i * 3 + 1] = dataView.getFloat32(offset + 4, true);
+            positions[i * 3 + 2] = dataView.getFloat32(offset + 8, true);
+
+            const r = dataView.getUint8(offset + 12);
+            const g = dataView.getUint8(offset + 13);
+            const b = dataView.getUint8(offset + 14);
+
+            tempColor.setRGB(
+                Math.min(1, r / colorScale),
+                Math.min(1, g / colorScale),
+                Math.min(1, b / colorScale),
+                THREE.SRGBColorSpace
+            );
+            colors[i * 3] = tempColor.r;
+            colors[i * 3 + 1] = tempColor.g;
+            colors[i * 3 + 2] = tempColor.b;
+        }
+
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+        geom.computeBoundingSphere();
+        return geom;
+    }, []);
+
+    const unloadPointCloud = useCallback((id: string) => {
+        setLoadedGeometries((prev) => {
+            const next = new Map(prev);
+            const existing = next.get(id);
+            if (existing) {
+                existing.dispose();
+                next.delete(id);
+            }
+            return next;
+        });
+    }, []);
+
+    const toggleStreamPointCloud = useCallback(async (id: string, lodToLoad: number = 0) => {
+        if (loadedGeometries.has(id)) {
+            unloadPointCloud(id);
+            return;
+        }
+
+        setLoadingIds((prev) => new Set(prev).add(id));
+        try {
+            const geom = await fetchBinaryGeometry(id, lodToLoad);
+            setLoadedGeometries((prev) => {
+                const next = new Map(prev);
+                next.set(id, geom);
+                return next;
+            });
+        } catch (err: any) {
+            console.error(`Failed to stream point cloud ${id}:`, err);
+        } finally {
+            setLoadingIds((prev) => {
+                const next = new Set(prev);
+                next.delete(id);
+                return next;
+            });
+        }
+    }, [loadedGeometries, fetchBinaryGeometry, unloadPointCloud]);
 
     const loadPlyUrl = useCallback((urlToLoad: string) => {
         if (!urlToLoad.trim()) return;
@@ -123,56 +276,8 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         });
 
         try {
-            const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
-            const cleanId = idToLoad.trim().split("?")[0];
-            const url = `${API_BASE_URL}/pointclouds/${encodeURIComponent(cleanId)}/stream-binary?lod=${lodToLoad}`;
-
-            const res = await fetch(url);
-            if (!res.ok) {
-                throw new Error(`Backend returned status ${res.status}: ${res.statusText}`);
-            }
-
-            const buffer = await res.arrayBuffer();
-            const pointSizeInBytes = 15;
-            const count = Math.floor(buffer.byteLength / pointSizeInBytes);
-
-            if (count === 0) {
-                throw new Error("Received empty point cloud data buffer");
-            }
-
-            const positions = new Float32Array(count * 3);
-            const colors = new Float32Array(count * 3);
-            const dataView = new DataView(buffer);
-            const colorScale = 255;
-            const tempColor = new THREE.Color();
-
-            for (let i = 0; i < count; i++) {
-                const offset = i * 15;
-                positions[i * 3] = dataView.getFloat32(offset, true);
-                positions[i * 3 + 1] = dataView.getFloat32(offset + 4, true);
-                positions[i * 3 + 2] = dataView.getFloat32(offset + 8, true);
-
-                const r = dataView.getUint8(offset + 12);
-                const g = dataView.getUint8(offset + 13);
-                const b = dataView.getUint8(offset + 14);
-
-                tempColor.setRGB(
-                    Math.min(1, r / colorScale),
-                    Math.min(1, g / colorScale),
-                    Math.min(1, b / colorScale),
-                    THREE.SRGBColorSpace
-                );
-                colors[i * 3] = tempColor.r;
-                colors[i * 3 + 1] = tempColor.g;
-                colors[i * 3 + 2] = tempColor.b;
-            }
-
-            const geom = new THREE.BufferGeometry();
-            geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-            geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-            geom.center();
-            geom.computeBoundingSphere();
-
+            const geom = await fetchBinaryGeometry(idToLoad, lodToLoad);
+            const count = geom.attributes.position ? geom.attributes.position.count : 0;
             setGeometry(geom);
             setPointCount(count);
         } catch (err: any) {
@@ -184,7 +289,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         } finally {
             setIsLoading(false);
         }
-    }, [loadPlyUrl]);
+    }, [fetchBinaryGeometry, loadPlyUrl]);
 
     const loadPlyFile = useCallback(async (file: File) => {
         setIsLoading(true);
@@ -257,9 +362,25 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 loadBinaryPointCloud,
                 loadPlyUrl,
                 loadPlyFile,
+
+                // Multi-pointcloud exports
+                catalog,
+                isFetchingCatalog,
+                fetchCatalog,
+                selectedId,
+                selectPointcloud,
+                hoveredId,
+                hoverPointcloud,
+                focusedId,
+                focusPointcloud,
+                loadedGeometries,
+                loadingIds,
+                toggleStreamPointCloud,
+                unloadPointCloud,
             }}
         >
             {children}
         </PLYPointCloudContext.Provider>
     );
 };
+

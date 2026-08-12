@@ -356,6 +356,130 @@ function GeoThreeHeightmap() {
     return <primitive object={mapView} position={[0, -0.5, 0]} />;
 }
 
+import type { PointCloudMetadataResponse } from "../../client";
+
+function getItemCenter(item: PointCloudMetadataResponse): [number, number, number] {
+    if (item.center && Array.isArray(item.center) && item.center.length === 3) {
+        return [item.center[0], item.center[1], item.center[2]];
+    }
+    if (
+        item.min_x != null && item.max_x != null &&
+        item.min_y != null && item.max_y != null &&
+        item.min_z != null && item.max_z != null
+    ) {
+        return [
+            (item.min_x + item.max_x) / 2.0,
+            (item.min_y + item.max_y) / 2.0,
+            (item.min_z + item.max_z) / 2.0,
+        ];
+    }
+    return [TARGET_X, 0, TARGET_Z];
+}
+
+function PointCloudCenterMarkers() {
+    const {
+        catalog,
+        selectedId,
+        hoveredId,
+        selectPointcloud,
+        hoverPointcloud,
+        focusPointcloud,
+    } = usePLYPointCloudContext();
+
+    const meshRef = useRef<THREE.InstancedMesh>(null);
+    const dummy = useMemo(() => new THREE.Object3D(), []);
+
+    useEffect(() => {
+        if (!meshRef.current || catalog.length === 0) return;
+
+        catalog.forEach((item, index) => {
+            const [cx, cy, cz] = getItemCenter(item);
+            dummy.position.set(cx, cy, cz);
+
+            const isSelected = item.id === selectedId;
+            const isHovered = item.id === hoveredId;
+
+            const scale = isSelected ? 40 : isHovered ? 30 : 20;
+            dummy.scale.set(scale, scale, scale);
+            dummy.updateMatrix();
+            meshRef.current!.setMatrixAt(index, dummy.matrix);
+
+            const color = new THREE.Color(
+                isSelected ? "#ff3344" : isHovered ? "#ffaa00" : "#00e5ff"
+            );
+            meshRef.current!.setColorAt(index, color);
+        });
+
+        meshRef.current.instanceMatrix.needsUpdate = true;
+        if (meshRef.current.instanceColor) {
+            meshRef.current.instanceColor.needsUpdate = true;
+        }
+    }, [catalog, selectedId, hoveredId, dummy]);
+
+    if (catalog.length === 0) return null;
+
+    return (
+        <instancedMesh
+            ref={meshRef}
+            args={[undefined, undefined, catalog.length]}
+            onClick={(e) => {
+                e.stopPropagation();
+                if (e.instanceId !== undefined && catalog[e.instanceId]) {
+                    selectPointcloud(catalog[e.instanceId].id);
+                }
+            }}
+            onDoubleClick={(e) => {
+                e.stopPropagation();
+                if (e.instanceId !== undefined && catalog[e.instanceId]) {
+                    focusPointcloud(catalog[e.instanceId].id);
+                }
+            }}
+            onPointerOver={(e) => {
+                e.stopPropagation();
+                if (e.instanceId !== undefined && catalog[e.instanceId]) {
+                    hoverPointcloud(catalog[e.instanceId].id);
+                }
+            }}
+            onPointerOut={(e) => {
+                e.stopPropagation();
+                hoverPointcloud(null);
+            }}
+        >
+            <sphereGeometry args={[1, 16, 16]} />
+            <meshStandardMaterial roughness={0.3} metalness={0.2} />
+        </instancedMesh>
+    );
+}
+
+function CameraFocusController() {
+    const { camera } = useThree();
+    const { focusedId, catalog } = usePLYPointCloudContext();
+    const targetPos = useRef<THREE.Vector3 | null>(null);
+
+    useEffect(() => {
+        if (!focusedId) return;
+        const item = catalog.find((pc) => pc.id === focusedId);
+        if (item) {
+            const [cx, cy, cz] = getItemCenter(item);
+            targetPos.current = new THREE.Vector3(cx, cy, cz);
+        }
+    }, [focusedId, catalog]);
+
+    useFrame((_, delta) => {
+        if (targetPos.current) {
+            const targetCamPos = targetPos.current.clone().add(new THREE.Vector3(0, 1500, 1500));
+            camera.position.lerp(targetCamPos, Math.min(1, 5 * delta));
+            camera.lookAt(targetPos.current);
+
+            if (camera.position.distanceTo(targetCamPos) < 5.0) {
+                targetPos.current = null;
+            }
+        }
+    });
+
+    return null;
+}
+
 export default function PLYPointCloud() {
     const {
         geometry,
@@ -368,6 +492,7 @@ export default function PLYPointCloud() {
         plyUrl,
         loadBinaryPointCloud,
         loadPlyUrl,
+        loadedGeometries,
     } = usePLYPointCloudContext();
 
     useEffect(() => {
@@ -387,8 +512,12 @@ export default function PLYPointCloud() {
     return (
         <group>
             <CameraPositionControls />
+            <CameraFocusController />
             <SceneLighting />
             <GeoThreeHeightmap />
+            <PointCloudCenterMarkers />
+
+            {/* Render legacy / single active pointcloud geometry */}
             {geometry && (
                 <group position={[TARGET_X, 0, TARGET_Z]}>
                     {renderMode === "mesh" ? (
@@ -412,6 +541,19 @@ export default function PLYPointCloud() {
                     )}
                 </group>
             )}
+
+            {/* Render dynamically streamed full pointcloud geometries */}
+            {Array.from(loadedGeometries.entries()).map(([id, geom]) => (
+                <group key={id}>
+                    <points geometry={geom} rotation={[-Math.PI / 2, 0, 0]}>
+                        <pointsMaterial
+                            vertexColors={!!geom.attributes.color}
+                            size={pointSize}
+                            sizeAttenuation
+                        />
+                    </points>
+                </group>
+            ))}
         </group>
     );
 }
