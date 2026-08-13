@@ -165,12 +165,11 @@ export const PointCloudList: React.FC<PointCloudListProps> = ({
                   cursor: "pointer",
                 }}
                 /*
-                 * CAMERA NAVIGATION & SELECTION HANDLER HOOK:
-                 * Clicking on a pointcloud card item triggers `onSelect(pc.id)` and `onMoveCamera(pc.id)`.
+                 * SELECTION HANDLER HOOK:
+                 * Clicking on a pointcloud card item triggers `onSelect(pc.id)` to load the pointcloud dataset without moving the camera.
                  */
                 onClick={() => {
                   onSelect?.(pc.id);
-                  onMoveCamera(pc.id);
                 }}
               >
                 {/* Item Top Row: Name and Actions */}

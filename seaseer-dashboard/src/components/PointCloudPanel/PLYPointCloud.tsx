@@ -391,12 +391,6 @@ function PointCloudCenterMarkers() {
         selectPointcloud,
         hoverPointcloud,
         focusPointcloud,
-        setIdentifier,
-        toggleStreamPointCloud,
-        loadedGeometries,
-        lod,
-        mode,
-        loadBinaryPointCloud,
     } = usePLYPointCloudContext();
 
     const meshRef = useRef<THREE.InstancedMesh>(null);
@@ -450,13 +444,6 @@ function PointCloudCenterMarkers() {
         if (instanceId !== undefined && catalog[instanceId]) {
             const targetId = catalog[instanceId].id;
             selectPointcloud(targetId);
-            setIdentifier(targetId);
-            if (mode === "binary") {
-                loadBinaryPointCloud(targetId, lod);
-            }
-            if (!loadedGeometries.has(targetId)) {
-                toggleStreamPointCloud(targetId, lod);
-            }
         }
     };
 
@@ -498,7 +485,7 @@ function PointCloudCenterMarkers() {
 
 function CameraFocusController() {
     const { camera } = useThree();
-    const { focusedId, catalog } = usePLYPointCloudContext();
+    const { focusedId, focusTrigger, catalog } = usePLYPointCloudContext();
     const targetPos = useRef<THREE.Vector3 | null>(null);
 
     useEffect(() => {
@@ -510,7 +497,7 @@ function CameraFocusController() {
                 new THREE.Euler(-Math.PI / 2, 0, 0)
             );
         }
-    }, [focusedId, catalog]);
+    }, [focusedId, focusTrigger, catalog]);
 
     useFrame((_, delta) => {
         if (targetPos.current) {
@@ -583,7 +570,6 @@ export default function PLYPointCloud() {
         wireframe,
         pointSize,
         identifier,
-        lod,
         plyUrl,
         loadBinaryPointCloud,
         loadPlyUrl,
@@ -591,12 +577,12 @@ export default function PLYPointCloud() {
     } = usePLYPointCloudContext();
 
     useEffect(() => {
-        if (mode === "binary") {
-            loadBinaryPointCloud(identifier, lod);
+        if (mode === "binary" && identifier) {
+            loadBinaryPointCloud(identifier);
         } else if (mode === "plyUrl") {
             loadPlyUrl(plyUrl);
         }
-    }, [mode, identifier, lod, loadBinaryPointCloud, loadPlyUrl]);
+    }, [mode, identifier, plyUrl, loadBinaryPointCloud, loadPlyUrl]);
 
     useEffect(() => {
         if (geometry && renderMode === "mesh") {
