@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PointCloudMetadataResponse } from "../../client";
 import { usePLYPointCloudContext, type MapProviderChoice, type HeightProviderChoice } from "./PLYPointCloudContext";
+import PLYPointCloudQueryEditor from "./PLYPointCloudQueryEditor";
 
 
 
@@ -285,6 +286,9 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                     )}
                 </div>
             </div>
+
+            {/* Custom Query Editor */}
+            <PLYPointCloudQueryEditor style={{ marginTop: "var(--spacing-md)" }} />
 
             {/* Display Settings */}
             <div

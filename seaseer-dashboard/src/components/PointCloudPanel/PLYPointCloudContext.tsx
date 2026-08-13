@@ -6,7 +6,9 @@ import type { PointCloudMetadataResponse } from "../../client";
 export type MapProviderChoice = "OpenStreetMaps" | "Bathymetry" | "Emodnet" | "Debug" | "MapTilerBasic" | "MapTilerOutdoor" | "MapTilerSatellite" | "Bing";
 export type HeightProviderChoice = "Bathymetry" | "Emodnet" | "None" | "Debug" | "MapTiler" | "Bing";
 
-import { loadProgressivePointCloud, isPointCloudLoading } from "./utils/pointCloudLoader";
+import { loadProgressivePointCloud, isPointCloudLoading, setPointCloudLoading } from "./utils/pointCloudLoader";
+
+export const DEFAULT_CUSTOM_QUERY = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = :lod";
 
 export interface PLYPointCloudContextType {
     mode: "binary" | "plyFile" | "plyUrl";
@@ -46,6 +48,9 @@ export interface PLYPointCloudContextType {
     setHemisphereLightIntensity: (val: number) => void;
     ambientLightIntensity: number;
     setAmbientLightIntensity: (val: number) => void;
+    customQuery: string;
+    setCustomQuery: (query: string) => void;
+    executeCustomQuery: (queryToExecute?: string) => Promise<void>;
     loadBinaryPointCloud: (idToLoad: string, lodToLoad?: number) => Promise<void>;
     loadPlyUrl: (urlToLoad: string) => void;
     loadPlyFile: (file: File) => Promise<void>;
@@ -104,6 +109,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [hemisphereLightIntensity, setHemisphereLightIntensity] = useState<number>(0.6);
     const [ambientLightIntensity, setAmbientLightIntensity] = useState<number>(0.4);
     const [showCameraTrajectories, setShowCameraTrajectories] = useState<boolean>(true);
+    const [customQuery, setCustomQuery] = useState<string>(DEFAULT_CUSTOM_QUERY);
 
     // Multi-pointcloud states
     const [catalog, setCatalog] = useState<PointCloudMetadataResponse[]>([]);
@@ -141,19 +147,17 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         setLod(currentLod);
     }, []);
 
-    const startProgressiveStream = useCallback(async (idToLoad: string, startLod: number = 10, endLod: number = 0) => {
+    const startProgressiveStream = useCallback(async (idToLoad: string, startLod: number = 10, endLod: number = 0, overrideQuery?: string) => {
         if (!idToLoad.trim()) return;
 
-        // If pointcloud is currently in the process of being loaded, continue loading where it currently is at
-        if (isPointCloudLoading(idToLoad)) {
-            return;
-        }
+        const queryToUse = overrideQuery !== undefined ? overrideQuery : customQuery;
 
         // Abort existing stream for this ID if any
         if (activeControllersRef.current.has(idToLoad)) {
             activeControllersRef.current.get(idToLoad)?.abort();
             activeControllersRef.current.delete(idToLoad);
         }
+        setPointCloudLoading(idToLoad, false);
 
         const controller = new AbortController();
         activeControllersRef.current.set(idToLoad, controller);
@@ -167,6 +171,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 id: idToLoad,
                 startLod,
                 endLod,
+                customQuery: queryToUse,
                 signal: controller.signal,
                 onLodLoaded: (currentLod, newGeom) => {
                     if (controller.signal.aborted) return;
@@ -193,7 +198,18 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 activeControllersRef.current.delete(idToLoad);
             }
         }
-    }, [updateGeometryForId]);
+    }, [customQuery, updateGeometryForId]);
+
+    const executeCustomQuery = useCallback(async (queryToExecute?: string) => {
+        const queryToUse = queryToExecute !== undefined ? queryToExecute : customQuery;
+        if (queryToExecute !== undefined) {
+            setCustomQuery(queryToExecute);
+        }
+        const targetId = selectedId || identifier;
+        if (targetId && targetId.trim()) {
+            await startProgressiveStream(targetId, 10, 0, queryToUse);
+        }
+    }, [customQuery, selectedId, identifier, startProgressiveStream]);
 
     const selectPointcloud = useCallback((id: string | null) => {
         setSelectedId(id);
@@ -369,6 +385,9 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 setHemisphereLightIntensity,
                 ambientLightIntensity,
                 setAmbientLightIntensity,
+                customQuery,
+                setCustomQuery,
+                executeCustomQuery,
                 loadBinaryPointCloud,
                 loadPlyUrl,
                 loadPlyFile,

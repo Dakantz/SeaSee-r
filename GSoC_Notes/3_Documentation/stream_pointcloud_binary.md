@@ -82,7 +82,8 @@ Each point (vertex) in the binary stream is packed sequentially using a 16-byte 
 2. **Database Storage Service**: [`app/services/pointcloud/database.py`](file:///home/tastegger/Documents/SeaSee-r/backend/app/services/pointcloud/database.py#L24-L56)
 3. **Binary Stream Exporter**: [`app/services/pointcloud/exporters/binary_exporter.py`](file:///home/tastegger/Documents/SeaSee-r/backend/app/services/pointcloud/exporters/binary_exporter.py#L9-L34)
 4. **PointCloud Repository (SQL Streaming)**: [`app/repositories/pointcloud_repository.py`](file:///home/tastegger/Documents/SeaSee-r/backend/app/repositories/pointcloud_repository.py#L80-L108)
-5. **Frontend Client Parsing**: [`PLYPointCloudContext.tsx`](file:///home/tastegger/Documents/SeaSee-r/seaseer-dashboard/src/components/PointCloudPanel/PLYPointCloudContext.tsx#L153-L203)
+5. **Frontend Client Context & Stream Loader**: [`PLYPointCloudContext.tsx`](file:///home/tastegger/Documents/SeaSee-r/seaseer-dashboard/src/components/PointCloudPanel/PLYPointCloudContext.tsx) & [`pointCloudLoader.ts`](file:///home/tastegger/Documents/SeaSee-r/seaseer-dashboard/src/components/PointCloudPanel/utils/pointCloudLoader.ts)
+6. **Frontend Query Editor Component**: [`PLYPointCloudQueryEditor.tsx`](file:///home/tastegger/Documents/SeaSee-r/seaseer-dashboard/src/components/PointCloudPanel/PLYPointCloudQueryEditor.tsx)
 
 ---
 

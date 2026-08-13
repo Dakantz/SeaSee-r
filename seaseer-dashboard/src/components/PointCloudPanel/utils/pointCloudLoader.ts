@@ -33,6 +33,8 @@ export interface ProgressiveLoadOptions {
     startLod?: number;
     /** Final Level of Detail (default: 0) */
     endLod?: number;
+    /** Optional custom SQL selection query */
+    customQuery?: string;
     /** AbortSignal to cancel progressive loading mid-stream */
     signal?: AbortSignal;
     /** Callback fired when an LOD successfully loads and is ready for rendering */
@@ -48,11 +50,15 @@ export interface ProgressiveLoadOptions {
 export async function fetchBinaryGeometry(
     idToLoad: string,
     lodToLoad: number = 0,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    customQuery?: string
 ): Promise<THREE.BufferGeometry> {
     const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
     const cleanId = idToLoad.trim().split("?")[0];
-    const url = `${API_BASE_URL}/pointclouds/${encodeURIComponent(cleanId)}/stream-binary?lod=${lodToLoad}`;
+    let url = `${API_BASE_URL}/pointclouds/${encodeURIComponent(cleanId)}/stream-binary?lod=${lodToLoad}`;
+    if (customQuery && customQuery.trim()) {
+        url += `&query=${encodeURIComponent(customQuery.trim())}`;
+    }
 
     const res = await fetch(url, { signal });
     if (!res.ok) {
@@ -113,6 +119,7 @@ export async function loadProgressivePointCloud(
         id,
         startLod = 10,
         endLod = 0,
+        customQuery,
         signal,
         onLodLoaded,
         onError,
@@ -135,7 +142,7 @@ export async function loadProgressivePointCloud(
             }
 
             try {
-                const geom = await fetchBinaryGeometry(id, currentLod, signal);
+                const geom = await fetchBinaryGeometry(id, currentLod, signal, customQuery);
 
                 if (signal?.aborted) {
                     geom.dispose();
