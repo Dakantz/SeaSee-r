@@ -113,7 +113,8 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
 
     const selectPointcloud = useCallback((id: string | null) => {
         setSelectedId(id);
-    }, []);
+        if (id) setIdentifier(id);
+    }, [setIdentifier]);
 
     const hoverPointcloud = useCallback((id: string | null) => {
         setHoveredId(id);
@@ -121,8 +122,11 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
 
     const focusPointcloud = useCallback((id: string | null) => {
         setFocusedId(id);
-        if (id) setSelectedId(id);
-    }, []);
+        if (id) {
+            setSelectedId(id);
+            setIdentifier(id);
+        }
+    }, [setIdentifier]);
 
     const fetchCatalog = useCallback(async () => {
         setIsFetchingCatalog(true);

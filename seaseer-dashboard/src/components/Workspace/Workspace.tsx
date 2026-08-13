@@ -11,6 +11,7 @@ import TelemetryPanel from "../TelemetoryPanel/TrajectoryPanel";
 import { JobSystemOverview } from "../JobSystemOverview";
 import { PLYPointCloudProvider } from "../PointCloudPanel/PLYPointCloudContext";
 import PLYPointCloudSidebar from "../PointCloudPanel/PLYPointCloudSidebar";
+import PointCloudListContainer from "../PointCloudPanel/PointCloudListContainer";
 
 import "./Workspace.css";
 
@@ -58,6 +59,12 @@ export default function Workspace() {
                                     </button>
                                 </div>
                                 <div className="jobs-sidebar-content">
+                                    {/* Standalone PointCloudList Component (Positioned outside DebugControls) */}
+                                    <PointCloudListContainer />
+
+                                    <hr className="jobs-sidebar-divider" />
+
+                                    {/* DebugControls Panel */}
                                     <PLYPointCloudSidebar />
 
                                     <hr className="jobs-sidebar-divider" />
@@ -70,6 +77,7 @@ export default function Workspace() {
                             </Panel>
                         </>
                     )}
+
                 </Group>
 
                 {/* Re-open toggle button when sidebar widget is collapsed */}

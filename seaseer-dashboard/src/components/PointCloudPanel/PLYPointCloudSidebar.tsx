@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import type { PointCloudMetadataResponse } from "../../client";
 import { usePLYPointCloudContext, type MapProviderChoice, type HeightProviderChoice } from "./PLYPointCloudContext";
 
+
+
 export interface PLYPointCloudSidebarProps {
     mode?: "binary" | "plyFile" | "plyUrl";
     setMode?: (mode: "binary" | "plyFile" | "plyUrl") => void;
@@ -105,6 +107,8 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const loadedGeometries = contextState?.loadedGeometries ?? new Map();
     const loadingIds = contextState?.loadingIds ?? new Set();
     const toggleStreamPointCloud = contextState?.toggleStreamPointCloud ?? (async () => {});
+
+
 
     useEffect(() => {
         const fetchDatasets = async () => {
@@ -232,6 +236,8 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                 <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-xs)" }}>
                     {/* Multi-PointCloud Catalog List */}
                     <div style={{ marginTop: "var(--spacing-3xs)", display: "flex", flexDirection: "column", gap: "var(--spacing-xs)" }}>
+
+
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <label style={{ fontSize: "var(--font-size-xs)", fontWeight: "var(--font-weight-semibold)", color: "var(--color-accent-text)" }}>
                                 PointCloud Catalog ({catalog.length})

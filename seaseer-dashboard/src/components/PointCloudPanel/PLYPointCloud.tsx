@@ -4,6 +4,12 @@ import * as THREE from "three";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import { generateDelaunayTerrainMesh } from "./utils/delaunayTriangulation";
 import { TrajectoryRenderer } from "../RovRenderer/trajectoryRenderer";
+
+export { PointCloudList } from "./PointCloudList";
+export { PointCloudListContainer } from "./PointCloudListContainer";
+export type { PointCloudItem, PointCloudListProps } from "./PointCloudList";
+
+
 // @ts-expect-error - geo-three submodule
 import { MapView, DebugProvider, HeightDebugProvider, OpenStreetMapsProvider, OpenMapTilesProvider, MapTilerProvider, BingMapsProvider, BathymetryProvider, EmodnetProvider, UnitsUtils, MapNodeGeometry, MapHeightNodeShader, MapHeightNode, MapNodeHeightGeometry, MapPlaneNode, CanvasUtils } from "../../../public/geo-three/build/geo-three.module.js";
 
@@ -385,18 +391,34 @@ function PointCloudCenterMarkers() {
         selectPointcloud,
         hoverPointcloud,
         focusPointcloud,
+        setIdentifier,
+        toggleStreamPointCloud,
+        loadedGeometries,
+        lod,
+        mode,
+        loadBinaryPointCloud,
     } = usePLYPointCloudContext();
 
     const meshRef = useRef<THREE.InstancedMesh>(null);
     const dummy = useMemo(() => new THREE.Object3D(), []);
     const centerVec = useMemo(() => new THREE.Vector3(), []);
+    const rotEuler = useMemo(() => new THREE.Euler(-Math.PI / 2, 0, 0), []);
+
+    useEffect(() => {
+        if (meshRef.current && meshRef.current.geometry) {
+            meshRef.current.geometry.boundingSphere = new THREE.Sphere(
+                new THREE.Vector3(0, 0, 0),
+                Infinity
+            );
+        }
+    }, [catalog]);
 
     useFrame(({ camera }) => {
         if (!meshRef.current || catalog.length === 0) return;
 
         catalog.forEach((item, index) => {
             const [cx, cy, cz] = getItemCenter(item);
-            centerVec.set(cx, cy, cz);
+            centerVec.set(cx, cy, cz).applyEuler(rotEuler);
             const dist = camera.position.distanceTo(centerVec);
 
             const isSelected = item.id === selectedId;
@@ -424,30 +446,47 @@ function PointCloudCenterMarkers() {
 
     if (catalog.length === 0) return null;
 
+    const handleSelect = (instanceId?: number) => {
+        if (instanceId !== undefined && catalog[instanceId]) {
+            const targetId = catalog[instanceId].id;
+            selectPointcloud(targetId);
+            setIdentifier(targetId);
+            if (mode === "binary") {
+                loadBinaryPointCloud(targetId, lod);
+            }
+            if (!loadedGeometries.has(targetId)) {
+                toggleStreamPointCloud(targetId, lod);
+            }
+        }
+    };
+
     return (
         <instancedMesh
             ref={meshRef}
             args={[undefined, undefined, catalog.length]}
+            rotation={[-Math.PI / 2, 0, 0]}
             onClick={(e) => {
                 e.stopPropagation();
-                if (e.instanceId !== undefined && catalog[e.instanceId]) {
-                    selectPointcloud(catalog[e.instanceId].id);
-                }
+                handleSelect(e.instanceId);
             }}
             onDoubleClick={(e) => {
                 e.stopPropagation();
                 if (e.instanceId !== undefined && catalog[e.instanceId]) {
-                    focusPointcloud(catalog[e.instanceId].id);
+                    const targetId = catalog[e.instanceId].id;
+                    focusPointcloud(targetId);
+                    handleSelect(e.instanceId);
                 }
             }}
             onPointerOver={(e) => {
                 e.stopPropagation();
+                document.body.style.cursor = "pointer";
                 if (e.instanceId !== undefined && catalog[e.instanceId]) {
                     hoverPointcloud(catalog[e.instanceId].id);
                 }
             }}
             onPointerOut={(e) => {
                 e.stopPropagation();
+                document.body.style.cursor = "auto";
                 hoverPointcloud(null);
             }}
         >
@@ -467,7 +506,9 @@ function CameraFocusController() {
         const item = catalog.find((pc) => pc.id === focusedId);
         if (item) {
             const [cx, cy, cz] = getItemCenter(item);
-            targetPos.current = new THREE.Vector3(cx, cy, cz);
+            targetPos.current = new THREE.Vector3(cx, cy, cz).applyEuler(
+                new THREE.Euler(-Math.PI / 2, 0, 0)
+            );
         }
     }, [focusedId, catalog]);
 
