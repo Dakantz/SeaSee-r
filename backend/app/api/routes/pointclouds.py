@@ -4,7 +4,7 @@ from redis import Redis
 from rq import Queue
 
 from typing import List, Union, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from app.schemas.pointcloud import PointCloudMetadataResponse, CameraHeaderResponse, CameraFrameResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,7 +43,7 @@ Stream point cloud data directly from database as raw binary buffer (Float32 XYZ
 @router.get("/{identifier}/stream-binary")
 async def stream_pointcloud_binary(
     identifier: str,
-    lod: int = 0,
+    lod: int = Query(0, ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
     storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
 ):
     return await storage_service.stream_pointcloud_binary(identifier, lod=lod)
@@ -55,7 +55,7 @@ Retrieve a .ply point cloud file from database storage.
 @router.get("/{filename_or_id}")
 async def get_pointcloud(
     filename_or_id: str,
-    lod: int = 0,
+    lod: int = Query(0, ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
     storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
 ):
     return await storage_service.get_pointcloud(filename_or_id, lod=lod)
@@ -113,49 +113,6 @@ async def get_camera_headers(
     headers = result.scalars().all()
     
     return list(headers)
-
-@router.get("/camera-headers/{header_id}/frames", response_model=List[CameraFrameResponse])
-async def get_camera_frames(
-    header_id: str,
-    db: AsyncSession = Depends(get_db_session)
-):
-    import json
-    from geoalchemy2.functions import ST_AsGeoJSON
-
-    try:
-        h_uuid = uuid.UUID(header_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid UUID format")
-        
-    query = select(
-        CameraFrame.id,
-        CameraFrame.camera_header_id,
-        CameraFrame.timestamp,
-        ST_AsGeoJSON(CameraFrame.position).label("pos_geojson"),
-        ST_AsGeoJSON(CameraFrame.direction).label("dir_geojson"),
-        CameraFrame.relative_time,
-        CameraFrame.filename
-    ).where(CameraFrame.camera_header_id == h_uuid).order_by(CameraFrame.timestamp.asc())
-    
-    result = await db.execute(query)
-    rows = result.all()
-    
-    frames = []
-    for r in rows:
-        pos_coords = json.loads(r.pos_geojson)["coordinates"] if r.pos_geojson else None
-        dir_coords = json.loads(r.dir_geojson)["coordinates"] if r.dir_geojson else None
-        
-        frames.append(CameraFrameResponse(
-            id=r.id,
-            camera_header_id=r.camera_header_id,
-            timestamp=r.timestamp,
-            position=pos_coords,
-            direction=dir_coords,
-            relative_time=r.relative_time,
-            filename=r.filename
-        ))
-        
-    return frames
 
 @router.get("/{identifier}/camera-routes", response_model=List[CameraFrameResponse])
 async def get_camera_routes(
@@ -254,8 +211,8 @@ async def ingest_opensfm_init(
             
         folder_path = os.path.join(ingestion_dir, f_name)
         if os.path.isdir(folder_path):
-            fused_ply_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.ply")
-            if os.path.isfile(fused_ply_path):
+            fused_laz_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz")
+            if os.path.isfile(fused_laz_path):
                 file_uuid_str = str(uuid.uuid4())
                 
                 job_record = Job(
@@ -263,8 +220,8 @@ async def ingest_opensfm_init(
                     task_type="opensfm_ingest",
                     payload={
                         "filename": f_name, # orig_filename will be the folder name
-                        "safe_filename": f"{file_uuid_str}.ply",
-                        "total_bytes": os.path.getsize(fused_ply_path),
+                        "safe_filename": f"{file_uuid_str}.laz",
+                        "total_bytes": os.path.getsize(fused_laz_path),
                         "file_id": file_uuid_str,
                         "folder_path": folder_path
                     },
@@ -344,10 +301,10 @@ async def ingest_opensfm_append(
             
         folder_path = os.path.join(ingestion_dir, f_name)
         if os.path.isdir(folder_path):
-            fused_ply_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.ply")
-            if os.path.isfile(fused_ply_path):
+            fused_laz_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz")
+            if os.path.isfile(fused_laz_path):
                 try:
-                    cand_bbox, cand_points, cand_srs = await get_pointcloud_srs_and_stats(fused_ply_path)
+                    cand_bbox, cand_points, cand_srs = await get_pointcloud_srs_and_stats(fused_laz_path)
                 except Exception as e:
                     skipped_folders.append({"folder": f_name, "reason": f"Failed to parse PDAL stats: {str(e)}"})
                     continue
@@ -372,7 +329,7 @@ async def ingest_opensfm_append(
                         "existing_id": str(existing_pc.id),
                         "file_id": str(existing_pc.id),
                         "is_append": True,
-                        "total_bytes": os.path.getsize(fused_ply_path)
+                        "total_bytes": os.path.getsize(fused_laz_path)
                     },
                     status="PENDING",
                     progress=0.0

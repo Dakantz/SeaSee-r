@@ -1,13 +1,7 @@
 import { useState, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-
-export interface PositionSample {
-    relativeTime: number;
-    x: number;
-    y: number;
-    z: number;
-}
+import type { PositionSample } from "../../TelemetoryPanel/TelemetryPositionReader";
 
 /**
  * Hook to find the closest trajectory point (vertex) based on 2D screen-space pixel distance.

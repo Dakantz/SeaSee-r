@@ -1,9 +1,12 @@
-import React, { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import * as THREE from "three";
 import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
+import type { PointCloudMetadataResponse } from "../../client";
 
 export type MapProviderChoice = "OpenStreetMaps" | "Bathymetry" | "Emodnet" | "Debug" | "MapTilerBasic" | "MapTilerOutdoor" | "MapTilerSatellite" | "Bing";
 export type HeightProviderChoice = "Bathymetry" | "Emodnet" | "None" | "Debug" | "MapTiler" | "Bing";
+
+import { loadProgressivePointCloud, isPointCloudLoading } from "./utils/pointCloudLoader";
 
 export interface PLYPointCloudContextType {
     mode: "binary" | "plyFile" | "plyUrl";
@@ -46,6 +49,24 @@ export interface PLYPointCloudContextType {
     loadBinaryPointCloud: (idToLoad: string, lodToLoad?: number) => Promise<void>;
     loadPlyUrl: (urlToLoad: string) => void;
     loadPlyFile: (file: File) => Promise<void>;
+    showCameraTrajectories: boolean;
+    setShowCameraTrajectories: (show: boolean) => void;
+
+    // Multi-pointcloud extension state & methods
+    catalog: PointCloudMetadataResponse[];
+    isFetchingCatalog: boolean;
+    fetchCatalog: () => Promise<void>;
+    selectedId: string | null;
+    selectPointcloud: (id: string | null) => void;
+    hoveredId: string | null;
+    hoverPointcloud: (id: string | null) => void;
+    focusedId: string | null;
+    focusTrigger: number;
+    focusPointcloud: (id: string | null) => void;
+    loadedGeometries: Map<string, THREE.BufferGeometry>;
+    loadingIds: Set<string>;
+    toggleStreamPointCloud: (id: string, lodToLoad?: number) => Promise<void>;
+    unloadPointCloud: (id: string) => void;
 }
 
 const DEFAULT_HARDCODED_IDENTIFIER = "";
@@ -82,6 +103,168 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [fillLightIntensity, setFillLightIntensity] = useState<number>(0.5);
     const [hemisphereLightIntensity, setHemisphereLightIntensity] = useState<number>(0.6);
     const [ambientLightIntensity, setAmbientLightIntensity] = useState<number>(0.4);
+    const [showCameraTrajectories, setShowCameraTrajectories] = useState<boolean>(true);
+
+    // Multi-pointcloud states
+    const [catalog, setCatalog] = useState<PointCloudMetadataResponse[]>([]);
+    const [isFetchingCatalog, setIsFetchingCatalog] = useState<boolean>(false);
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [hoveredId, setHoveredId] = useState<string | null>(null);
+    const [focusedId, setFocusedId] = useState<string | null>(null);
+    const [focusTrigger, setFocusTrigger] = useState<number>(0);
+    const [loadedGeometries, setLoadedGeometries] = useState<Map<string, THREE.BufferGeometry>>(new Map());
+    const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
+
+    // AbortControllers map to manage in-flight progressive LOD loads per pointcloud
+    const activeControllersRef = React.useRef<Map<string, AbortController>>(new Map());
+
+    const updateGeometryForId = useCallback((id: string, newGeom: THREE.BufferGeometry, currentLod: number) => {
+        setLoadedGeometries((prev) => {
+            const next = new Map(prev);
+            const oldGeom = next.get(id);
+            if (oldGeom && oldGeom !== newGeom) {
+                oldGeom.dispose();
+            }
+            next.set(id, newGeom);
+            return next;
+        });
+
+        setGeometry((prevGeom) => {
+            if (prevGeom && prevGeom !== newGeom) {
+                prevGeom.dispose();
+            }
+            return newGeom;
+        });
+
+        const count = newGeom.attributes.position ? newGeom.attributes.position.count : 0;
+        setPointCount(count);
+        setLod(currentLod);
+    }, []);
+
+    const startProgressiveStream = useCallback(async (idToLoad: string, startLod: number = 10, endLod: number = 0) => {
+        if (!idToLoad.trim()) return;
+
+        // If pointcloud is currently in the process of being loaded, continue loading where it currently is at
+        if (isPointCloudLoading(idToLoad)) {
+            return;
+        }
+
+        // Abort existing stream for this ID if any
+        if (activeControllersRef.current.has(idToLoad)) {
+            activeControllersRef.current.get(idToLoad)?.abort();
+            activeControllersRef.current.delete(idToLoad);
+        }
+
+        const controller = new AbortController();
+        activeControllersRef.current.set(idToLoad, controller);
+
+        setIsLoading(true);
+        setError(null);
+        setLoadingIds((prev) => new Set(prev).add(idToLoad));
+
+        try {
+            await loadProgressivePointCloud({
+                id: idToLoad,
+                startLod,
+                endLod,
+                signal: controller.signal,
+                onLodLoaded: (currentLod, newGeom) => {
+                    if (controller.signal.aborted) return;
+                    updateGeometryForId(idToLoad, newGeom, currentLod);
+                    setIsLoading(false);
+                },
+                onError: (currentLod, err) => {
+                    console.warn(`Error loading LOD ${currentLod} for ${idToLoad}:`, err);
+                },
+            });
+        } catch (err: any) {
+            if (!controller.signal.aborted) {
+                console.error("Progressive stream error:", err);
+                setError(err.message || "Failed to load binary point cloud stream");
+            }
+        } finally {
+            if (!controller.signal.aborted) {
+                setIsLoading(false);
+                setLoadingIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(idToLoad);
+                    return next;
+                });
+                activeControllersRef.current.delete(idToLoad);
+            }
+        }
+    }, [updateGeometryForId]);
+
+    const selectPointcloud = useCallback((id: string | null) => {
+        setSelectedId(id);
+        if (id) {
+            setIdentifier(id);
+            startProgressiveStream(id, 10, 0);
+        }
+    }, [startProgressiveStream]);
+
+    const hoverPointcloud = useCallback((id: string | null) => {
+        setHoveredId(id);
+    }, []);
+
+    const focusPointcloud = useCallback((id: string | null) => {
+        setFocusedId(id);
+        if (id) {
+            selectPointcloud(id);
+            setFocusTrigger((prev) => prev + 1);
+        }
+    }, [selectPointcloud]);
+
+    const fetchCatalog = useCallback(async () => {
+        setIsFetchingCatalog(true);
+        try {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+            const res = await fetch(`${API_BASE_URL}/pointclouds/`);
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    const items: PointCloudMetadataResponse[] = data.filter(
+                        (item): item is PointCloudMetadataResponse => typeof item === "object" && item !== null && "id" in item
+                    );
+                    setCatalog(items);
+                }
+            }
+        } catch (err) {
+            console.error("Failed to fetch pointcloud catalog:", err);
+        } finally {
+            setIsFetchingCatalog(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchCatalog();
+    }, [fetchCatalog]);
+
+    const unloadPointCloud = useCallback((id: string) => {
+        if (activeControllersRef.current.has(id)) {
+            activeControllersRef.current.get(id)?.abort();
+            activeControllersRef.current.delete(id);
+        }
+
+        setLoadedGeometries((prev) => {
+            const next = new Map(prev);
+            const existing = next.get(id);
+            if (existing) {
+                existing.dispose();
+                next.delete(id);
+            }
+            return next;
+        });
+    }, []);
+
+    const toggleStreamPointCloud = useCallback(async (id: string) => {
+        if (loadedGeometries.has(id)) {
+            unloadPointCloud(id);
+            return;
+        }
+
+        selectPointcloud(id);
+    }, [loadedGeometries, unloadPointCloud, selectPointcloud]);
 
     const loadPlyUrl = useCallback((urlToLoad: string) => {
         if (!urlToLoad.trim()) return;
@@ -113,78 +296,10 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         );
     }, []);
 
-    const loadBinaryPointCloud = useCallback(async (idToLoad: string, lodToLoad: number = 0) => {
+    const loadBinaryPointCloud = useCallback(async (idToLoad: string, startLod: number = 10) => {
         if (!idToLoad.trim()) return;
-        setIsLoading(true);
-        setError(null);
-        setGeometry((prev) => {
-            if (prev) prev.dispose();
-            return null;
-        });
-
-        try {
-            const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
-            const cleanId = idToLoad.trim().split("?")[0];
-            const url = `${API_BASE_URL}/pointclouds/${encodeURIComponent(cleanId)}/stream-binary?lod=${lodToLoad}`;
-
-            const res = await fetch(url);
-            if (!res.ok) {
-                throw new Error(`Backend returned status ${res.status}: ${res.statusText}`);
-            }
-
-            const buffer = await res.arrayBuffer();
-            const pointSizeInBytes = 15;
-            const count = Math.floor(buffer.byteLength / pointSizeInBytes);
-
-            if (count === 0) {
-                throw new Error("Received empty point cloud data buffer");
-            }
-
-            const positions = new Float32Array(count * 3);
-            const colors = new Float32Array(count * 3);
-            const dataView = new DataView(buffer);
-            const colorScale = 255;
-            const tempColor = new THREE.Color();
-
-            for (let i = 0; i < count; i++) {
-                const offset = i * 15;
-                positions[i * 3] = dataView.getFloat32(offset, true);
-                positions[i * 3 + 1] = dataView.getFloat32(offset + 4, true);
-                positions[i * 3 + 2] = dataView.getFloat32(offset + 8, true);
-
-                const r = dataView.getUint8(offset + 12);
-                const g = dataView.getUint8(offset + 13);
-                const b = dataView.getUint8(offset + 14);
-
-                tempColor.setRGB(
-                    Math.min(1, r / colorScale),
-                    Math.min(1, g / colorScale),
-                    Math.min(1, b / colorScale),
-                    THREE.SRGBColorSpace
-                );
-                colors[i * 3] = tempColor.r;
-                colors[i * 3 + 1] = tempColor.g;
-                colors[i * 3 + 2] = tempColor.b;
-            }
-
-            const geom = new THREE.BufferGeometry();
-            geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-            geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-            geom.center();
-            geom.computeBoundingSphere();
-
-            setGeometry(geom);
-            setPointCount(count);
-        } catch (err: any) {
-            console.error("Binary Stream Error:", err);
-            setError(err.message || "Failed to load binary point cloud stream");
-            if (idToLoad === DEFAULT_HARDCODED_IDENTIFIER) {
-                loadPlyUrl(DEFAULT_PLY_URL);
-            }
-        } finally {
-            setIsLoading(false);
-        }
-    }, [loadPlyUrl]);
+        await startProgressiveStream(idToLoad, startLod, 0);
+    }, [startProgressiveStream]);
 
     const loadPlyFile = useCallback(async (file: File) => {
         setIsLoading(true);
@@ -257,9 +372,28 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 loadBinaryPointCloud,
                 loadPlyUrl,
                 loadPlyFile,
+                showCameraTrajectories,
+                setShowCameraTrajectories,
+
+                // Multi-pointcloud exports
+                catalog,
+                isFetchingCatalog,
+                fetchCatalog,
+                selectedId,
+                selectPointcloud,
+                hoveredId,
+                hoverPointcloud,
+                focusedId,
+                focusTrigger,
+                focusPointcloud,
+                loadedGeometries,
+                loadingIds,
+                toggleStreamPointCloud,
+                unloadPointCloud,
             }}
         >
             {children}
         </PLYPointCloudContext.Provider>
     );
 };
+

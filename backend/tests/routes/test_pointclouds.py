@@ -120,14 +120,15 @@ class TestPointCloudServices(TestCase):
                 return b"".join(chunks)
 
             binary_data = asyncio.run(consume_stream())
-            self.assertEqual(len(binary_data), 15)
-            x, y, z, r, g, b = struct.unpack('<3f3B', binary_data)
+            self.assertEqual(len(binary_data), 16)
+            x, y, z, r, g, b, a = struct.unpack('<3f4B', binary_data)
             self.assertAlmostEqual(x, 1.0)
             self.assertAlmostEqual(y, 2.0)
             self.assertAlmostEqual(z, 3.0)
             self.assertEqual(r, 255)
             self.assertEqual(g, 128)
             self.assertEqual(b, 64)
+            self.assertEqual(a, 255)
 
 
 def test_dependency_injection():
@@ -221,7 +222,7 @@ def test_endpoint_stream_binary():
     from fastapi.responses import StreamingResponse
 
     async def dummy_gen():
-        yield struct.pack('<3f3B', 10.0, 20.0, 30.0, 255, 128, 0)
+        yield struct.pack('<3f4B', 10.0, 20.0, 30.0, 255, 128, 0, 255)
 
     dummy_response = StreamingResponse(dummy_gen(), media_type="application/octet-stream")
 
@@ -234,17 +235,76 @@ def test_endpoint_stream_binary():
         response = client.get("/pointclouds/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/stream-binary?lod=2")
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/octet-stream"
-        assert len(response.content) == 15
-        x, y, z, r, g, b = struct.unpack('<3f3B', response.content)
+        assert len(response.content) == 16
+        x, y, z, r, g, b, a = struct.unpack('<3f4B', response.content)
         assert x == 10.0
         assert y == 20.0
         assert z == 30.0
         assert r == 255
         assert g == 128
         assert b == 0
+        assert a == 255
         mock_service.stream_pointcloud_binary.assert_called_once_with("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", lod=2)
     finally:
         app.dependency_overrides.clear()
+
+
+def test_endpoint_stream_binary_lod10():
+    import struct
+    from fastapi.responses import StreamingResponse
+
+    async def dummy_gen():
+        yield struct.pack('<3f4B', 5.0, 5.0, 5.0, 255, 255, 255, 255)
+
+    dummy_response = StreamingResponse(dummy_gen(), media_type="application/octet-stream")
+
+    mock_service = MagicMock()
+    mock_service.stream_pointcloud_binary = AsyncMock(return_value=dummy_response)
+
+    app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
+
+    try:
+        response = client.get("/pointclouds/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/stream-binary?lod=10")
+        assert response.status_code == 200
+        mock_service.stream_pointcloud_binary.assert_called_once_with("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", lod=10)
+
+        # Test invalid LOD > 10 returns 422 Unprocessable Entity
+        err_response = client.get("/pointclouds/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/stream-binary?lod=11")
+        assert err_response.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_ingest_opensfm_init_laz_file():
+    mock_db = MagicMock()
+    mock_db.commit = AsyncMock()
+    mock_db.refresh = AsyncMock()
+
+    from app.core.database import get_db_session
+    app.dependency_overrides[get_db_session] = lambda: mock_db
+
+    folder_dir = os.path.join(settings.opensfm_ingestion_dir, "test_folder", "undistorted", "depthmaps")
+    os.makedirs(folder_dir, exist_ok=True)
+    laz_file = os.path.join(folder_dir, "fused.laz")
+    with open(laz_file, "w") as f:
+        f.write("dummy laz content")
+
+    from unittest.mock import patch
+    with patch("app.api.routes.pointclouds.Redis.from_url"), \
+         patch("app.api.routes.pointclouds.Queue"):
+        try:
+            response = client.post("/pointclouds/ingest-opensfm/init?folder_name=test_folder")
+            assert response.status_code == 200
+            data = response.json()
+            assert "jobs" in data
+            assert len(data["jobs"]) == 1
+            assert data["jobs"][0]["folder"] == "test_folder"
+        finally:
+            if os.path.exists(laz_file):
+                os.remove(laz_file)
+            shutil.rmtree(os.path.join(settings.opensfm_ingestion_dir, "test_folder"), ignore_errors=True)
+            app.dependency_overrides.clear()
+
 
 
 

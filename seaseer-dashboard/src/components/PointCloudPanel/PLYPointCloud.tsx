@@ -3,6 +3,13 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import { generateDelaunayTerrainMesh } from "./utils/delaunayTriangulation";
+import { TrajectoryRenderer } from "../RovRenderer/trajectoryRenderer";
+
+export { PointCloudList } from "./PointCloudList";
+export { PointCloudListContainer } from "./PointCloudListContainer";
+export type { PointCloudItem, PointCloudListProps } from "./PointCloudList";
+
+
 // @ts-expect-error - geo-three submodule
 import { MapView, DebugProvider, HeightDebugProvider, OpenStreetMapsProvider, OpenMapTilesProvider, MapTilerProvider, BingMapsProvider, BathymetryProvider, EmodnetProvider, UnitsUtils, MapNodeGeometry, MapHeightNodeShader, MapHeightNode, MapNodeHeightGeometry, MapPlaneNode, CanvasUtils } from "../../../public/geo-three/build/geo-three.module.js";
 
@@ -356,6 +363,205 @@ function GeoThreeHeightmap() {
     return <primitive object={mapView} position={[0, -0.5, 0]} />;
 }
 
+import type { PointCloudMetadataResponse } from "../../client";
+
+function getItemCenter(item: PointCloudMetadataResponse): [number, number, number] {
+    if (item.center && Array.isArray(item.center) && item.center.length === 3) {
+        return [item.center[0], item.center[1], item.center[2]];
+    }
+    if (
+        item.min_x != null && item.max_x != null &&
+        item.min_y != null && item.max_y != null &&
+        item.min_z != null && item.max_z != null
+    ) {
+        return [
+            (item.min_x + item.max_x) / 2.0,
+            (item.min_y + item.max_y) / 2.0,
+            (item.min_z + item.max_z) / 2.0,
+        ];
+    }
+    return [TARGET_X, 0, TARGET_Z];
+}
+
+function PointCloudCenterMarkers() {
+    const {
+        catalog,
+        selectedId,
+        hoveredId,
+        selectPointcloud,
+        hoverPointcloud,
+        focusPointcloud,
+    } = usePLYPointCloudContext();
+
+    const meshRef = useRef<THREE.InstancedMesh>(null);
+    const dummy = useMemo(() => new THREE.Object3D(), []);
+    const centerVec = useMemo(() => new THREE.Vector3(), []);
+    const rotEuler = useMemo(() => new THREE.Euler(-Math.PI / 2, 0, 0), []);
+
+    useEffect(() => {
+        if (meshRef.current && meshRef.current.geometry) {
+            meshRef.current.geometry.boundingSphere = new THREE.Sphere(
+                new THREE.Vector3(0, 0, 0),
+                Infinity
+            );
+        }
+    }, [catalog]);
+
+    useFrame(({ camera }) => {
+        if (!meshRef.current || catalog.length === 0) return;
+
+        catalog.forEach((item, index) => {
+            const [cx, cy, cz] = getItemCenter(item);
+            centerVec.set(cx, cy, cz).applyEuler(rotEuler);
+            const dist = camera.position.distanceTo(centerVec);
+
+            const isSelected = item.id === selectedId;
+            const isHovered = item.id === hoveredId;
+
+            const baseFactor = isSelected ? 0.025 : isHovered ? 0.02 : 0.012;
+            const scale = Math.max(0.01, dist * baseFactor);
+
+            dummy.position.set(cx, cy, cz);
+            dummy.scale.set(scale, scale, scale);
+            dummy.updateMatrix();
+            meshRef.current!.setMatrixAt(index, dummy.matrix);
+
+            const color = new THREE.Color(
+                isSelected ? "#ff3344" : isHovered ? "#ffaa00" : "#00e5ff"
+            );
+            meshRef.current!.setColorAt(index, color);
+        });
+
+        meshRef.current.instanceMatrix.needsUpdate = true;
+        if (meshRef.current.instanceColor) {
+            meshRef.current.instanceColor.needsUpdate = true;
+        }
+    });
+
+    if (catalog.length === 0) return null;
+
+    const handleSelect = (instanceId?: number) => {
+        if (instanceId !== undefined && catalog[instanceId]) {
+            const targetId = catalog[instanceId].id;
+            selectPointcloud(targetId);
+        }
+    };
+
+    return (
+        <instancedMesh
+            ref={meshRef}
+            args={[undefined, undefined, catalog.length]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            onClick={(e) => {
+                e.stopPropagation();
+                handleSelect(e.instanceId);
+            }}
+            onDoubleClick={(e) => {
+                e.stopPropagation();
+                if (e.instanceId !== undefined && catalog[e.instanceId]) {
+                    const targetId = catalog[e.instanceId].id;
+                    focusPointcloud(targetId);
+                    handleSelect(e.instanceId);
+                }
+            }}
+            onPointerOver={(e) => {
+                e.stopPropagation();
+                document.body.style.cursor = "pointer";
+                if (e.instanceId !== undefined && catalog[e.instanceId]) {
+                    hoverPointcloud(catalog[e.instanceId].id);
+                }
+            }}
+            onPointerOut={(e) => {
+                e.stopPropagation();
+                document.body.style.cursor = "auto";
+                hoverPointcloud(null);
+            }}
+        >
+            <sphereGeometry args={[1, 16, 16]} />
+            <meshStandardMaterial roughness={0.3} metalness={0.2} />
+        </instancedMesh>
+    );
+}
+
+function CameraFocusController() {
+    const { camera } = useThree();
+    const { focusedId, focusTrigger, catalog } = usePLYPointCloudContext();
+    const targetPos = useRef<THREE.Vector3 | null>(null);
+
+    useEffect(() => {
+        if (!focusedId) return;
+        const item = catalog.find((pc) => pc.id === focusedId);
+        if (item) {
+            const [cx, cy, cz] = getItemCenter(item);
+            targetPos.current = new THREE.Vector3(cx, cy, cz).applyEuler(
+                new THREE.Euler(-Math.PI / 2, 0, 0)
+            );
+        }
+    }, [focusedId, focusTrigger, catalog]);
+
+    useFrame((_, delta) => {
+        if (targetPos.current) {
+            const targetCamPos = targetPos.current.clone().add(new THREE.Vector3(0, 1500, 1500));
+            camera.position.lerp(targetCamPos, Math.min(1, 5 * delta));
+            camera.lookAt(targetPos.current);
+
+            if (camera.position.distanceTo(targetCamPos) < 5.0) {
+                targetPos.current = null;
+            }
+        }
+    });
+
+    return null;
+}
+
+function DBCameraTrajectoryDisplay() {
+    const {
+        showCameraTrajectories,
+        selectedId,
+        identifier,
+        loadedGeometries,
+        mode,
+    } = usePLYPointCloudContext();
+
+    const activeIds = useMemo(() => {
+        const set = new Set<string>();
+        if (selectedId) set.add(selectedId);
+        if (identifier && identifier.trim().length > 0) set.add(identifier);
+        for (const id of loadedGeometries.keys()) {
+            if (id) set.add(id);
+        }
+        return Array.from(set);
+    }, [selectedId, identifier, loadedGeometries]);
+
+    if (!showCameraTrajectories || activeIds.length === 0) return null;
+
+    const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+    return (
+        <group>
+            {activeIds.map((id) => {
+                const position: [number, number, number] =
+                    mode === "plyUrl"
+                        ? [TARGET_X, 0, TARGET_Z]
+                        : [0, 0, 0];
+
+                return (
+                    <TrajectoryRenderer
+                        key={id}
+                        url={`${apiBaseUrl}/pointclouds/${id}/camera-routes`}
+                        position={position}
+                        rotation={[-Math.PI / 2, 0, 0]}
+                        color={0x00ffcc}
+                        lineWidth={3}
+                        showPoints={true}
+                        pointSize={1.5}
+                    />
+                );
+            })}
+        </group>
+    );
+}
+
 export default function PLYPointCloud() {
     const {
         geometry,
@@ -364,19 +570,19 @@ export default function PLYPointCloud() {
         wireframe,
         pointSize,
         identifier,
-        lod,
         plyUrl,
         loadBinaryPointCloud,
         loadPlyUrl,
+        loadedGeometries,
     } = usePLYPointCloudContext();
 
     useEffect(() => {
-        if (mode === "binary") {
-            loadBinaryPointCloud(identifier, lod);
+        if (mode === "binary" && identifier) {
+            loadBinaryPointCloud(identifier);
         } else if (mode === "plyUrl") {
             loadPlyUrl(plyUrl);
         }
-    }, [mode, identifier, lod, loadBinaryPointCloud, loadPlyUrl]);
+    }, [mode, identifier, plyUrl, loadBinaryPointCloud, loadPlyUrl]);
 
     useEffect(() => {
         if (geometry && renderMode === "mesh") {
@@ -387,10 +593,15 @@ export default function PLYPointCloud() {
     return (
         <group>
             <CameraPositionControls />
+            <CameraFocusController />
             <SceneLighting />
             <GeoThreeHeightmap />
+            <PointCloudCenterMarkers />
+            <DBCameraTrajectoryDisplay />
+
+            {/* Render legacy / single active pointcloud geometry */}
             {geometry && (
-                <group position={[TARGET_X, 0, TARGET_Z]}>
+                <group position={mode === "plyUrl" ? [TARGET_X, 0, TARGET_Z] : [0, 0, 0]}>
                     {renderMode === "mesh" ? (
                         <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}>
                             <meshStandardMaterial
@@ -412,6 +623,19 @@ export default function PLYPointCloud() {
                     )}
                 </group>
             )}
+
+            {/* Render dynamically streamed full pointcloud geometries */}
+            {Array.from(loadedGeometries.entries()).map(([id, geom]) => (
+                <group key={id}>
+                    <points geometry={geom} rotation={[-Math.PI / 2, 0, 0]}>
+                        <pointsMaterial
+                            vertexColors={!!geom.attributes.color}
+                            size={pointSize}
+                            sizeAttenuation
+                        />
+                    </points>
+                </group>
+            ))}
         </group>
     );
 }
