@@ -73,14 +73,20 @@ class PointCloudRepository:
             logger.error(f"Error querying total point count for {pointcloud_id} lod={lod}: {e}", exc_info=True)
             return 0
 
-    async def stream_points(self, pointcloud_id: str, lod: int = 0) -> AsyncGenerator[Tuple[float, float, float, int, int, int], None]:
+    async def stream_points(
+        self, pointcloud_id: str, lod: int = 0, custom_query: Optional[str] = None
+    ) -> AsyncGenerator[Tuple[float, float, float, int, int, int], None]:
         """
         Streams points directly from pgPointcloud table using PC_Explode and PC_Get.
+        If custom_query is provided, it replaces the inner point selection subquery.
         Yields tuple: (x, y, z, r, g, b)
         """
         import app.services.pointcloud.database as db_mod
 
-        query = text("""
+        default_inner_query = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = :lod"
+        inner_query = custom_query.strip() if custom_query and custom_query.strip() else default_inner_query
+
+        full_query_str = f"""
             SELECT 
                 PC_Get(pt, 'X')         as x,
                 PC_Get(pt, 'Y')         as y,
@@ -89,19 +95,19 @@ class PointCloudRepository:
                 PC_Get(pt, 'Green')     as g,
                 PC_Get(pt, 'Blue')      as b
             FROM (
-                SELECT PC_Explode(patch) AS pt 
-                FROM pointcloud_patches 
-                WHERE pointcloud_id = :id AND lod = :lod
+                {inner_query}
             ) AS points;
-        """)
+        """
+
+        query = text(full_query_str)
 
         async with db_mod.async_session() as session:
             stream_result = await session.stream(query, {"id": pointcloud_id, "lod": lod})
             async for record in stream_result:
-                x = float(record[0]) if record[0] is not None else 0.0
-                y = float(record[1]) if record[1] is not None else 0.0
-                z = float(record[2]) if record[2] is not None else 0.0
-                r = int(record[3]) if record[3] is not None else 0
-                g = int(record[4]) if record[4] is not None else 0
-                b = int(record[5]) if record[5] is not None else 0
+                x = float(record[0]) if len(record) > 0 and record[0] is not None else 0.0
+                y = float(record[1]) if len(record) > 1 and record[1] is not None else 0.0
+                z = float(record[2]) if len(record) > 2 and record[2] is not None else 0.0
+                r = int(record[3]) if len(record) > 3 and record[3] is not None else 0
+                g = int(record[4]) if len(record) > 4 and record[4] is not None else 0
+                b = int(record[5]) if len(record) > 5 and record[5] is not None else 0
                 yield (x, y, z, r, g, b)

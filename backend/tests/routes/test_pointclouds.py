@@ -244,7 +244,7 @@ def test_endpoint_stream_binary():
         assert g == 128
         assert b == 0
         assert a == 255
-        mock_service.stream_pointcloud_binary.assert_called_once_with("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", lod=2)
+        mock_service.stream_pointcloud_binary.assert_called_once_with("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", lod=2, custom_query=None)
     finally:
         app.dependency_overrides.clear()
 
@@ -266,11 +266,39 @@ def test_endpoint_stream_binary_lod10():
     try:
         response = client.get("/pointclouds/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/stream-binary?lod=10")
         assert response.status_code == 200
-        mock_service.stream_pointcloud_binary.assert_called_once_with("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", lod=10)
+        mock_service.stream_pointcloud_binary.assert_called_once_with("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", lod=10, custom_query=None)
 
         # Test invalid LOD > 10 returns 422 Unprocessable Entity
         err_response = client.get("/pointclouds/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/stream-binary?lod=11")
         assert err_response.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_endpoint_stream_binary_custom_query():
+    import struct
+    from fastapi.responses import StreamingResponse
+
+    async def dummy_gen():
+        yield struct.pack('<3f4B', 1.0, 2.0, 3.0, 100, 150, 200, 255)
+
+    dummy_response = StreamingResponse(dummy_gen(), media_type="application/octet-stream")
+
+    mock_service = MagicMock()
+    mock_service.stream_pointcloud_binary = AsyncMock(return_value=dummy_response)
+
+    app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
+
+    custom_sql = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = :lod"
+
+    try:
+        response = client.get(
+            f"/pointclouds/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/stream-binary?lod=0&query={custom_sql}"
+        )
+        assert response.status_code == 200
+        mock_service.stream_pointcloud_binary.assert_called_once_with(
+            "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", lod=0, custom_query=custom_sql
+        )
     finally:
         app.dependency_overrides.clear()
 

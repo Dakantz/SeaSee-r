@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from app.repositories.pointcloud_repository import PointCloudRepository
 from app.services.pointcloud.exporters.base import BasePointCloudExporter
 
@@ -25,12 +25,12 @@ class BinaryStreamExporter(BasePointCloudExporter):
         super().__init__(repository)
         self.chunk_size = chunk_size
 
-    async def export_stream(self, pointcloud_id: str, lod: int = 0) -> AsyncGenerator[bytes, None]:
+    async def export_stream(self, pointcloud_id: str, lod: int = 0, custom_query: Optional[str] = None) -> AsyncGenerator[bytes, None]:
         try:
             batch_capacity = self.chunk_size // 16
             points_batch = []
 
-            async for x, y, z, r, g, b in self.repository.stream_points(pointcloud_id, lod=lod):
+            async for x, y, z, r, g, b in self.repository.stream_points(pointcloud_id, lod=lod, custom_query=custom_query):
                 r_u8 = min(255, max(0, r >> 8 if r > 255 else r))
                 g_u8 = min(255, max(0, g >> 8 if g > 255 else g))
                 b_u8 = min(255, max(0, b >> 8 if b > 255 else b))

@@ -17,10 +17,11 @@ Instead of transferring bloated JSON structures or generating intermediate `.ply
 
 ### Parameters
 
-| Parameter | Type | Location | Required | Default | Description |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `identifier` | `string` | Path | Yes | — | UUID of the point cloud metadata entry (e.g., `550e8400-e29b-41d4-a716-446655440000`). Trailing query string parameters attached to the identifier are safely parsed and stripped. |
-| `lod` | `integer` | Query | No | `0` | Level of Detail (LOD) pyramid level to stream (`0` represents full resolution / base LOD; selectable up to `10`). |
+| Parameter | Type | Location | Required | Default | Description                                                                                                                                                                                                                                                                                                                |
+| :--- | :--- | :--- | :--- | :--- |:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `identifier` | `string` | Path | Yes | — | UUID of the point cloud metadata entry (e.g., `550e8400-e29b-41d4-a716-446655440000`). Trailing query string parameters attached to the identifier are safely parsed and stripped.                                                                                                                                         |
+| `lod` | `integer` | Query | No | `0` | Level of Detail (LOD) pyramid level to stream (`0` represents full resolution / base LOD; selectable up to `10`).                                                                                                                                                                                                          |
+| `query` | `string` | Query | No | Standard SQL query | Optional custom SQL selection query. When omitted, defaults to: `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = :lod` |
 
 ---
 
