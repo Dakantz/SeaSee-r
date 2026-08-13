@@ -10,10 +10,21 @@ import PointCloudList, { type PointCloudItem } from "./PointCloudList";
 export const PointCloudListContainer: React.FC = () => {
   const contextState = usePLYPointCloudContext();
   const selectedId = contextState?.selectedId ?? null;
+  const hoveredId = contextState?.hoveredId ?? null;
+  const selectPointcloud = contextState?.selectPointcloud ?? (() => {});
+  const hoverPointcloud = contextState?.hoverPointcloud ?? (() => {});
   const focusPointcloud = contextState?.focusPointcloud ?? (() => {});
+  const setIdentifier = contextState?.setIdentifier ?? (() => {});
   const pointCount = contextState?.pointCount ?? null;
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const effectiveSelectedIds = useMemo(() => {
+    if (selectedId) {
+      return Array.from(new Set([selectedId, ...selectedIds]));
+    }
+    return selectedIds;
+  }, [selectedId, selectedIds]);
 
   const pointCloudItems: PointCloudItem[] = useMemo(() => {
     const catalogList = contextState?.catalog ?? [];
@@ -43,8 +54,14 @@ export const PointCloudListContainer: React.FC = () => {
   return (
     <PointCloudList
       pointclouds={pointCloudItems}
-      selectedIds={selectedIds}
+      selectedIds={effectiveSelectedIds}
+      hoveredId={hoveredId}
       onSelectionChange={setSelectedIds}
+      onHover={hoverPointcloud}
+      onSelect={(id) => {
+        selectPointcloud(id);
+        setIdentifier(id);
+      }}
       onMoveCamera={(id) => focusPointcloud(id)}
       onEdit={(id) => {
         console.log(`Edit requested for PointCloud ID: ${id}`);

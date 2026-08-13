@@ -22,24 +22,30 @@ export interface PointCloudItem {
 export interface PointCloudListProps {
   pointclouds: PointCloudItem[];
   selectedIds: string[];
-  onSelectionChange: (selectedIds: string[]) => void;
+  hoveredId?: string | null;
+  onSelectionChange?: (selectedIds: string[]) => void;
   onMoveCamera: (pointcloudId: string) => void;
   onEdit: (pointcloudId: string) => void;
+  onHover?: (pointcloudId: string | null) => void;
+  onSelect?: (pointcloudId: string) => void;
 }
 
 /**
  * PointCloudList Component
  * 
  * Manages rendering a sidebar list of available 3D point cloud datasets.
- * Supports multi-selection via checkboxes, selection percentage calculation, camera trajectory navigation,
- * and edit hooks for 3D point cloud assets.
+ * Supports selection percentage calculation, camera trajectory navigation,
+ * hover highlighting connected to 3D center markers, and edit hooks for 3D point cloud assets.
  */
 export const PointCloudList: React.FC<PointCloudListProps> = ({
   pointclouds,
   selectedIds,
-  onSelectionChange,
+  hoveredId,
+  onSelectionChange: _onSelectionChange,
   onMoveCamera,
   onEdit,
+  onHover,
+  onSelect,
 }) => {
   const calculatePercentage = (selected: number, total: number): number => {
     if (!total || total <= 0) return 0;
@@ -131,11 +137,14 @@ export const PointCloudList: React.FC<PointCloudListProps> = ({
         >
           {pointclouds.map((pc) => {
             const isSelected = selectedIds.includes(pc.id);
+            const isHovered = pc.id === hoveredId;
             const percentage = calculatePercentage(pc.selectedPoints, pc.totalPoints);
 
             return (
               <div
                 key={pc.id}
+                onMouseEnter={() => onHover?.(pc.id)}
+                onMouseLeave={() => onHover?.(null)}
                 style={{
                   display: "flex",
                   flexDirection: "column",
@@ -144,21 +153,25 @@ export const PointCloudList: React.FC<PointCloudListProps> = ({
                   borderRadius: "var(--radius-md, 6px)",
                   background: isSelected
                     ? "var(--color-bg-accent-subtle, rgba(59, 130, 246, 0.12))"
+                    : isHovered
+                    ? "rgba(255, 170, 0, 0.15)"
                     : "var(--color-bg-subtle, #14151b)",
                   border: isSelected
                     ? "1px solid var(--color-accent, #3b82f6)"
+                    : isHovered
+                    ? "1px solid #ffaa00"
                     : "1px solid var(--color-border-subtle, #2a2b36)",
                   transition: "all 0.15s ease-in-out",
                   cursor: "pointer",
                 }}
                 /*
-                 * CAMERA NAVIGATION HANDLER HOOK:
-                 * Clicking on a pointcloud card item triggers `onMoveCamera(pc.id)`.
-                 * In application state, this should fetch camera trajectory data from
-                 * `/pointclouds/{pc.id}/camera-routes` and update Three.js OrbitControls / camera position
-                 * to smoothly focus on the bounding center or starting camera frame of the point cloud dataset.
+                 * CAMERA NAVIGATION & SELECTION HANDLER HOOK:
+                 * Clicking on a pointcloud card item triggers `onSelect(pc.id)` and `onMoveCamera(pc.id)`.
                  */
-                onClick={() => onMoveCamera(pc.id)}
+                onClick={() => {
+                  onSelect?.(pc.id);
+                  onMoveCamera(pc.id);
+                }}
               >
                 {/* Item Top Row: Name and Actions */}
                 <div

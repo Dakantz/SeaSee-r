@@ -13,11 +13,12 @@ class LODGenerationStage(BaseIngestionStage):
         file_path = context.get("file_path")
         file_id = context.get("file_id")
         connection_str = format_libpq_connection_string(settings.database_url)
-        lods = context.get("lods", [1, 2, 3])
+        lods = context.get("lods", list(range(1, 11)))
 
         for lod in lods:
             logger.info(f"Generating LOD {lod} for {file_id}")
-            await ingest_pgpointcloud(file_path, file_id, connection_str, lod=lod)
+            step = 2 ** lod
+            await ingest_pgpointcloud(file_path, file_id, connection_str, lod=lod, step=step)
             
         context["lods_generated"] = lods
         return context

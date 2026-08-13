@@ -52,8 +52,8 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         logger.info(f"Source file dimensions: {source_dims}")
         logger.info(f"Target schema dimensions: {target_dims}")
 
-        # Execute PDAL pgPointcloud ingestion for LOD levels 0..3
-        for lod in range(4):
+        # Execute PDAL pgPointcloud ingestion for LOD levels 0..10
+        for lod in range(11):
             step = 2 ** lod
             ingested_pcid = await ingest_pgpointcloud(
                 file_path=file_path,

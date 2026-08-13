@@ -4,7 +4,7 @@ from redis import Redis
 from rq import Queue
 
 from typing import List, Union, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from app.schemas.pointcloud import PointCloudMetadataResponse, CameraHeaderResponse, CameraFrameResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,7 +43,7 @@ Stream point cloud data directly from database as raw binary buffer (Float32 XYZ
 @router.get("/{identifier}/stream-binary")
 async def stream_pointcloud_binary(
     identifier: str,
-    lod: int = 0,
+    lod: int = Query(0, ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
     storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
 ):
     return await storage_service.stream_pointcloud_binary(identifier, lod=lod)
@@ -55,7 +55,7 @@ Retrieve a .ply point cloud file from database storage.
 @router.get("/{filename_or_id}")
 async def get_pointcloud(
     filename_or_id: str,
-    lod: int = 0,
+    lod: int = Query(0, ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
     storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
 ):
     return await storage_service.get_pointcloud(filename_or_id, lod=lod)

@@ -424,6 +424,13 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                         <option value={1} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 1 (High - 50%)</option>
                         <option value={2} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 2 (Medium - 25%)</option>
                         <option value={3} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 3 (Low - 12.5%)</option>
+                        <option value={4} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 4 (6.25%)</option>
+                        <option value={5} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 5 (3.125%)</option>
+                        <option value={6} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 6 (1.56%)</option>
+                        <option value={7} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 7 (0.78%)</option>
+                        <option value={8} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 8 (0.39%)</option>
+                        <option value={9} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 9 (0.20%)</option>
+                        <option value={10} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 10 (Lowest - 0.10%)</option>
                     </select>
 
                     <button

@@ -249,6 +249,32 @@ def test_endpoint_stream_binary():
         app.dependency_overrides.clear()
 
 
+def test_endpoint_stream_binary_lod10():
+    import struct
+    from fastapi.responses import StreamingResponse
+
+    async def dummy_gen():
+        yield struct.pack('<3f4B', 5.0, 5.0, 5.0, 255, 255, 255, 255)
+
+    dummy_response = StreamingResponse(dummy_gen(), media_type="application/octet-stream")
+
+    mock_service = MagicMock()
+    mock_service.stream_pointcloud_binary = AsyncMock(return_value=dummy_response)
+
+    app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
+
+    try:
+        response = client.get("/pointclouds/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/stream-binary?lod=10")
+        assert response.status_code == 200
+        mock_service.stream_pointcloud_binary.assert_called_once_with("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", lod=10)
+
+        # Test invalid LOD > 10 returns 422 Unprocessable Entity
+        err_response = client.get("/pointclouds/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/stream-binary?lod=11")
+        assert err_response.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_ingest_opensfm_init_laz_file():
     mock_db = MagicMock()
     mock_db.commit = AsyncMock()
