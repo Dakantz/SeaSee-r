@@ -89,11 +89,22 @@ Retrieves all camera frames for all camera headers linked to the specified point
 
 ## Database Architecture & PostGIS Integration
 
-The camera data model is split into headers (intrinsics) and frames (extrinsics/spatial points):
+The camera data model and point cloud metadata are linked to video recordings:
 
 ```
 ┌─────────────────────────┐
+│     video_metadata      │
+└────────────┬────────────┘
+             │ 1
+             │
+             │ N (SET NULL Delete)
+             ▼
+┌─────────────────────────┐
 │   pointcloud_metadata   │
+│ ─────────────────────── │
+│ • id (UUID)             │
+│ • video_metadata_id(UUID│ ◄── FK to video_metadata.id
+│ • orig_filename (String)│
 └────────────┬────────────┘
              │ 1
              │

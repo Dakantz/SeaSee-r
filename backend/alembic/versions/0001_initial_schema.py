@@ -42,12 +42,37 @@ def upgrade() -> None:
         sa.Column('error_message', sa.Text(), nullable=True),
     )
 
-    # 2. PointCloud Metadata Table
+    # 2. Upload Metadata Table
+    op.create_table(
+        'upload_metadata',
+        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column('batch_id', postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column('orig_filename', sa.String(length=255), nullable=False),
+        sa.Column('safe_filename', sa.String(length=255), nullable=True),
+        sa.Column('content_type', sa.String(length=100), nullable=True),
+        sa.Column('status', sa.Enum('PENDING', 'UPLOADING', 'COMPLETED', 'FAILED', name='videostatus'), nullable=False),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+        sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
+    )
+
+    # 3. Video Metadata Table
+    op.create_table(
+        'video_metadata',
+        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column('upload_metadata_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('upload_metadata.id', ondelete='CASCADE'), nullable=False),
+        sa.Column('content_type', sa.String(length=100), nullable=True),
+        sa.Column('total_bytes', sa.Integer(), nullable=True),
+        sa.Column('video_start_at', sa.DateTime(timezone=True), nullable=False),
+        sa.Column('video_stop_at', sa.DateTime(timezone=True), nullable=False),
+    )
+
+    # 4. PointCloud Metadata Table
     srid = settings.backend_srid
     op.execute(f"""
         CREATE TABLE IF NOT EXISTS pointcloud_metadata (
             id UUID PRIMARY KEY,
             job_id UUID REFERENCES jobs(id) ON DELETE SET NULL,
+            video_metadata_id UUID REFERENCES video_metadata(id) ON DELETE SET NULL,
             orig_filename VARCHAR(255) NOT NULL,
             safe_filename VARCHAR(255),
             number_of_points INTEGER NOT NULL DEFAULT 0,
@@ -67,8 +92,12 @@ def upgrade() -> None:
         CREATE INDEX IF NOT EXISTS idx_pointcloud_metadata_center
         ON pointcloud_metadata USING GIST (center);
     """)
+    op.execute("""
+        CREATE INDEX IF NOT EXISTS idx_pointcloud_metadata_video_metadata_id
+        ON pointcloud_metadata (video_metadata_id);
+    """)
 
-    # 3. PointCloud Patches Tables (per-LOD 0 to 10)
+    # 5. PointCloud Patches Tables (per-LOD 0 to 10)
     for lod in range(11):
         op.execute(f"""
             CREATE TABLE IF NOT EXISTS pointcloud_patches_lod{lod} (
@@ -82,7 +111,7 @@ def upgrade() -> None:
             ON pointcloud_patches_lod{lod} (pointcloud_id);
         """)
 
-    # 4a. Camera Headers Table
+    # 6a. Camera Headers Table
     op.create_table(
         'camera_headers',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
@@ -94,7 +123,7 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     )
 
-    # 4b. Camera Frames Table
+    # 6b. Camera Frames Table
     op.execute(f"""
         CREATE TABLE IF NOT EXISTS camera_frames (
             id UUID PRIMARY KEY,
@@ -119,7 +148,7 @@ def upgrade() -> None:
         ON camera_frames USING GIST (position);
     """)
 
-    # 5. Bathymetry Raster Table
+    # 7. Bathymetry Raster Table
     op.execute("""
         CREATE TABLE IF NOT EXISTS bathymetry_raster (
             rid SERIAL PRIMARY KEY,
@@ -128,30 +157,6 @@ def upgrade() -> None:
             pointcloud_id UUID REFERENCES pointcloud_metadata(id) ON DELETE CASCADE
         );
     """)
-
-    # 6. Upload Metadata Table
-    op.create_table(
-        'upload_metadata',
-        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column('batch_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('orig_filename', sa.String(length=255), nullable=False),
-        sa.Column('safe_filename', sa.String(length=255), nullable=True),
-        sa.Column('content_type', sa.String(length=100), nullable=True),
-        sa.Column('status', sa.Enum('PENDING', 'UPLOADING', 'COMPLETED', 'FAILED', name='videostatus'), nullable=False),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
-        sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
-    )
-
-    # 7. Video Metadata Table
-    op.create_table(
-        'video_metadata',
-        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column('upload_metadata_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('upload_metadata.id', ondelete='CASCADE'), nullable=False),
-        sa.Column('content_type', sa.String(length=100), nullable=True),
-        sa.Column('total_bytes', sa.Integer(), nullable=True),
-        sa.Column('video_start_at', sa.DateTime(timezone=True), nullable=False),
-        sa.Column('video_stop_at', sa.DateTime(timezone=True), nullable=False),
-    )
 
     # 8. Log Data Table
     op.create_table(
@@ -183,8 +188,10 @@ def downgrade() -> None:
     for lod in range(11):
         op.execute(f"DROP INDEX IF EXISTS idx_pointcloud_patches_lod{lod}_pc;")
         op.execute(f"DROP TABLE IF EXISTS pointcloud_patches_lod{lod} CASCADE;")
+    op.execute("DROP INDEX IF EXISTS idx_pointcloud_metadata_video_metadata_id;")
     op.execute("DROP INDEX IF EXISTS idx_pointcloud_metadata_center;")
     op.execute("DROP TABLE IF EXISTS pointcloud_metadata CASCADE;")
     op.drop_table('jobs')
     op.execute("DROP TYPE IF EXISTS jobstatus")
     op.execute("DROP TYPE IF EXISTS videostatus")
+

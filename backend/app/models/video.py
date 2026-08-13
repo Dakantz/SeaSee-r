@@ -40,4 +40,5 @@ class Video(Base):
 
     upload_metadata = relationship("UploadMetadata", back_populates="videos")
     log_data = relationship("LogData", back_populates="video_metadata", cascade="all, delete-orphan")
+    pointclouds = relationship("PointCloudMetadata", back_populates="video_metadata")
 

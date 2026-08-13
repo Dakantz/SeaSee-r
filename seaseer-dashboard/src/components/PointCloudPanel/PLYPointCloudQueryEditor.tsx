@@ -24,7 +24,7 @@ export const QUERY_EXAMPLES: QueryExample[] = [
         -- Only explode patches that have at least SOME points on the positive X axis
         SELECT PC_Explode(patch) AS pt 
         FROM pointcloud_patches
-        WHERE PC_PatchMax(patch, 'X') > 0 AND pointcloud_id = :id
+        WHERE PC_PatchMax(patch, 'X') > 0
     ) AS exploded
     -- Then filter the exact points strictly
     WHERE PC_Get(pt, 'X') > 0`,
@@ -38,7 +38,7 @@ export const QUERY_EXAMPLES: QueryExample[] = [
         -- Only explode patches that have at least SOME points on the positive Z axis
         SELECT PC_Explode(patch) AS pt 
         FROM pointcloud_patches
-        WHERE PC_PatchMax(patch, 'Z') > 0 AND pointcloud_id = :id
+        WHERE PC_PatchMax(patch, 'Z') > 0
     ) AS exploded
     -- Then filter the exact points strictly
     WHERE PC_Get(pt, 'Z') > 0`,

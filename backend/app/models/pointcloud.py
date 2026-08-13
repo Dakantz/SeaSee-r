@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Integer, Float, DateTime, ForeignKey, Index, BigInteger, func
+from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.types import NullType, UserDefinedType
 
@@ -57,6 +58,7 @@ class PointCloudMetadata(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     job_id = Column(UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True)
+    video_metadata_id = Column(UUID(as_uuid=True), ForeignKey("video_metadata.id", ondelete="SET NULL"), nullable=True)
     orig_filename = Column(String(255), nullable=False)
     safe_filename = Column(String(255), nullable=True)
     number_of_points = Column(Integer, nullable=False, default=0)
@@ -76,6 +78,8 @@ class PointCloudMetadata(Base):
     pcid = Column(Integer, nullable=False)  # pgPointcloud format format schema ID
     
     transform_matrix = Column(ARRAY(Float), nullable=False, default=[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0])
+
+    video_metadata = relationship("Video", back_populates="pointclouds")
 
 POINTCLOUD_PATCH_MODELS = {}
 
