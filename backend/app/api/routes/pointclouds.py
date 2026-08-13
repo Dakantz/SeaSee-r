@@ -114,49 +114,6 @@ async def get_camera_headers(
     
     return list(headers)
 
-@router.get("/camera-headers/{header_id}/frames", response_model=List[CameraFrameResponse])
-async def get_camera_frames(
-    header_id: str,
-    db: AsyncSession = Depends(get_db_session)
-):
-    import json
-    from geoalchemy2.functions import ST_AsGeoJSON
-
-    try:
-        h_uuid = uuid.UUID(header_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid UUID format")
-        
-    query = select(
-        CameraFrame.id,
-        CameraFrame.camera_header_id,
-        CameraFrame.timestamp,
-        ST_AsGeoJSON(CameraFrame.position).label("pos_geojson"),
-        ST_AsGeoJSON(CameraFrame.direction).label("dir_geojson"),
-        CameraFrame.relative_time,
-        CameraFrame.filename
-    ).where(CameraFrame.camera_header_id == h_uuid).order_by(CameraFrame.timestamp.asc())
-    
-    result = await db.execute(query)
-    rows = result.all()
-    
-    frames = []
-    for r in rows:
-        pos_coords = json.loads(r.pos_geojson)["coordinates"] if r.pos_geojson else None
-        dir_coords = json.loads(r.dir_geojson)["coordinates"] if r.dir_geojson else None
-        
-        frames.append(CameraFrameResponse(
-            id=r.id,
-            camera_header_id=r.camera_header_id,
-            timestamp=r.timestamp,
-            position=pos_coords,
-            direction=dir_coords,
-            relative_time=r.relative_time,
-            filename=r.filename
-        ))
-        
-    return frames
-
 @router.get("/{identifier}/camera-routes", response_model=List[CameraFrameResponse])
 async def get_camera_routes(
     identifier: str,
