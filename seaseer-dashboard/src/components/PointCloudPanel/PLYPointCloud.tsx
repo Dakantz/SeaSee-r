@@ -533,7 +533,7 @@ function DBCameraTrajectoryDisplay() {
         selectedId,
         identifier,
         loadedGeometries,
-        geometry,
+        mode,
     } = usePLYPointCloudContext();
 
     const activeIds = useMemo(() => {
@@ -554,7 +554,7 @@ function DBCameraTrajectoryDisplay() {
         <group>
             {activeIds.map((id) => {
                 const position: [number, number, number] =
-                    geometry && (id === identifier || activeIds.length === 1)
+                    mode === "plyUrl"
                         ? [TARGET_X, 0, TARGET_Z]
                         : [0, 0, 0];
 
@@ -615,7 +615,7 @@ export default function PLYPointCloud() {
 
             {/* Render legacy / single active pointcloud geometry */}
             {geometry && (
-                <group position={[TARGET_X, 0, TARGET_Z]}>
+                <group position={mode === "plyUrl" ? [TARGET_X, 0, TARGET_Z] : [0, 0, 0]}>
                     {renderMode === "mesh" ? (
                         <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}>
                             <meshStandardMaterial

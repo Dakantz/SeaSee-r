@@ -3,6 +3,7 @@ export interface PositionSample {
     x: number;
     y: number;
     z: number;
+    direction?: [number, number, number];
     filename?: string;
     id?: string;
 }
@@ -18,6 +19,7 @@ interface RawPositionFeature {
     properties: {
         relative_time: number;
         translation: [number, number, number];
+        direction?: [number, number, number];
     };
 
     geometry: {
@@ -62,6 +64,9 @@ export class TelemetryPositionReader {
                     x: item.position[0],
                     y: item.position[1],
                     z: item.position[2],
+                    direction: item.direction && Array.isArray(item.direction) && item.direction.length === 3
+                        ? item.direction
+                        : undefined,
                     filename: item.filename,
                     id: item.id,
                 }));
@@ -71,11 +76,13 @@ export class TelemetryPositionReader {
         if (data && Array.isArray(data.features)) {
             return (data as RawPositionGeoJSON).features.map((feature) => {
                 const [x, y, z] = feature.properties.translation;
+                const dir = feature.properties.direction;
                 return {
                     relativeTime: feature.properties.relative_time,
                     x,
                     y,
                     z,
+                    direction: Array.isArray(dir) && dir.length === 3 ? dir : undefined,
                 };
             });
         }

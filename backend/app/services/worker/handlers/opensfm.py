@@ -51,7 +51,8 @@ class OpenSfMTaskHandler(BaseTaskHandler):
             parse_reconstruction_json,
             extract_camera_route_csv,
             parse_shots_geojson,
-            get_camera_center
+            get_camera_center,
+            get_camera_viewing_direction
         )
         from geoalchemy2 import WKTElement
 
@@ -82,6 +83,7 @@ class OpenSfMTaskHandler(BaseTaskHandler):
                     rotation = sdata["rotation"]
                     translation = sdata["translation"]
                     center = get_camera_center(rotation, translation)
+                    direction = get_camera_viewing_direction(rotation)
                     capture_time = sdata.get("capture_time", 0.0)
                     ts_val = int(capture_time * 1000) if capture_time > 1e8 else int(capture_time)
                     
@@ -89,7 +91,7 @@ class OpenSfMTaskHandler(BaseTaskHandler):
                         "filename": shot_id,
                         "timestamp": ts_val,
                         "position": [center[0], center[1], center[2]],
-                        "direction": rotation,
+                        "direction": direction,
                         "relative_time": sdata.get("relative_time", 0.0)
                     })
 

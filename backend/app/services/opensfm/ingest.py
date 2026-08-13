@@ -25,6 +25,17 @@ def get_camera_center(rotation: List[float], translation: List[float]) -> np.nda
     center = -np.dot(R.T, t)
     return center
 
+def get_camera_viewing_direction(rotation: List[float]) -> List[float]:
+    """Calculates the 3D unit optical viewing direction vector in world coordinates from OpenSfM rotation vector."""
+    R = rotvec_to_matrix(rotation)
+    view_dir = R[2, :]  # 3rd row of rotation matrix R corresponds to R^T @ [0, 0, 1]
+    norm = np.linalg.norm(view_dir)
+    if norm > 1e-8:
+        view_dir = view_dir / norm
+    else:
+        view_dir = np.array([0.0, 0.0, 1.0])
+    return view_dir.tolist()
+
 def parse_reconstruction_json(reconstruction_json_path: str) -> List[Dict[str, Any]]:
     """Reads and validates an OpenSfM reconstruction.json file."""
     if not os.path.exists(reconstruction_json_path):
@@ -85,6 +96,7 @@ def parse_shots_geojson(geojson_path: str) -> Tuple[Dict[str, Any], List[Dict[st
         geometry = feat.get("geometry", {})
         coords = geometry.get("coordinates", [0.0, 0.0, 0.0])
         rotation = props.get("rotation", [0.0, 0.0, 0.0])
+        direction = get_camera_viewing_direction(rotation) if len(rotation) == 3 else [0.0, 0.0, 1.0]
         capture_time = props.get("capture_time", 0.0)
         timestamp_val = int(capture_time * 1000) if capture_time > 1e8 else int(capture_time)
         
@@ -92,7 +104,7 @@ def parse_shots_geojson(geojson_path: str) -> Tuple[Dict[str, Any], List[Dict[st
             "filename": props.get("filename"),
             "timestamp": timestamp_val,
             "position": coords,
-            "direction": rotation,
+            "direction": direction,
             "relative_time": props.get("relative_time", 0.0)
         })
 
