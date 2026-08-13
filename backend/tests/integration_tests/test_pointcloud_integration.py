@@ -40,11 +40,12 @@ async def async_client(test_environment):
 async def clean_database_records(file_id: str, job_id: str):
     """Clean up the pointcloud metadata, patches, and jobs from database."""
     async with async_session() as session:
-        # Delete patches for this pointcloud if pointcloud_patches table exists
-        try:
-            await session.execute(text("DELETE FROM pointcloud_patches WHERE pointcloud_id = :id"), {"id": file_id})
-        except Exception:
-            pass
+        # Delete patches for this pointcloud across all LOD tables if they exist
+        for lod in range(11):
+            try:
+                await session.execute(text(f"DELETE FROM pointcloud_patches_lod{lod} WHERE pointcloud_id = :id"), {"id": file_id})
+            except Exception:
+                pass
         # Delete pointcloud metadata
         await session.execute(text("DELETE FROM pointcloud_metadata WHERE id = :id"), {"id": file_id})
         # Delete job record

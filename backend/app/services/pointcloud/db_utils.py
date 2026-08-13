@@ -9,19 +9,19 @@ from app.models.pointcloud import PointCloudMetadata
 from app.models.job import Job
 
 async def query_existing_pcid(session: AsyncSession, file_id: str) -> Optional[int]:
-    """Queries pointcloud_patches and pointcloud_metadata to find an existing PCID for append operations."""
+    """Queries pointcloud_patches_lod0 and pointcloud_metadata to find an existing PCID for append operations."""
     pcid = None
     file_uuid = uuid.UUID(file_id)
     try:
         res = await session.execute(
-            text("SELECT PC_PCId(patch) FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = 0 LIMIT 1"),
+            text("SELECT PC_PCId(patch) FROM pointcloud_patches_lod0 WHERE pointcloud_id = :id LIMIT 1"),
             {"id": file_uuid}
         )
         row = res.first()
         if row and row[0] is not None:
             pcid = int(row[0])
     except Exception as e:
-        print(f"Failed to query existing pcid from pointcloud_patches: {e}")
+        print(f"Failed to query existing pcid from pointcloud_patches_lod0: {e}")
 
     if pcid is None:
         try:

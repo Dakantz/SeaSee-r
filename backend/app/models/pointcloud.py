@@ -77,17 +77,30 @@ class PointCloudMetadata(Base):
     
     transform_matrix = Column(ARRAY(Float), nullable=False, default=[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0])
 
-class PointCloudPatch(Base):
-    __tablename__ = "pointcloud_patches"
+POINTCLOUD_PATCH_MODELS = {}
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    pointcloud_id = Column(UUID(as_uuid=True), ForeignKey("pointcloud_metadata.id", ondelete="CASCADE"), nullable=False)
-    lod = Column(Integer, nullable=False, default=0)
-    patch = Column(PCPatch())
+def _create_patch_model(lod: int):
+    table_name = f"pointcloud_patches_lod{lod}"
+    index_name = f"idx_pointcloud_patches_lod{lod}_pc"
+    cls_name = f"PointCloudPatchLOD{lod}"
 
-    __table_args__ = (
-        Index("idx_pointcloud_patches_pc_lod", "pointcloud_id", "lod"),
-    )
+    attrs = {
+        "__tablename__": table_name,
+        "id": Column(BigInteger, primary_key=True, autoincrement=True),
+        "pointcloud_id": Column(UUID(as_uuid=True), ForeignKey("pointcloud_metadata.id", ondelete="CASCADE"), nullable=False),
+        "patch": Column(PCPatch()),
+        "__table_args__": (
+            Index(index_name, "pointcloud_id"),
+        ),
+    }
+    return type(cls_name, (Base,), attrs)
+
+for _lod in range(11):
+    _model = _create_patch_model(_lod)
+    POINTCLOUD_PATCH_MODELS[_lod] = _model
+    globals()[f"PointCloudPatchLOD{_lod}"] = _model
+
+PointCloudPatch = PointCloudPatchLOD0
 
 
 class BathymetryRaster(Base):

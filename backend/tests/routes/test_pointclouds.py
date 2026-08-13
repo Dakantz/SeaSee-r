@@ -78,7 +78,7 @@ class TestPointCloudServices(TestCase):
         mock_db = MagicMock()
         db_service = DatabasePointCloudStorageService(db_session=mock_db)
         with self.assertRaises(HTTPException) as context:
-            asyncio.run(db_service.stream_pointcloud_binary("???"))
+            asyncio.run(db_service.stream_pointcloud_binary(lod=0, custom_query=""))
         self.assertEqual(context.exception.status_code, 400)
 
     def test_database_service_stream_binary_success(self):
@@ -107,9 +107,11 @@ class TestPointCloudServices(TestCase):
         mock_db = MagicMock()
         mock_db.execute = AsyncMock(return_value=mock_meta_result)
 
+        sql_query = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod1 WHERE pointcloud_id = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'"
+
         with patch("app.services.pointcloud.database.async_session", return_value=AsyncSessionContextManager()):
             db_service = DatabasePointCloudStorageService(db_session=mock_db)
-            response = asyncio.run(db_service.stream_pointcloud_binary("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", lod=1))
+            response = asyncio.run(db_service.stream_pointcloud_binary(lod=1, custom_query=sql_query))
             
             self.assertEqual(response.media_type, "application/octet-stream")
 
@@ -231,8 +233,10 @@ def test_endpoint_stream_binary():
 
     app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
 
+    sql_query = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod2 WHERE pointcloud_id = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'"
+
     try:
-        response = client.get("/pointclouds/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/stream-binary?lod=2")
+        response = client.get(f"/pointclouds/stream-binary?lod=2&query={sql_query}")
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/octet-stream"
         assert len(response.content) == 16
@@ -244,7 +248,7 @@ def test_endpoint_stream_binary():
         assert g == 128
         assert b == 0
         assert a == 255
-        mock_service.stream_pointcloud_binary.assert_called_once_with("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", lod=2, custom_query=None)
+        mock_service.stream_pointcloud_binary.assert_called_once_with(lod=2, custom_query=sql_query)
     finally:
         app.dependency_overrides.clear()
 
@@ -263,44 +267,28 @@ def test_endpoint_stream_binary_lod10():
 
     app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
 
+    sql_query = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod10 WHERE pointcloud_id = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'"
+
     try:
-        response = client.get("/pointclouds/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/stream-binary?lod=10")
+        response = client.get(f"/pointclouds/stream-binary?lod=10&query={sql_query}")
         assert response.status_code == 200
-        mock_service.stream_pointcloud_binary.assert_called_once_with("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", lod=10, custom_query=None)
+        mock_service.stream_pointcloud_binary.assert_called_once_with(lod=10, custom_query=sql_query)
 
         # Test invalid LOD > 10 returns 422 Unprocessable Entity
-        err_response = client.get("/pointclouds/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/stream-binary?lod=11")
+        err_response = client.get(f"/pointclouds/stream-binary?lod=11&query={sql_query}")
         assert err_response.status_code == 422
     finally:
         app.dependency_overrides.clear()
 
 
-def test_endpoint_stream_binary_custom_query():
-    import struct
-    from fastapi.responses import StreamingResponse
+def test_endpoint_stream_binary_missing_required_params():
+    # Test missing lod parameter returns 422
+    res_no_lod = client.get("/pointclouds/stream-binary?query=SELECT 1")
+    assert res_no_lod.status_code == 422
 
-    async def dummy_gen():
-        yield struct.pack('<3f4B', 1.0, 2.0, 3.0, 100, 150, 200, 255)
-
-    dummy_response = StreamingResponse(dummy_gen(), media_type="application/octet-stream")
-
-    mock_service = MagicMock()
-    mock_service.stream_pointcloud_binary = AsyncMock(return_value=dummy_response)
-
-    app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
-
-    custom_sql = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = :lod"
-
-    try:
-        response = client.get(
-            f"/pointclouds/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/stream-binary?lod=0&query={custom_sql}"
-        )
-        assert response.status_code == 200
-        mock_service.stream_pointcloud_binary.assert_called_once_with(
-            "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", lod=0, custom_query=custom_sql
-        )
-    finally:
-        app.dependency_overrides.clear()
+    # Test missing query parameter returns 422
+    res_no_query = client.get("/pointclouds/stream-binary?lod=0")
+    assert res_no_query.status_code == 422
 
 
 def test_ingest_opensfm_init_laz_file():

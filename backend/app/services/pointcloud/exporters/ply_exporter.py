@@ -33,7 +33,8 @@ class PLYStreamExporter(BasePointCloudExporter):
 
             buffer = bytearray(header)
 
-            async for x, y, z, r, g, b in self.repository.stream_points(pointcloud_id, lod=lod):
+            custom_sql = f"SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod{lod} WHERE pointcloud_id = '{pointcloud_id}'"
+            async for x, y, z, r, g, b in self.repository.stream_points(custom_query=custom_sql, lod=lod):
                 r_u8 = min(255, max(0, r >> 8 if r > 255 else r))
                 g_u8 = min(255, max(0, g >> 8 if g > 255 else g))
                 b_u8 = min(255, max(0, b >> 8 if b > 255 else b))

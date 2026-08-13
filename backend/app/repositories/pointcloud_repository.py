@@ -61,12 +61,13 @@ class PointCloudRepository:
 
     async def get_total_point_count(self, pointcloud_id: str, lod: int = 0) -> int:
         """
-        Queries sum of points across all patches for given point cloud ID and LOD.
+        Queries sum of points across all patches for given point cloud ID and LOD table.
         """
+        table_name = f"pointcloud_patches_lod{lod}"
         try:
             count_result = await self.db.execute(
-                text("SELECT COALESCE(SUM(PC_NumPoints(patch)), 0) FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = :lod"),
-                {"id": pointcloud_id, "lod": lod}
+                text(f"SELECT COALESCE(SUM(PC_NumPoints(patch)), 0) FROM {table_name} WHERE pointcloud_id = :id"),
+                {"id": pointcloud_id}
             )
             return int(count_result.scalar() or 0)
         except Exception as e:
@@ -74,17 +75,16 @@ class PointCloudRepository:
             return 0
 
     async def stream_points(
-        self, pointcloud_id: str, lod: int = 0, custom_query: Optional[str] = None
+        self, custom_query: str, lod: int = 0
     ) -> AsyncGenerator[Tuple[float, float, float, int, int, int], None]:
         """
         Streams points directly from pgPointcloud table using PC_Explode and PC_Get.
-        If custom_query is provided, it replaces the inner point selection subquery.
+        Executes custom_query as the inner point selection subquery.
         Yields tuple: (x, y, z, r, g, b)
         """
         import app.services.pointcloud.database as db_mod
 
-        default_inner_query = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = :lod"
-        inner_query = custom_query.strip() if custom_query and custom_query.strip() else default_inner_query
+        inner_query = custom_query.strip()
 
         full_query_str = f"""
             SELECT 
@@ -102,7 +102,7 @@ class PointCloudRepository:
         query = text(full_query_str)
 
         async with db_mod.async_session() as session:
-            stream_result = await session.stream(query, {"id": pointcloud_id, "lod": lod})
+            stream_result = await session.stream(query, {"lod": lod})
             async for record in stream_result:
                 x = float(record[0]) if len(record) > 0 and record[0] is not None else 0.0
                 y = float(record[1]) if len(record) > 1 and record[1] is not None else 0.0

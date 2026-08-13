@@ -23,46 +23,19 @@ class DatabasePointCloudStorageService:
         self.ply_exporter = PLYStreamExporter(self.repository)
 
     async def stream_pointcloud_binary(
-        self, identifier: str, lod: int = 0, custom_query: Optional[str] = None
+        self, lod: int, custom_query: str
     ) -> StreamingResponse:
         """
         Streams point cloud data directly from database as raw binary buffer (Float32 XYZ, Uint8 RGB).
-        If custom_query is provided, executes custom SQL query; otherwise executes default query for identifier and lod.
+        Requires lod and custom_query parameters.
         """
-        pointcloud_uuid = identifier
-        if "?" in identifier:
-            parts = identifier.split("?", 1)
-            pointcloud_uuid = parts[0]
-            for param in parts[1].split("&"):
-                if param.startswith("lod="):
-                    try:
-                        lod = int(param.split("=", 1)[1])
-                    except ValueError:
-                        pass
-                elif param.startswith("query=") and not custom_query:
-                    custom_query = unquote(param.split("=", 1)[1])
+        if not custom_query or not custom_query.strip():
+            raise HTTPException(status_code=400, detail="Query parameter is required.")
 
-        clean_uuid = re.sub(r'[^a-fA-F0-9\-]', '', pointcloud_uuid)
-        table_uuid = clean_uuid.replace("-", "")
-
-        if not custom_query and not table_uuid:
-            raise HTTPException(status_code=400, detail="Invalid Point Cloud UUID format.")
-
-        row = None
-        if clean_uuid:
-            try:
-                row = await self.repository.get_metadata_by_id(clean_uuid)
-            except Exception as e:
-                if not custom_query:
-                    raise HTTPException(status_code=500, detail=f"Database query failed: {str(e)}")
-
-        if not custom_query and not row:
-            raise HTTPException(status_code=404, detail="Point cloud metadata not found in database.")
-
-        filename = f"{pointcloud_uuid}_lod{lod}.bin" if pointcloud_uuid else "query_result.bin"
+        filename = f"pointcloud_lod{lod}.bin"
 
         return StreamingResponse(
-            self.binary_exporter.export_stream(clean_uuid, lod=lod, custom_query=custom_query),
+            self.binary_exporter.export_stream(custom_query=custom_query, lod=lod),
             media_type="application/octet-stream",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )

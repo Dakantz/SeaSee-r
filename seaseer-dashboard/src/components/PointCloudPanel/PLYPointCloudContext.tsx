@@ -6,9 +6,9 @@ import type { PointCloudMetadataResponse } from "../../client";
 export type MapProviderChoice = "OpenStreetMaps" | "Bathymetry" | "Emodnet" | "Debug" | "MapTilerBasic" | "MapTilerOutdoor" | "MapTilerSatellite" | "Bing";
 export type HeightProviderChoice = "Bathymetry" | "Emodnet" | "None" | "Debug" | "MapTiler" | "Bing";
 
-import { loadProgressivePointCloud, isPointCloudLoading, setPointCloudLoading } from "./utils/pointCloudLoader";
+import { loadProgressivePointCloud, setPointCloudLoading } from "./utils/pointCloudLoader";
 
-export const DEFAULT_CUSTOM_QUERY = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = :lod";
+export const DEFAULT_CUSTOM_QUERY = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = :id";
 
 export interface PLYPointCloudContextType {
     mode: "binary" | "plyFile" | "plyUrl";

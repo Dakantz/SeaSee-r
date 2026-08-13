@@ -68,19 +68,19 @@ def upgrade() -> None:
         ON pointcloud_metadata USING GIST (center);
     """)
 
-    # 3. PointCloud Patches Table
-    op.execute("""
-        CREATE TABLE IF NOT EXISTS pointcloud_patches (
-            id BIGSERIAL PRIMARY KEY,
-            pointcloud_id UUID NOT NULL REFERENCES pointcloud_metadata(id) ON DELETE CASCADE,
-            lod INTEGER NOT NULL DEFAULT 0,
-            patch PCPATCH
-        );
-    """)
-    op.execute("""
-        CREATE INDEX IF NOT EXISTS idx_pointcloud_patches_pc_lod
-        ON pointcloud_patches (pointcloud_id, lod);
-    """)
+    # 3. PointCloud Patches Tables (per-LOD 0 to 10)
+    for lod in range(11):
+        op.execute(f"""
+            CREATE TABLE IF NOT EXISTS pointcloud_patches_lod{lod} (
+                id BIGSERIAL PRIMARY KEY,
+                pointcloud_id UUID NOT NULL REFERENCES pointcloud_metadata(id) ON DELETE CASCADE,
+                patch PCPATCH
+            );
+        """)
+        op.execute(f"""
+            CREATE INDEX IF NOT EXISTS idx_pointcloud_patches_lod{lod}_pc
+            ON pointcloud_patches_lod{lod} (pointcloud_id);
+        """)
 
     # 4a. Camera Headers Table
     op.create_table(
@@ -180,8 +180,9 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS idx_camera_frames_header_id;")
     op.execute("DROP TABLE IF EXISTS camera_frames CASCADE;")
     op.drop_table('camera_headers')
-    op.execute("DROP INDEX IF EXISTS idx_pointcloud_patches_pc_lod;")
-    op.execute("DROP TABLE IF EXISTS pointcloud_patches CASCADE;")
+    for lod in range(11):
+        op.execute(f"DROP INDEX IF EXISTS idx_pointcloud_patches_lod{lod}_pc;")
+        op.execute(f"DROP TABLE IF EXISTS pointcloud_patches_lod{lod} CASCADE;")
     op.execute("DROP INDEX IF EXISTS idx_pointcloud_metadata_center;")
     op.execute("DROP TABLE IF EXISTS pointcloud_metadata CASCADE;")
     op.drop_table('jobs')

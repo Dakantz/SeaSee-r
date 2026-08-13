@@ -455,7 +455,7 @@ async def ingest_pgpointcloud(
     """
     Executes a PDAL pipeline to chip and ingest points into PostgreSQL pgPointcloud database.
     If pointcloud_id is provided, ingests into a temporary staging table and transfers patches
-    into the unified `pointcloud_patches` table with (pointcloud_id, lod).
+    into the per-LOD `pointcloud_patches_lod{lod}` table with (pointcloud_id, patch).
     Returns the pcid detected/generated during ingestion.
     """
     file_abs = os.path.abspath(file_path)
@@ -465,7 +465,7 @@ async def ingest_pgpointcloud(
         clean_uuid = pointcloud_id.replace("-", "")
         target_table = f"pc_staging_{clean_uuid}_lod{lod}"
     else:
-        target_table = table_name or "pointcloud_patches"
+        target_table = table_name or f"pointcloud_patches_lod{lod}"
 
     source_dims = await get_pointcloud_dimensions(file_abs)
     target_dims = target_dimensions or ["X", "Y", "Z", "Red", "Green", "Blue"]
@@ -569,17 +569,17 @@ async def ingest_pgpointcloud(
                 if row and row[0] is not None:
                     found_pcid = int(row[0])
 
-                await session.execute(text("""
-                    CREATE TABLE IF NOT EXISTS pointcloud_patches (
+                dest_table = f"pointcloud_patches_lod{lod}"
+                await session.execute(text(f"""
+                    CREATE TABLE IF NOT EXISTS {dest_table} (
                         id BIGSERIAL PRIMARY KEY,
                         pointcloud_id UUID NOT NULL REFERENCES pointcloud_metadata(id) ON DELETE CASCADE,
-                        lod INTEGER NOT NULL DEFAULT 0,
                         patch PCPATCH
                     );
                 """))
-                await session.execute(text("""
-                    CREATE INDEX IF NOT EXISTS idx_pointcloud_patches_pc_lod 
-                    ON pointcloud_patches (pointcloud_id, lod);
+                await session.execute(text(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{dest_table}_pc 
+                    ON {dest_table} (pointcloud_id);
                 """))
 
                 await session.execute(
@@ -593,23 +593,23 @@ async def ingest_pgpointcloud(
 
                 if overwrite:
                     await session.execute(
-                        text("DELETE FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = :lod"),
-                        {"id": pointcloud_id, "lod": lod}
+                        text(f"DELETE FROM {dest_table} WHERE pointcloud_id = :id"),
+                        {"id": pointcloud_id}
                     )
 
                 await session.execute(
                     text(f"""
-                        INSERT INTO pointcloud_patches (pointcloud_id, lod, patch)
-                        SELECT :pointcloud_id, :lod, patch FROM {target_table}
+                        INSERT INTO {dest_table} (pointcloud_id, patch)
+                        SELECT :pointcloud_id, patch FROM {target_table}
                     """),
-                    {"pointcloud_id": pointcloud_id, "lod": lod}
+                    {"pointcloud_id": pointcloud_id}
                 )
 
                 await session.execute(text(f"DROP TABLE IF EXISTS {target_table}"))
                 await session.commit()
             except Exception as transfer_err:
                 await session.rollback()
-                print(f"[PDAL Ingest] Error transferring patches from {target_table} to pointcloud_patches: {transfer_err}")
+                print(f"[PDAL Ingest] Error transferring patches from {target_table} to {dest_table}: {transfer_err}")
                 raise transfer_err
 
     return found_pcid

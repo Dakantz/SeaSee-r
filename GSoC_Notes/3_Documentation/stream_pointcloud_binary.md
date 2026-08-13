@@ -1,7 +1,7 @@
-# Stream Pointcloud Binary (`/pointclouds/{identifier}/stream-binary`)
+# Stream Pointcloud Binary (`/pointclouds/stream-binary`)
 
 ## Overview
-The `/pointclouds/{identifier}/stream-binary` endpoint provides high-performance binary streaming of 3D point cloud data directly from PostgreSQL / PostGIS (`pgPointCloud`) storage to frontend WebGL visualizers (such as Three.js).
+The `/pointclouds/stream-binary` endpoint provides high-performance binary streaming of 3D point cloud data directly from PostgreSQL / PostGIS (`pgPointCloud`) storage to frontend WebGL visualizers (such as Three.js).
 
 Instead of transferring bloated JSON structures or generating intermediate `.ply` files on disk, this endpoint streams raw point attribute buffers asynchronously. This minimizes network overhead, eliminates server-side disk I/O bottlenecks, and allows frontend clients to directly map incoming binary buffers into WebGL vertex attribute buffers (`BufferGeometry`).
 
@@ -10,18 +10,17 @@ Instead of transferring bloated JSON structures or generating intermediate `.ply
 ## Endpoint Specification
 
 - **HTTP Method**: `GET`
-- **Path**: `/pointclouds/{identifier}/stream-binary`
+- **Path**: `/pointclouds/stream-binary`
 - **Response Content-Type**: `application/octet-stream`
 - **Headers**:
-  - `Content-Disposition`: `attachment; filename="{pointcloud_uuid}_lod{lod}.bin"`
+  - `Content-Disposition`: `attachment; filename="pointcloud_lod{lod}.bin"`
 
 ### Parameters
 
-| Parameter | Type | Location | Required | Default | Description                                                                                                                                                                                                                                                                                                                |
-| :--- | :--- | :--- | :--- | :--- |:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `identifier` | `string` | Path | Yes | — | UUID of the point cloud metadata entry (e.g., `550e8400-e29b-41d4-a716-446655440000`). Trailing query string parameters attached to the identifier are safely parsed and stripped.                                                                                                                                         |
-| `lod` | `integer` | Query | No | `0` | Level of Detail (LOD) pyramid level to stream (`0` represents full resolution / base LOD; selectable up to `10`).                                                                                                                                                                                                          |
-| `query` | `string` | Query | No | Standard SQL query | Optional custom SQL selection query. When omitted, defaults to: `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = :lod` |
+| Parameter | Type | Location | Required | Default | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `lod` | `integer` | Query | Yes | — | Level of Detail (LOD) pyramid level to stream (`0` represents full resolution / base LOD; selectable up to `10`). |
+| `query` | `string` | Query | Yes | — | SQL selection query. Client formats query string (e.g. replacing `pointcloud_patches` with `pointcloud_patches_lod{lod}` and `:id` with `'<pointcloud_id>'`). Example: `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod0 WHERE pointcloud_id = '550e8400-e29b-41d4-a716-446655440000'` |
 
 ---
 
@@ -49,7 +48,7 @@ Each point (vertex) in the binary stream is packed sequentially using a 16-byte 
 ```
 [ Frontend: WebGL / Three.js ]
             │
-            ▼ GET /pointclouds/{id}/stream-binary?lod=0
+            ▼ GET /pointclouds/stream-binary?lod=0&query=...
 ┌─────────────────────────────────────────────────────────────┐
 │ FastApi Router: pointclouds.py                              │
 └─────────────────────────────┬───────────────────────────────┘

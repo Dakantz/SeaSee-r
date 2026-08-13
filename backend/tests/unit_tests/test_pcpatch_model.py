@@ -11,8 +11,12 @@ def test_pcpatch_col_spec():
 
 
 def test_pointcloud_patch_model_column_type():
+    from app.models.pointcloud import POINTCLOUD_PATCH_MODELS, PointCloudPatchLOD0, PointCloudPatchLOD10
     col_type = PointCloudPatch.patch.property.columns[0].type
     assert isinstance(col_type, PCPatch)
+    assert PointCloudPatchLOD0.__tablename__ == "pointcloud_patches_lod0"
+    assert PointCloudPatchLOD10.__tablename__ == "pointcloud_patches_lod10"
+    assert len(POINTCLOUD_PATCH_MODELS) == 11
 
 
 def test_pcpatch_comparator_expressions():

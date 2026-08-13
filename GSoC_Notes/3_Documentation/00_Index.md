@@ -3,7 +3,7 @@ This folder contains technical documentation for features, services, setup proce
 
 ## Documentation Index
 
-- [stream_pointcloud_binary.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/stream_pointcloud_binary.md): Stream Point Cloud Binary (`/pointclouds/{identifier}/stream-binary`) endpoint specification, 15-byte vertex packing layout, and WebGL/Three.js consumption.
+- [stream_pointcloud_binary.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/stream_pointcloud_binary.md): Stream Point Cloud Binary (`/pointclouds/stream-binary`) endpoint specification, 15-byte vertex packing layout, and WebGL/Three.js consumption.
 - [pointcloud_camera_headers_routes.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/pointcloud_camera_headers_routes.md): Point Cloud Camera Metadata & Route Endpoints (`/camera-headers` & `/camera-routes`), PostGIS 3D Point geometries, and schema details.
 - [delaunay_mesh_reconstruction.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/delaunay_mesh_reconstruction.md): 2.5D Delaunay Triangulation Terrain Mesh Reconstruction.
 - [convert_logdata.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/convert_logdata.md): `convert_logdata.py` usage and video/log sync pipeline.

@@ -39,16 +39,15 @@ async def list_pointclouds(
 
 """
 Stream point cloud data directly from database as raw binary buffer (Float32 XYZ, Uint8 RGB).
-Optionally accepts a custom SQL query to select points.
+Requires a lod parameter and a query string parameter.
 """
-@router.get("/{identifier}/stream-binary")
+@router.get("/stream-binary")
 async def stream_pointcloud_binary(
-    identifier: str,
-    lod: int = Query(0, ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
-    query: Optional[str] = Query(None, description="Optional custom SQL query to select points: \nExample: `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = :id AND lod = :lod`"),
+    lod: int = Query(..., ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
+    query: str = Query(..., description="SQL query to select points: \nExample: `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod0 WHERE pointcloud_id = '...'`"),
     storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
 ):
-    return await storage_service.stream_pointcloud_binary(identifier, lod=lod, custom_query=query)
+    return await storage_service.stream_pointcloud_binary(lod=lod, custom_query=query)
 
 
 """
