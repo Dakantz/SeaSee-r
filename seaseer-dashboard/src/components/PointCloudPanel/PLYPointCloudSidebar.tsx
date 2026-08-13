@@ -157,7 +157,7 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                     letterSpacing: "0.05em",
                 }}
             >
-                Point Cloud Controls
+                DebugControls
             </div>
 
             {/* Mode Tabs */}

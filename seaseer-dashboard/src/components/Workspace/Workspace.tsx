@@ -41,7 +41,7 @@ export default function Workspace() {
                         </div>
                     </Panel>
 
-                    {/* Right Collapsible Sidebar Widget: Point Cloud Controls & Job System Overview */}
+                    {/* Right Collapsible Sidebar Widget: DebugControls & Job System Overview */}
                     {isJobsOpen && (
                         <>
                             <Separator className="resize-handle vertical" />

@@ -161,7 +161,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         }
 
         const buffer = await res.arrayBuffer();
-        const pointSizeInBytes = 15;
+        const pointSizeInBytes = 16;
         const count = Math.floor(buffer.byteLength / pointSizeInBytes);
 
         if (count === 0) {
@@ -175,7 +175,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         const tempColor = new THREE.Color();
 
         for (let i = 0; i < count; i++) {
-            const offset = i * 15;
+            const offset = i * 16;
             positions[i * 3] = dataView.getFloat32(offset, true);
             positions[i * 3 + 1] = dataView.getFloat32(offset + 4, true);
             positions[i * 3 + 2] = dataView.getFloat32(offset + 8, true);

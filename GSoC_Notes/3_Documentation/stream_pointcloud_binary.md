@@ -26,7 +26,7 @@ Instead of transferring bloated JSON structures or generating intermediate `.ply
 
 ## Binary Data Layout & Protocol
 
-Each point (vertex) in the binary stream is packed sequentially using a compact **15-byte struct**:
+Each point (vertex) in the binary stream is packed sequentially using a 16-byte aligned struct:
 
 | Field | Data Type | Byte Offset | Size (Bytes) | Endianness | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -36,9 +36,10 @@ Each point (vertex) in the binary stream is packed sequentially using a compact 
 | `R` | `Uint8` (`unsigned char`) | 12 | 1 | — | Red color channel (`0-255`) |
 | `G` | `Uint8` (`unsigned char`) | 13 | 1 | — | Green color channel (`0-255`) |
 | `B` | `Uint8` (`unsigned char`) | 14 | 1 | — | Blue color channel (`0-255`) |
+| `A / Pad` | `Uint8` (`unsigned char`) | 15 | 1 | — | Alpha / Alignment Padding (`255`) |
 
-- **Total Vertex Stride**: `15 bytes per point`.
-- **Chunked Transfer Encoding**: Data is yielded asynchronously in chunk buffers of ~15,000 bytes (~1,000 vertices per chunk) via FastAPI `StreamingResponse`.
+- **Total Vertex Stride**: `16 bytes per point`.
+- **Chunked Transfer Encoding**: Data is yielded asynchronously in chunk buffers of `524,288 bytes` (512 KB, ~32,768 vertices per chunk) via FastAPI `StreamingResponse`.
 
 ---
 
@@ -60,7 +61,8 @@ Each point (vertex) in the binary stream is packed sequentially using a compact 
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ Exporter: BinaryStreamExporter (binary_exporter.py)         │
-│   • Formats points via struct.pack('<3f3B', x, y, z, r, g, b)│
+│   • Formats points via NumPy bulk array serialization       │
+│     np.array(points_batch, dtype=VERTEX_DTYPE).tobytes()    │
 └─────────────────────────────┬───────────────────────────────┘
                               │
                               ▼

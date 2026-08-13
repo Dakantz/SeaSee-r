@@ -120,14 +120,15 @@ class TestPointCloudServices(TestCase):
                 return b"".join(chunks)
 
             binary_data = asyncio.run(consume_stream())
-            self.assertEqual(len(binary_data), 15)
-            x, y, z, r, g, b = struct.unpack('<3f3B', binary_data)
+            self.assertEqual(len(binary_data), 16)
+            x, y, z, r, g, b, a = struct.unpack('<3f4B', binary_data)
             self.assertAlmostEqual(x, 1.0)
             self.assertAlmostEqual(y, 2.0)
             self.assertAlmostEqual(z, 3.0)
             self.assertEqual(r, 255)
             self.assertEqual(g, 128)
             self.assertEqual(b, 64)
+            self.assertEqual(a, 255)
 
 
 def test_dependency_injection():
@@ -221,7 +222,7 @@ def test_endpoint_stream_binary():
     from fastapi.responses import StreamingResponse
 
     async def dummy_gen():
-        yield struct.pack('<3f3B', 10.0, 20.0, 30.0, 255, 128, 0)
+        yield struct.pack('<3f4B', 10.0, 20.0, 30.0, 255, 128, 0, 255)
 
     dummy_response = StreamingResponse(dummy_gen(), media_type="application/octet-stream")
 
@@ -234,14 +235,15 @@ def test_endpoint_stream_binary():
         response = client.get("/pointclouds/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/stream-binary?lod=2")
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/octet-stream"
-        assert len(response.content) == 15
-        x, y, z, r, g, b = struct.unpack('<3f3B', response.content)
+        assert len(response.content) == 16
+        x, y, z, r, g, b, a = struct.unpack('<3f4B', response.content)
         assert x == 10.0
         assert y == 20.0
         assert z == 30.0
         assert r == 255
         assert g == 128
         assert b == 0
+        assert a == 255
         mock_service.stream_pointcloud_binary.assert_called_once_with("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", lod=2)
     finally:
         app.dependency_overrides.clear()
