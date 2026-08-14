@@ -41,7 +41,7 @@ class DatabasePointCloudStorageService:
         )
 
     async def get_pointcloud_stream_summary(
-        self, lod: int, custom_query: str
+        self, custom_query: str
     ) -> dict:
         """
         Returns summary (point count, bounding box, and connected pointcloud metadata) for the custom query selection.
@@ -50,7 +50,7 @@ class DatabasePointCloudStorageService:
             raise HTTPException(status_code=400, detail="Query parameter is required.")
 
         try:
-            return await self.repository.get_summary_info(custom_query, lod=lod)
+            return await self.repository.get_summary_info(custom_query)
         except Exception as e:
             logger.error(f"Database query failed in get_pointcloud_stream_summary: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Database query failed: {str(e)}")

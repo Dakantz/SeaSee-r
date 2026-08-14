@@ -29,6 +29,8 @@ export function setPointCloudLoading(id: string, loading: boolean): void {
 export interface ProgressiveLoadOptions {
     /** UUID of the pointcloud dataset */
     id: string;
+    /** Stream key or ID to distinguish concurrent streams (defaults to id) */
+    streamKey?: string;
     /** Starting Level of Detail (default: 10) */
     startLod?: number;
     /** Final Level of Detail (default: 0) */
@@ -43,7 +45,7 @@ export interface ProgressiveLoadOptions {
     onError?: (lod: number, error: unknown) => void;
 }
 
-const DEFAULT_QUERY_TEMPLATE = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = :id";
+const DEFAULT_QUERY_TEMPLATE = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'";
 
 /**
  * Prepares the SQL query string for a specific LOD level and pointcloud ID.
@@ -134,6 +136,7 @@ export async function loadProgressivePointCloud(
 ): Promise<THREE.BufferGeometry | null> {
     const {
         id,
+        streamKey,
         startLod = 10,
         endLod = 0,
         customQuery,
@@ -143,13 +146,14 @@ export async function loadProgressivePointCloud(
     } = options;
 
     if (!id || !id.trim()) return null;
+    const key = streamKey || id;
 
-    // If pointcloud is currently in the process of being loaded, continue where it currently is at
-    if (loadingPointClouds.has(id)) {
+    // If pointcloud stream key is currently in the process of being loaded, continue where it currently is at
+    if (loadingPointClouds.has(key)) {
         return null;
     }
 
-    loadingPointClouds.add(id);
+    loadingPointClouds.add(key);
     let currentBestGeometry: THREE.BufferGeometry | null = null;
 
     try {
@@ -174,14 +178,14 @@ export async function loadProgressivePointCloud(
                 if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) {
                     break;
                 }
-                console.warn(`[pointCloudLoader] Failed loading LOD ${currentLod} for ${id}:`, err);
+                console.warn(`[pointCloudLoader] Failed loading LOD ${currentLod} for ${key}:`, err);
                 if (onError) {
                     onError(currentLod, err);
                 }
             }
         }
     } finally {
-        loadingPointClouds.delete(id);
+        loadingPointClouds.delete(key);
     }
 
     return currentBestGeometry;

@@ -75,5 +75,6 @@ class PointCloudStreamSummaryResponse(BaseModel):
     number_of_points: int
     bounding_box: Optional[PointCloudBoundingBox] = None
     connected_pointclouds: List[PointCloudMetadataResponse] = []
+    connected_camera_headers: List[CameraHeaderResponse] = []
 
     model_config = ConfigDict(from_attributes=True)

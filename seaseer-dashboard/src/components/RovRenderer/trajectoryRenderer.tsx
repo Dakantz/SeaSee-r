@@ -37,6 +37,7 @@ function getCircleTexture(): THREE.CanvasTexture {
 
 export interface TrajectoryRendererProps {
     url: string;
+    allowedHeaderIds?: Set<string>;
     videoId?: string;
     color?: THREE.ColorRepresentation;
     lineWidth?: number;
@@ -55,6 +56,7 @@ export interface TrajectoryRendererProps {
 
 export function TrajectoryRenderer({
     url,
+    allowedHeaderIds,
     videoId,
     color = 0x00ff00,
     lineWidth = 3,
@@ -109,8 +111,10 @@ export function TrajectoryRenderer({
         let cancelled = false;
 
         async function build() {
-            const samples =
-                await reader.getPositionData();
+            const rawSamples = await reader.getPositionData();
+            const samples = allowedHeaderIds
+                ? rawSamples.filter((s) => s.cameraHeaderId && allowedHeaderIds.has(s.cameraHeaderId))
+                : rawSamples;
 
             if (cancelled) {
                 return;

@@ -18,30 +18,20 @@ export const QUERY_EXAMPLES: QueryExample[] = [
     {
         id: "positive_x",
         label: "Points Above 0 (X > 0)",
-        description: "Filters patches containing points on the positive X axis, then strictly returns points where X > 0.",
-        query: `SELECT pt
-    FROM (
-        -- Only explode patches that have at least SOME points on the positive X axis
+        description: "Only explodes patches that have at least SOME points on the positive X axis.",
+        query: `        -- Only explode patches that have at least SOME points on the positive X axis
         SELECT PC_Explode(patch) AS pt 
         FROM pointcloud_patches
-        WHERE PC_PatchMax(patch, 'X') > 0
-    ) AS exploded
-    -- Then filter the exact points strictly
-    WHERE PC_Get(pt, 'X') > 0`,
+        WHERE PC_PatchMax(patch, 'X') > 0`,
     },
     {
         id: "positive_z",
         label: "Points Above 0 (Z > 0)",
-        description: "Filters patches containing points with elevation Z > 0, then strictly selects points with Z > 0.",
-        query: `SELECT pt
-    FROM (
-        -- Only explode patches that have at least SOME points on the positive Z axis
+        description: "Only explodes patches that have at least SOME points on the positive Z axis.",
+        query: `        -- Only explode patches that have at least SOME points on the positive Z axis
         SELECT PC_Explode(patch) AS pt 
         FROM pointcloud_patches
-        WHERE PC_PatchMax(patch, 'Z') > 0
-    ) AS exploded
-    -- Then filter the exact points strictly
-    WHERE PC_Get(pt, 'Z') > 0`,
+        WHERE PC_PatchMax(patch, 'Z') > 0`,
     },
 ];
 
@@ -51,7 +41,7 @@ export interface PLYPointCloudQueryEditorProps {
 }
 
 export default function PLYPointCloudQueryEditor({ style }: PLYPointCloudQueryEditorProps) {
-    const { customQuery, setCustomQuery, executeCustomQuery, isLoading, error } = usePLYPointCloudContext();
+    const { customQuery, setCustomQuery, isLoading, error } = usePLYPointCloudContext();
     const [localQuery, setLocalQuery] = useState<string>(customQuery);
     const [selectedPresetId, setSelectedPresetId] = useState<string>("default");
 
@@ -75,7 +65,9 @@ export default function PLYPointCloudQueryEditor({ style }: PLYPointCloudQueryEd
     };
 
     const handleRunQuery = () => {
-        executeCustomQuery(localQuery);
+        if (setCustomQuery) {
+            setCustomQuery(localQuery);
+        }
         if (localQuery && localQuery.trim()) {
             const foundPreset = QUERY_EXAMPLES.find((ex) => ex.query.trim() === localQuery.trim());
             const queryName = foundPreset ? foundPreset.label : undefined;
@@ -93,7 +85,17 @@ export default function PLYPointCloudQueryEditor({ style }: PLYPointCloudQueryEd
     const handleReset = () => {
         setLocalQuery(DEFAULT_CUSTOM_QUERY);
         setSelectedPresetId("default");
-        executeCustomQuery(DEFAULT_CUSTOM_QUERY);
+        if (setCustomQuery) {
+            setCustomQuery(DEFAULT_CUSTOM_QUERY);
+        }
+        window.dispatchEvent(
+            new CustomEvent("add_custom_query", {
+                detail: {
+                    queryText: DEFAULT_CUSTOM_QUERY,
+                    name: "Default Query",
+                },
+            })
+        );
     };
 
     const isDefault = localQuery.trim() === DEFAULT_CUSTOM_QUERY.trim();

@@ -49,7 +49,7 @@ Requires a lod parameter and a query string parameter.
 @router.get("/stream-binary")
 async def stream_pointcloud_binary(
     lod: int = Query(..., ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
-    query: str = Query(..., description="SQL query to select points: \nExample: `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod0 WHERE pointcloud_id = '...'`"),
+    query: str = Query(..., description="SQL query to select points: \nExample: `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'`"),
     storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
 ):
     return await storage_service.stream_pointcloud_binary(lod=lod, custom_query=query)
@@ -61,11 +61,10 @@ Mirrors /stream-binary parameters.
 """
 @router.get("/stream-summary", response_model=PointCloudStreamSummaryResponse)
 async def get_pointcloud_stream_summary(
-    lod: int = Query(..., ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
-    query: str = Query(..., description="SQL query to select points: \nExample: `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod0 WHERE pointcloud_id = '...'`"),
+    query: str = Query(..., description="SQL query to select points: \nExample: `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'`"),
     storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
 ):
-    return await storage_service.get_pointcloud_stream_summary(lod=lod, custom_query=query)
+    return await storage_service.get_pointcloud_stream_summary(custom_query=query)
 
 
 """

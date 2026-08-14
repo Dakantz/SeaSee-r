@@ -2,13 +2,14 @@ import React, { createContext, useContext, useState, useCallback, useEffect, typ
 import * as THREE from "three";
 import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
 import type { PointCloudMetadataResponse } from "../../client";
+import type { QuerySummaryData } from "./CustomQueryManager";
 
 export type MapProviderChoice = "OpenStreetMaps" | "Bathymetry" | "Emodnet" | "Debug" | "MapTilerBasic" | "MapTilerOutdoor" | "MapTilerSatellite" | "Bing";
 export type HeightProviderChoice = "Bathymetry" | "Emodnet" | "None" | "Debug" | "MapTiler" | "Bing";
 
 import { loadProgressivePointCloud, setPointCloudLoading } from "./utils/pointCloudLoader";
 
-export const DEFAULT_CUSTOM_QUERY = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = :id";
+export const DEFAULT_CUSTOM_QUERY = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'";
 
 export interface PLYPointCloudContextType {
     mode: "binary" | "plyFile" | "plyUrl";
@@ -50,6 +51,7 @@ export interface PLYPointCloudContextType {
     setAmbientLightIntensity: (val: number) => void;
     customQuery: string;
     setCustomQuery: (query: string) => void;
+    startProgressiveStream: (idToLoad: string, startLod?: number, endLod?: number, overrideQuery?: string, streamKey?: string) => Promise<void>;
     executeCustomQuery: (queryToExecute?: string) => Promise<void>;
     loadBinaryPointCloud: (idToLoad: string, lodToLoad?: number) => Promise<void>;
     loadPlyUrl: (urlToLoad: string) => void;
@@ -73,6 +75,9 @@ export interface PLYPointCloudContextType {
     loadingIds: Set<string>;
     toggleStreamPointCloud: (id: string, lodToLoad?: number) => Promise<void>;
     unloadPointCloud: (id: string) => void;
+    summaryMap: Record<string, QuerySummaryData>;
+    setSummaryMap: React.Dispatch<React.SetStateAction<Record<string, QuerySummaryData>>>;
+    fetchQuerySummary: (queryId: string, queryText: string) => Promise<QuerySummaryData | null>;
 }
 
 const DEFAULT_HARDCODED_IDENTIFIER = "";
@@ -111,6 +116,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [ambientLightIntensity, setAmbientLightIntensity] = useState<number>(0.4);
     const [showCameraTrajectories, setShowCameraTrajectories] = useState<boolean>(true);
     const [customQuery, setCustomQuery] = useState<string>(DEFAULT_CUSTOM_QUERY);
+    const [summaryMap, setSummaryMap] = useState<Record<string, QuerySummaryData>>({});
 
     // Multi-pointcloud states
     const [catalog, setCatalog] = useState<PointCloudMetadataResponse[]>([]);
@@ -122,65 +128,86 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [loadedGeometries, setLoadedGeometries] = useState<Map<string, THREE.BufferGeometry>>(new Map());
     const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
 
-    // AbortControllers map to manage in-flight progressive LOD loads per pointcloud
+    // AbortControllers map to manage in-flight progressive LOD loads per pointcloud/query
     const activeControllersRef = React.useRef<Map<string, AbortController>>(new Map());
 
-    const updateGeometryForId = useCallback((id: string, newGeom: THREE.BufferGeometry, currentLod: number) => {
+    const fetchQuerySummary = useCallback(async (queryId: string, queryText: string) => {
+        if (!queryText || !queryText.trim()) return null;
+        try {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+            const summaryQueryText = queryText.trim().replace(/SELECT\s+PC_Explode\(patch\)\s+AS\s+pt\s+FROM/i, "SELECT * FROM");
+            const response = await fetch(
+                `${API_BASE_URL}/pointclouds/stream-summary?lod=0&query=${encodeURIComponent(summaryQueryText)}`
+            );
+            if (response.ok) {
+                const data: QuerySummaryData = await response.json();
+                setSummaryMap((prev) => ({ ...prev, [queryId]: data }));
+                return data;
+            }
+        } catch (err) {
+            console.error(`Error fetching summary for query ${queryId}:`, err);
+        }
+        return null;
+    }, []);
+
+    const updateGeometryForId = useCallback((id: string, newGeom: THREE.BufferGeometry, currentLod: number, streamKey?: string) => {
+        const key = streamKey || id;
         setLoadedGeometries((prev) => {
             const next = new Map(prev);
-            const oldGeom = next.get(id);
+            const oldGeom = next.get(key);
             if (oldGeom && oldGeom !== newGeom) {
                 oldGeom.dispose();
             }
-            next.set(id, newGeom);
+            next.set(key, newGeom);
             return next;
         });
 
-        setGeometry((prevGeom) => {
-            if (prevGeom && prevGeom !== newGeom) {
-                prevGeom.dispose();
-            }
-            return newGeom;
-        });
+        setGeometry(newGeom);
 
         const count = newGeom.attributes.position ? newGeom.attributes.position.count : 0;
         setPointCount(count);
         setLod(currentLod);
     }, []);
 
-    const startProgressiveStream = useCallback(async (idToLoad: string, startLod: number = 10, endLod: number = 0, overrideQuery?: string) => {
+    const startProgressiveStream = useCallback(async (idToLoad: string, startLod: number = 10, endLod: number = 0, overrideQuery?: string, streamKey?: string) => {
         if (!idToLoad.trim()) return;
 
+        const key = streamKey || idToLoad;
         const queryToUse = overrideQuery !== undefined ? overrideQuery : customQuery;
 
-        // Abort existing stream for this ID if any
-        if (activeControllersRef.current.has(idToLoad)) {
-            activeControllersRef.current.get(idToLoad)?.abort();
-            activeControllersRef.current.delete(idToLoad);
+        if (!summaryMap[key] && queryToUse) {
+            fetchQuerySummary(key, queryToUse);
         }
-        setPointCloudLoading(idToLoad, false);
+
+        // Abort existing stream for this stream key if any
+        if (activeControllersRef.current.has(key)) {
+            activeControllersRef.current.get(key)?.abort();
+            activeControllersRef.current.delete(key);
+        }
+        setPointCloudLoading(key, false);
 
         const controller = new AbortController();
-        activeControllersRef.current.set(idToLoad, controller);
+        activeControllersRef.current.set(key, controller);
 
         setIsLoading(true);
         setError(null);
-        setLoadingIds((prev) => new Set(prev).add(idToLoad));
+        setLoadingIds((prev) => new Set(prev).add(key));
 
         try {
             await loadProgressivePointCloud({
                 id: idToLoad,
+                streamKey: key,
                 startLod,
                 endLod,
                 customQuery: queryToUse,
                 signal: controller.signal,
                 onLodLoaded: (currentLod, newGeom) => {
                     if (controller.signal.aborted) return;
-                    updateGeometryForId(idToLoad, newGeom, currentLod);
+                    updateGeometryForId(idToLoad, newGeom, currentLod, key);
                     setIsLoading(false);
                 },
                 onError: (currentLod, err) => {
-                    console.warn(`Error loading LOD ${currentLod} for ${idToLoad}:`, err);
+                    console.warn(`Error loading LOD ${currentLod} for ${key}:`, err);
                 },
             });
         } catch (err: any) {
@@ -193,10 +220,10 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 setIsLoading(false);
                 setLoadingIds((prev) => {
                     const next = new Set(prev);
-                    next.delete(idToLoad);
+                    next.delete(key);
                     return next;
                 });
-                activeControllersRef.current.delete(idToLoad);
+                activeControllersRef.current.delete(key);
             }
         }
     }, [customQuery, updateGeometryForId]);
@@ -213,19 +240,14 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 })
             );
         }
-        const targetId = selectedId || identifier;
-        if (targetId && targetId.trim()) {
-            await startProgressiveStream(targetId, 10, 0, queryToUse);
-        }
-    }, [customQuery, selectedId, identifier, startProgressiveStream]);
+    }, [customQuery]);
 
     const selectPointcloud = useCallback((id: string | null) => {
         setSelectedId(id);
         if (id) {
             setIdentifier(id);
-            startProgressiveStream(id, 10, 0);
         }
-    }, [startProgressiveStream]);
+    }, []);
 
     const hoverPointcloud = useCallback((id: string | null) => {
         setHoveredId(id);
@@ -279,21 +301,64 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     }, [fetchCatalog]);
 
     const unloadPointCloud = useCallback((id: string) => {
-        if (activeControllersRef.current.has(id)) {
-            activeControllersRef.current.get(id)?.abort();
-            activeControllersRef.current.delete(id);
+        const idsToUnload = new Set<string>([id]);
+        const summary = summaryMap[id];
+        if (summary?.connected_pointclouds) {
+            summary.connected_pointclouds.forEach((conn) => {
+                if (conn.id) idsToUnload.add(conn.id);
+            });
         }
+        if (summary?.connected_camera_headers) {
+            summary.connected_camera_headers.forEach((cam) => {
+                if (cam.pointcloud_id) idsToUnload.add(cam.pointcloud_id);
+            });
+        }
+
+        idsToUnload.forEach((targetId) => {
+            if (activeControllersRef.current.has(targetId)) {
+                activeControllersRef.current.get(targetId)?.abort();
+                activeControllersRef.current.delete(targetId);
+            }
+            setPointCloudLoading(targetId, false);
+        });
+
+        setLoadingIds((prev) => {
+            const next = new Set(prev);
+            idsToUnload.forEach((targetId) => next.delete(targetId));
+            return next;
+        });
+
+        const disposedGeoms: THREE.BufferGeometry[] = [];
 
         setLoadedGeometries((prev) => {
             const next = new Map(prev);
-            const existing = next.get(id);
-            if (existing) {
-                existing.dispose();
-                next.delete(id);
+            idsToUnload.forEach((targetId) => {
+                const existing = next.get(targetId);
+                if (existing) {
+                    disposedGeoms.push(existing);
+                    existing.dispose();
+                    next.delete(targetId);
+                }
+            });
+
+            if (next.size === 0) {
+                setGeometry((prevGeom) => {
+                    if (prevGeom) prevGeom.dispose();
+                    return null;
+                });
+            } else if (disposedGeoms.length > 0) {
+                setGeometry((prevGeom) => {
+                    if (prevGeom && disposedGeoms.includes(prevGeom)) {
+                        prevGeom.dispose();
+                        return null;
+                    }
+                    return prevGeom;
+                });
             }
+
             return next;
         });
-    }, []);
+    }, [summaryMap]);
 
     const toggleStreamPointCloud = useCallback(async (id: string) => {
         if (loadedGeometries.has(id)) {
@@ -334,10 +399,11 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         );
     }, []);
 
-    const loadBinaryPointCloud = useCallback(async (idToLoad: string, startLod: number = 10) => {
+    const loadBinaryPointCloud = useCallback(async (idToLoad: string, _startLod: number = 10) => {
         if (!idToLoad.trim()) return;
-        await startProgressiveStream(idToLoad, startLod, 0);
-    }, [startProgressiveStream]);
+        setIdentifier(idToLoad);
+        setSelectedId(idToLoad);
+    }, []);
 
     const loadPlyFile = useCallback(async (file: File) => {
         setIsLoading(true);
@@ -409,6 +475,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 setAmbientLightIntensity,
                 customQuery,
                 setCustomQuery,
+                startProgressiveStream,
                 executeCustomQuery,
                 loadBinaryPointCloud,
                 loadPlyUrl,
@@ -432,6 +499,9 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 loadingIds,
                 toggleStreamPointCloud,
                 unloadPointCloud,
+                summaryMap,
+                setSummaryMap,
+                fetchQuerySummary,
             }}
         >
             {children}

@@ -20,30 +20,39 @@ Instead of transferring bloated JSON structures or generating intermediate `.ply
 | Parameter | Type | Location | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `lod` | `integer` | Query | Yes | — | Level of Detail (LOD) pyramid level to stream (`0` represents full resolution / base LOD; selectable up to `10`). |
-| `query` | `string` | Query | Yes | — | SQL selection query. Client formats query string (e.g. replacing `pointcloud_patches` with `pointcloud_patches_lod{lod}` and `:id` with `'<pointcloud_id>'`). Example: `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod0 WHERE pointcloud_id = '550e8400-e29b-41d4-a716-446655440000'` |
+| `query` | `string` | Query | Yes | — | SQL selection query. Client formats query string (e.g. replacing `pointcloud_patches` with `pointcloud_patches_lod{lod}`). Example: `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'` |
 
 ---
 
-## Stream Pointcloud Summary (`/pointclouds/stream-summary`)
+## Stream Pointcloud Summary (`/pointclouds/stream-summary` & `/stream-summary`)
 
-The `/pointclouds/stream-summary` endpoint mirrors `/pointclouds/stream-binary` parameters (`lod` and `query`) but instead of streaming binary vertex buffers, it returns a JSON summary containing the total point count selected by the custom query.
+The `/pointclouds/stream-summary` (also available via `/stream-summary`) endpoint mirrors `/pointclouds/stream-binary` parameters (`lod` and `query`) but instead of streaming binary vertex buffers, it returns a JSON summary containing the total point count, spatial 3D bounding box, connected pointcloud metadata, and connected camera headers selected by the custom query.
 
 ### Endpoint Specification
 
 - **HTTP Method**: `GET`
-- **Path**: `/pointclouds/stream-summary`
+- **Paths**: `/pointclouds/stream-summary`, `/stream-summary`
 - **Response Content-Type**: `application/json`
 
-### Query Optimization Logic
+### Query Logic
 
-Instead of expanding point records via `PC_Explode(patch)` and streaming point data, the query string is edited automatically to sum point counts at the patch level using `PC_NumPoints(patch)`:
+To optimize performance and avoid memory overhead, the summary query transforms point selection queries (`SELECT PC_Explode(patch) AS pt FROM ...`) into patch selection queries (`SELECT * FROM ...`). It computes point counts and spatial bounding boxes directly using PostGIS `pgPointCloud` patch header aggregate functions (`SUM(PC_NumPoints(patch))`, `PC_PatchMin`, and `PC_PatchMax`):
 
 ```sql
--- Original stream-binary query:
-SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod0 WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef';
-
 -- Transformed stream-summary query:
-SELECT COALESCE(SUM(PC_NumPoints(patch)), 0) FROM pointcloud_patches_lod0 WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef';
+-- Input query: SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'
+-- Converted patch summary query:
+SELECT 
+    COALESCE(SUM(PC_NumPoints(patch)), 0) AS total_points,
+    MIN(PC_PatchMin(patch, 'X')) AS min_x,
+    MIN(PC_PatchMin(patch, 'Y')) AS min_y,
+    MIN(PC_PatchMin(patch, 'Z')) AS min_z,
+    MAX(PC_PatchMax(patch, 'X')) AS max_x,
+    MAX(PC_PatchMax(patch, 'Y')) AS max_y,
+    MAX(PC_PatchMax(patch, 'Z')) AS max_z
+FROM (
+    SELECT * FROM pointcloud_patches_lod0 WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'
+) AS points;
 ```
 
 ### Response Example
@@ -68,6 +77,17 @@ SELECT COALESCE(SUM(PC_NumPoints(patch)), 0) FROM pointcloud_patches_lod0 WHERE 
       "created_at": "2026-08-14T10:00:00Z",
       "pcid": 1,
       "transform_matrix": [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
+    }
+  ],
+  "connected_camera_headers": [
+    {
+      "id": "c160394b-a241-49e5-bb66-97fee8bd85ef",
+      "pointcloud_id": "e360394b-a241-49e5-bb66-97fee8bd85ef",
+      "focal": 1000.0,
+      "width": 1920,
+      "height": 1080,
+      "camera": "pinhole",
+      "created_at": "2026-08-14T10:00:00Z"
     }
   ]
 }

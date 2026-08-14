@@ -6,6 +6,7 @@ export interface PositionSample {
     direction?: [number, number, number];
     filename?: string;
     id?: string;
+    cameraHeaderId?: string;
 }
 
 export interface PositionSamplePair {
@@ -69,6 +70,7 @@ export class TelemetryPositionReader {
                         : undefined,
                     filename: item.filename,
                     id: item.id,
+                    cameraHeaderId: item.camera_header_id,
                 }));
         }
 

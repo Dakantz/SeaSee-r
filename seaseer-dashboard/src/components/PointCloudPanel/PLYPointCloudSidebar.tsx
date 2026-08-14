@@ -6,8 +6,6 @@ import PLYPointCloudQueryEditor from "./PLYPointCloudQueryEditor";
 
 
 export interface PLYPointCloudSidebarProps {
-    mode?: "binary" | "plyFile" | "plyUrl";
-    setMode?: (mode: "binary" | "plyFile" | "plyUrl") => void;
     renderMode?: "points" | "mesh";
     setRenderMode?: (mode: "points" | "mesh") => void;
     wireframe?: boolean;
@@ -24,16 +22,10 @@ export interface PLYPointCloudSidebarProps {
     setHeightmapHeightProvider?: (provider: HeightProviderChoice) => void;
     heightmapProvider?: MapProviderChoice;
     setHeightmapProvider?: (provider: MapProviderChoice) => void;
-    identifier?: string;
-    setIdentifier?: (id: string) => void;
-    plyUrl?: string;
-    setPlyUrl?: (url: string) => void;
     lod?: number;
-    setLod?: (lod: number) => void;
     isLoading?: boolean;
     error?: string | null;
     pointCount?: number | null;
-    selectedFileName?: string | null;
     keyLightIntensity?: number;
     setKeyLightIntensity?: (val: number) => void;
     fillLightIntensity?: number;
@@ -42,9 +34,6 @@ export interface PLYPointCloudSidebarProps {
     setHemisphereLightIntensity?: (val: number) => void;
     ambientLightIntensity?: number;
     setAmbientLightIntensity?: (val: number) => void;
-    onLoadBinary?: (id: string, lod: number) => void;
-    onLoadPlyUrl?: (url: string) => void;
-    onLoadPlyFile?: (file: File) => void;
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -71,7 +60,6 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const setHeightmapMapProvider = props.setHeightmapMapProvider ?? contextState?.setHeightmapMapProvider ?? props.setHeightmapProvider ?? contextState?.setHeightmapProvider ?? (() => {});
     const heightmapHeightProvider = props.heightmapHeightProvider ?? contextState?.heightmapHeightProvider ?? "Bathymetry";
     const setHeightmapHeightProvider = props.setHeightmapHeightProvider ?? contextState?.setHeightmapHeightProvider ?? (() => {});
-    const setIdentifier = props.setIdentifier ?? contextState?.setIdentifier ?? (() => {});
     const lod = props.lod ?? contextState?.lod ?? 0;
     const isLoading = props.isLoading ?? contextState?.isLoading ?? false;
     const error = props.error ?? contextState?.error ?? null;
@@ -86,24 +74,18 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const setAmbientLightIntensity = props.setAmbientLightIntensity ?? contextState?.setAmbientLightIntensity ?? (() => {});
 
     const [datasets, setDatasets] = useState<PointCloudMetadataResponse[]>([]);
-    const [_fetchingDatasets, setFetchingDatasets] = useState<boolean>(false);
     const [searchQuery, setSearchQuery] = useState<string>("");
 
     const catalog = contextState?.catalog ?? datasets;
     const selectedId = contextState?.selectedId ?? null;
-    const selectPointcloud = contextState?.selectPointcloud ?? (() => {});
     const hoveredId = contextState?.hoveredId ?? null;
-    const hoverPointcloud = contextState?.hoverPointcloud ?? (() => {});
     const focusPointcloud = contextState?.focusPointcloud ?? (() => {});
     const loadedGeometries = contextState?.loadedGeometries ?? new Map();
     const loadingIds = contextState?.loadingIds ?? new Set();
     const toggleStreamPointCloud = contextState?.toggleStreamPointCloud ?? (async () => {});
 
-
-
     useEffect(() => {
         const fetchDatasets = async () => {
-            setFetchingDatasets(true);
             try {
                 const res = await fetch(`${API_BASE_URL}/pointclouds/`);
                 if (res.ok) {
@@ -112,8 +94,6 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                 }
             } catch (err) {
                 console.error("Failed to fetch available datasets for PLY sidebar:", err);
-            } finally {
-                setFetchingDatasets(false);
             }
         };
 
@@ -208,11 +188,17 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                 return (
                                     <div
                                         key={item.id}
-                                        onMouseEnter={() => hoverPointcloud(item.id)}
-                                        onMouseLeave={() => hoverPointcloud(null)}
                                         onClick={() => {
-                                            selectPointcloud(item.id);
-                                            setIdentifier(item.id);
+                                            const queryText = `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = '${item.id}'`;
+                                            const queryName = name ? `Query for ${name}` : undefined;
+                                            window.dispatchEvent(
+                                                new CustomEvent("add_custom_query", {
+                                                    detail: {
+                                                        queryText,
+                                                        name: queryName,
+                                                    },
+                                                })
+                                            );
                                         }}
                                         style={{
                                             display: "flex",

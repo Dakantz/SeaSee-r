@@ -16,21 +16,38 @@ import CustomQueryManagerContainer from "../PointCloudPanel/CustomQueryManagerCo
 import "./Workspace.css";
 
 export default function Workspace() {
+    const [isQueriesOpen, setIsQueriesOpen] = useState<boolean>(true);
     const [isJobsOpen, setIsJobsOpen] = useState<boolean>(true);
 
     return (
         <PLYPointCloudProvider>
             <div className="workspace-container">
                 <Group orientation="horizontal" className="workspace">
-                    {/* Left Panel: Camera Stream */}
-                    {/*<Panel defaultSize="35%" minSize="20%">*/}
-                    {/*    <CameraPanel />*/}
-                    {/*</Panel>*/}
-
-                    <Separator className="resize-handle vertical" />
+                    {/* Left Collapsible Panel: Custom Queries */}
+                    {isQueriesOpen && (
+                        <>
+                            <Panel defaultSize="25%" minSize="15%" maxSize="35%" className="left-sidebar-panel">
+                                <div className="left-sidebar-header">
+                                    <span className="left-sidebar-title">Custom Queries</span>
+                                    <button
+                                        type="button"
+                                        className="left-sidebar-toggle-btn"
+                                        onClick={() => setIsQueriesOpen(false)}
+                                        title="Collapse Left Sidebar"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                                <div className="left-sidebar-content">
+                                    <CustomQueryManagerContainer />
+                                </div>
+                            </Panel>
+                            <Separator className="resize-handle vertical" />
+                        </>
+                    )}
 
                     {/* Center Panel: PointCloud + Telemetry */}
-                    <Panel defaultSize="40%" minSize="20%">
+                    <Panel defaultSize="50%" minSize="20%">
                         <div className="right-panel">
                             <div className="pointcloud-container">
                                 <PointCloudPanel />
@@ -59,11 +76,6 @@ export default function Workspace() {
                                     </button>
                                 </div>
                                 <div className="jobs-sidebar-content">
-                                    {/* Standalone CustomQueryManager Component */}
-                                    <CustomQueryManagerContainer />
-
-                                    <hr className="jobs-sidebar-divider" />
-
                                     {/* DebugControls Panel */}
                                     <PLYPointCloudSidebar />
 
@@ -77,10 +89,20 @@ export default function Workspace() {
                             </Panel>
                         </>
                     )}
-
                 </Group>
 
-                {/* Re-open toggle button when sidebar widget is collapsed */}
+                {/* Re-open toggle buttons when sidebar widgets are collapsed */}
+                {!isQueriesOpen && (
+                    <button
+                        type="button"
+                        className="left-sidebar-reopen-btn"
+                        onClick={() => setIsQueriesOpen(true)}
+                        title="Expand Custom Queries"
+                    >
+                        Custom Queries
+                    </button>
+                )}
+
                 {!isJobsOpen && (
                     <button
                         type="button"

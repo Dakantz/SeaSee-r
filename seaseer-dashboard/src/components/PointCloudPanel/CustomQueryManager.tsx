@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 
 /**
  * Interface representing a Custom SQL Query item in the Custom Query Manager.
@@ -14,14 +15,14 @@ export interface CustomQuery {
  */
 export type PointCloudItem = CustomQuery;
 
-export const DEFAULT_POINTCLOUD_UUID = "550e8400-e29b-41d4-a716-446655440000";
+export const DEFAULT_POINTCLOUD_UUID = "e360394b-a241-49e5-bb66-97fee8bd85ef";
 
 /**
  * Generates default SQL query text for a given pointcloud UUID.
  */
 export const buildDefaultQueryText = (pointcloudId?: string | null): string => {
   const targetId = pointcloudId && pointcloudId.trim() !== "" ? pointcloudId : DEFAULT_POINTCLOUD_UUID;
-  return `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod0 WHERE pointcloud_id = '${targetId}'`;
+  return `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = '${targetId}'`;
 };
 
 /**
@@ -64,6 +65,16 @@ export interface QuerySummaryData {
     pcid?: number;
     [key: string]: any;
   }>;
+  connected_camera_headers?: Array<{
+    id: string;
+    pointcloud_id: string;
+    focal?: number | null;
+    width?: number | null;
+    height?: number | null;
+    camera?: string | null;
+    created_at?: string;
+    [key: string]: any;
+  }>;
 }
 
 /**
@@ -101,6 +112,8 @@ export interface CustomQueryManagerProps {
   queries?: CustomQuery[];
   /** Currently selected/active query ID */
   activeQueryId?: string | null;
+  /** Multi-selected query IDs */
+  selectedQueryIds?: string[];
   /**
    * Trigger prop: When a pointcloud is selected in a different component,
    * passing a new selectedPointCloudId automatically generates and adds a query to the list.
@@ -110,12 +123,22 @@ export interface CustomQueryManagerProps {
   selectedPointCloudName?: string | null;
   /** Legacy selectedIds prop alias */
   selectedIds?: string[];
+  /** List or Set of currently loaded query IDs in 3D scene */
+  loadedQueryIds?: string[] | Set<string>;
+  /** List or Set of currently loading query IDs */
+  loadingQueryIds?: string[] | Set<string>;
   /** Callback triggered when a new query is added */
   onAddQuery?: (pointcloudId?: string) => void;
   /** Callback triggered when the user clicks "Run" / "Select" on a query */
   onRunQuery?: (query: CustomQuery) => void;
-  /** Callback triggered when query selection changes */
+  /** Callback triggered when the user clicks "Unload" on a query */
+  onUnloadQuery?: (query: CustomQuery) => void;
+  /** Callback triggered when the user clicks "Stream Selected" */
+  onRunMultipleQueries?: (queries: CustomQuery[]) => void;
+  /** Callback triggered when active query selection changes */
   onSelectQuery?: (queryId: string) => void;
+  /** Callback triggered when multi-selection changes */
+  onSelectionChange?: (selectedIds: string[]) => void;
   /** Callback triggered when a query is deleted */
   onDeleteQuery?: (queryId: string) => void;
   /** Callback triggered when a query is updated */
@@ -127,7 +150,6 @@ export interface CustomQueryManagerProps {
 
   /* Legacy props maintained for component API compatibility */
   hoveredId?: string | null;
-  onSelectionChange?: (selectedIds: string[]) => void;
   onMoveCamera?: (pointcloudId: string) => void;
   onEdit?: (pointcloudId: string) => void;
   onHover?: (pointcloudId: string | null) => void;
@@ -142,17 +164,24 @@ export type PointCloudListProps = CustomQueryManagerProps;
  * Custom Query Manager Component
  * 
  * Manages rendering, manual editing, client-side persistence (localStorage),
- * and automatic generation of custom SQL queries for PostGIS / pgPointCloud datasets.
+ * multi-query selection, and automatic generation of custom SQL queries for PostGIS / pgPointCloud datasets.
  */
 export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
   initialQueries,
   queries: externalQueries,
   activeQueryId: externalActiveQueryId,
+  selectedQueryIds: externalSelectedQueryIds,
   selectedPointCloudId,
   selectedPointCloudName,
+  selectedIds: externalSelectedIds,
+  loadedQueryIds,
+  loadingQueryIds,
   onAddQuery,
   onRunQuery,
+  onUnloadQuery,
+  onRunMultipleQueries,
   onSelectQuery,
+  onSelectionChange,
   onDeleteQuery,
   onUpdateQuery,
   onQueriesChange,
@@ -160,36 +189,118 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
   onMoveCamera,
   onSelect,
 }) => {
+  // Helper to normalize SQL string for duplicate detection
+  const normalizeSql = (sql: string): string => sql.trim().replace(/\s+/g, " ");
+
   // 1. Client-Side Storage & Local State Initialization
   const [internalQueries, setInternalQueries] = useState<CustomQuery[]>(() => {
-    if (initialQueries && initialQueries.length > 0) {
-      return initialQueries;
-    }
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+    let list: CustomQuery[] = [];
+    if (initialQueries !== undefined) {
+      list = initialQueries;
+    } else {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved !== null) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            list = parsed;
+          } else {
+            list = [createDefaultQuery(selectedPointCloudId || DEFAULT_POINTCLOUD_UUID, selectedPointCloudName)];
+          }
+        } else {
+          list = [createDefaultQuery(selectedPointCloudId || DEFAULT_POINTCLOUD_UUID, selectedPointCloudName)];
         }
+      } catch (e) {
+        console.error("Failed to load queries from localStorage:", e);
+        list = [createDefaultQuery(selectedPointCloudId || DEFAULT_POINTCLOUD_UUID, selectedPointCloudName)];
       }
-    } catch (e) {
-      console.error("Failed to load queries from localStorage:", e);
     }
-    return [createDefaultQuery(selectedPointCloudId || DEFAULT_POINTCLOUD_UUID, selectedPointCloudName)];
+
+    // Deduplicate on initial load
+    const seen = new Set<string>();
+    const deduplicated: CustomQuery[] = [];
+    for (const item of list) {
+      const norm = normalizeSql(item.queryText);
+      if (!seen.has(norm)) {
+        seen.add(norm);
+        deduplicated.push(item);
+      }
+    }
+    return deduplicated;
   });
 
   const [activeId, setActiveId] = useState<string | null>(() => {
     return externalActiveQueryId || (internalQueries.length > 0 ? internalQueries[0].id : null);
   });
 
+  const queries = externalQueries || internalQueries;
+
+  const [internalSelectedQueryIds, setInternalSelectedQueryIds] = useState<string[]>(() => {
+    if (externalSelectedQueryIds && externalSelectedQueryIds.length > 0) return externalSelectedQueryIds;
+    if (externalSelectedIds && externalSelectedIds.length > 0) return externalSelectedIds;
+    return queries.map((q) => q.id);
+  });
+
   const [saveStatusMap, setSaveStatusMap] = useState<Record<string, string>>({});
-  const [summaryMap, setSummaryMap] = useState<Record<string, QuerySummaryData>>({});
+  const [localSummaryMap, setLocalSummaryMap] = useState<Record<string, QuerySummaryData>>({});
   const [summaryLoadingMap, setSummaryLoadingMap] = useState<Record<string, boolean>>({});
   const [summaryErrorMap, setSummaryErrorMap] = useState<Record<string, string | null>>({});
 
-  const queries = externalQueries || internalQueries;
+  let contextSummaryMap: Record<string, QuerySummaryData> | undefined;
+  let contextSetSummaryMap: React.Dispatch<React.SetStateAction<Record<string, QuerySummaryData>>> | undefined;
+  try {
+    const ctx = usePLYPointCloudContext();
+    if (ctx) {
+      contextSummaryMap = ctx.summaryMap;
+      contextSetSummaryMap = ctx.setSummaryMap;
+    }
+  } catch {
+    // Outside PLYPointCloudContext
+  }
+
+  const summaryMap = contextSummaryMap || localSummaryMap;
+  const updateSummaryMap = (updater: (prev: Record<string, QuerySummaryData>) => Record<string, QuerySummaryData>) => {
+    setLocalSummaryMap(updater);
+    contextSetSummaryMap?.(updater);
+  };
+
   const activeQueryId = externalActiveQueryId !== undefined ? externalActiveQueryId : activeId;
+  const selectedQueryIds = externalSelectedQueryIds || externalSelectedIds || internalSelectedQueryIds;
+
+  const handleToggleSelectQuery = (id: string) => {
+    const nextSelected = selectedQueryIds.includes(id)
+      ? selectedQueryIds.filter((item) => item !== id)
+      : [...selectedQueryIds, id];
+
+    setInternalSelectedQueryIds(nextSelected);
+    onSelectionChange?.(nextSelected);
+  };
+
+  const handleSelectAllQueries = (checked: boolean) => {
+    const nextSelected = checked ? queries.map((q) => q.id) : [];
+    setInternalSelectedQueryIds(nextSelected);
+    onSelectionChange?.(nextSelected);
+  };
+
+  const handleRunSelectedQueries = () => {
+    const targetQueries = queries.filter((q) => selectedQueryIds.includes(q.id));
+    if (targetQueries.length === 0) return;
+    if (onRunMultipleQueries) {
+      onRunMultipleQueries(targetQueries);
+    } else {
+      targetQueries.forEach((q) => handleRun(q));
+    }
+  };
+
+  const isQueryLoading = (id: string) => {
+    if (!loadingQueryIds) return false;
+    return loadingQueryIds instanceof Set ? loadingQueryIds.has(id) : loadingQueryIds.includes(id);
+  };
+
+  const isQueryLoaded = (id: string) => {
+    if (!loadedQueryIds) return false;
+    return loadedQueryIds instanceof Set ? loadedQueryIds.has(id) : loadedQueryIds.includes(id);
+  };
 
   // Function to fetch summary information from /pointclouds/stream-summary
   const fetchQuerySummary = async (queryId: string, queryText: string, lod = 0): Promise<QuerySummaryData | null> => {
@@ -199,13 +310,14 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
     setSummaryErrorMap((prev) => ({ ...prev, [queryId]: null }));
 
     try {
-      const url = `${API_BASE_URL}/pointclouds/stream-summary?lod=${lod}&query=${encodeURIComponent(queryText.trim())}`;
+      const summaryQueryText = queryText.trim().replace(/SELECT\s+PC_Explode\(patch\)\s+AS\s+pt\s+FROM/i, "SELECT * FROM");
+      const url = `${API_BASE_URL}/pointclouds/stream-summary?lod=${lod}&query=${encodeURIComponent(summaryQueryText)}`;
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`Server returned HTTP ${response.status}`);
       }
       const data: QuerySummaryData = await response.json();
-      setSummaryMap((prev) => ({ ...prev, [queryId]: data }));
+      updateSummaryMap((prev) => ({ ...prev, [queryId]: data }));
       return data;
     } catch (err: any) {
       console.error(`Error fetching summary for query ${queryId}:`, err);
@@ -250,29 +362,33 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
       const { queryText, name } = customEvent.detail || {};
       if (!queryText || !queryText.trim()) return;
 
-      setInternalQueries((prev) => {
-        const trimmedNew = queryText.trim();
-        const existing = prev.find((q) => q.queryText.trim() === trimmedNew);
-        if (existing) {
-          setActiveId(existing.id);
-          return prev;
-        }
+      const normNew = normalizeSql(queryText);
+      const existing = queries.find((q) => normalizeSql(q.queryText) === normNew);
+      if (existing) {
+        setActiveId(existing.id);
+        setInternalSelectedQueryIds((prev) => (prev.includes(existing.id) ? prev : [...prev, existing.id]));
+        handleRun(existing);
+        handleFocusQuery(existing);
+        return;
+      }
 
-        const newQuery: CustomQuery = {
-          id: `query-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          name: name || `Custom Query #${prev.length + 1}`,
-          queryText: queryText,
-        };
-        setActiveId(newQuery.id);
-        return [...prev, newQuery];
-      });
+      const newQuery: CustomQuery = {
+        id: `query-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        name: name || `Custom Query #${queries.length + 1}`,
+        queryText: queryText,
+      };
+      setInternalQueries((prev) => [...prev, newQuery]);
+      setInternalSelectedQueryIds((prev) => [...prev, newQuery.id]);
+      setActiveId(newQuery.id);
+      handleRun(newQuery);
+      handleFocusQuery(newQuery);
     };
 
     window.addEventListener("add_custom_query", handleAddQueryEvent);
     return () => {
       window.removeEventListener("add_custom_query", handleAddQueryEvent);
     };
-  }, []);
+  }, [queries]);
 
   // 3. Default Query Generation on prop change
   useEffect(() => {
@@ -282,23 +398,65 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
     ) {
       prevSelectedIdRef.current = selectedPointCloudId;
 
+      const candidateText = buildDefaultQueryText(selectedPointCloudId);
+      const normCandidate = normalizeSql(candidateText);
+      const existing = queries.find((q) => normalizeSql(q.queryText) === normCandidate);
+
+      if (existing) {
+        setActiveId(existing.id);
+        setInternalSelectedQueryIds((prev) => (prev.includes(existing.id) ? prev : [...prev, existing.id]));
+        handleRun(existing);
+        handleFocusQuery(existing);
+        return;
+      }
+
       const newQuery = createDefaultQuery(selectedPointCloudId, selectedPointCloudName, queries.length + 1);
       
       setInternalQueries((prev) => [...prev, newQuery]);
+      setInternalSelectedQueryIds((prev) => [...prev, newQuery.id]);
       setActiveId(newQuery.id);
       
       onAddQuery?.(selectedPointCloudId);
+      handleRun(newQuery);
+      handleFocusQuery(newQuery);
     }
-  }, [selectedPointCloudId, selectedPointCloudName, queries.length, onAddQuery]);
+  }, [selectedPointCloudId, selectedPointCloudName, queries, onAddQuery]);
+
+  // 4. Initial auto-run of active query on mount
+  const hasAutoRunOnMountRef = useRef(false);
+  useEffect(() => {
+    if (!hasAutoRunOnMountRef.current && queries.length > 0) {
+      hasAutoRunOnMountRef.current = true;
+      const activeQ = queries.find((q) => q.id === activeId) || queries[0];
+      if (activeQ) {
+        handleRun(activeQ);
+      }
+    }
+  }, [queries, activeId]);
 
   // Handler to manually add a new query
   const handleAddNewQuery = (targetPcId?: string) => {
     const pcId = targetPcId || selectedPointCloudId || DEFAULT_POINTCLOUD_UUID;
+    const candidateText = buildDefaultQueryText(pcId);
+    const normCandidate = normalizeSql(candidateText);
+    const existing = queries.find((q) => normalizeSql(q.queryText) === normCandidate);
+
+    if (existing) {
+      setActiveId(existing.id);
+      setInternalSelectedQueryIds((prev) => (prev.includes(existing.id) ? prev : [...prev, existing.id]));
+      handleRun(existing);
+      handleFocusQuery(existing);
+      return;
+    }
+
     const newQuery = createDefaultQuery(pcId, selectedPointCloudName, queries.length + 1);
     
     setInternalQueries((prev) => [...prev, newQuery]);
+    setInternalSelectedQueryIds((prev) => [...prev, newQuery.id]);
     setActiveId(newQuery.id);
     onAddQuery?.(pcId);
+    handleRun(newQuery);
+    handleFocusQuery(newQuery);
   };
 
   // Handler for text / title updates
@@ -340,16 +498,15 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
 
   // Handler to delete a query
   const handleDeleteQuery = (id: string) => {
-    if (queries.length <= 1) {
-      alert("At least one query must remain in the manager.");
-      return;
+    const deletedQuery = queries.find((q) => q.id === id);
+    if (deletedQuery && onUnloadQuery) {
+      onUnloadQuery(deletedQuery);
     }
     setInternalQueries((prev) => prev.filter((q) => q.id !== id));
+    setInternalSelectedQueryIds((prev) => prev.filter((item) => item !== id));
     if (activeId === id) {
       const remaining = queries.filter((q) => q.id !== id);
-      if (remaining.length > 0) {
-        setActiveId(remaining[0].id);
-      }
+      setActiveId(remaining.length > 0 ? remaining[0].id : null);
     }
     onDeleteQuery?.(id);
   };
@@ -390,6 +547,9 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
       style={{
         display: "flex",
         flexDirection: "column",
+        flex: 1,
+        height: "100%",
+        minHeight: 0,
         gap: "var(--spacing-sm, 12px)",
         background: "var(--color-bg-card, #1e1e24)",
         border: "1px solid var(--color-border-strong, #2a2b36)",
@@ -398,53 +558,104 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
         color: "var(--color-text-primary, #f0f0f5)",
         fontFamily: "var(--font-sans, system-ui, sans-serif)",
         fontSize: "var(--font-size-sm, 14px)",
+        boxSizing: "border-box",
       }}
     >
       {/* Header & Catalog Summary */}
       <div
         style={{
           display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
+          flexDirection: "column",
+          gap: "8px",
           paddingBottom: "var(--spacing-xs, 8px)",
           borderBottom: "1px solid var(--color-border-subtle, #2d2e3d)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span
+              style={{
+                fontWeight: "var(--font-weight-semibold, 600)",
+                fontSize: "var(--font-size-xs, 12px)",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                color: "var(--color-accent-text, #93c5fd)",
+              }}
+            >
+              Custom Queries ({queries.length})
+            </span>
+            <span
+              style={{
+                fontSize: "11px",
+                color: selectedQueryIds.length > 0 ? "#60a5fa" : "#9ca3af",
+                background: "rgba(59, 130, 246, 0.12)",
+                padding: "1px 6px",
+                borderRadius: "4px",
+              }}
+            >
+              Selected: {selectedQueryIds.length}/{queries.length}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => handleAddNewQuery()}
             style={{
-              fontWeight: "var(--font-weight-semibold, 600)",
+              background: "var(--color-bg-button, #2563eb)",
+              border: "none",
+              color: "#ffffff",
+              borderRadius: "var(--radius-sm, 4px)",
+              padding: "4px 10px",
               fontSize: "var(--font-size-xs, 12px)",
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              color: "var(--color-accent-text, #93c5fd)",
+              fontWeight: 500,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+              transition: "background 0.15s ease",
             }}
+            title="Add a new custom SQL query"
           >
-            Custom Queries ({queries.length})
-          </span>
+            + New Query
+          </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => handleAddNewQuery()}
-          style={{
-            background: "var(--color-bg-button, #2563eb)",
-            border: "none",
-            color: "#ffffff",
-            borderRadius: "var(--radius-sm, 4px)",
-            padding: "4px 10px",
-            fontSize: "var(--font-size-xs, 12px)",
-            fontWeight: 500,
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-            transition: "background 0.15s ease",
-          }}
-          title="Add a new custom SQL query"
-        >
-          + New Query
-        </button>
+        {/* Toolbar: Select All Checkbox & Stream Selected Action */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#d1d5db", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={queries.length > 0 && selectedQueryIds.length === queries.length}
+              onChange={(e) => handleSelectAllQueries(e.target.checked)}
+              style={{ accentColor: "#2563eb", cursor: "pointer" }}
+            />
+            Select All
+          </label>
+
+          {selectedQueryIds.length > 0 && (
+            <button
+              type="button"
+              onClick={handleRunSelectedQueries}
+              style={{
+                background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+                border: "none",
+                color: "#ffffff",
+                borderRadius: "var(--radius-sm, 4px)",
+                padding: "3px 10px",
+                fontSize: "11px",
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                boxShadow: "0 1px 4px rgba(37, 99, 235, 0.3)",
+              }}
+              title="Stream all selected custom queries concurrently"
+            >
+              ⚡ Stream Selected ({selectedQueryIds.length})
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Query Cards List */}
@@ -466,13 +677,27 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
             display: "flex",
             flexDirection: "column",
             gap: "var(--spacing-sm, 12px)",
-            maxHeight: "420px",
+            flex: 1,
+            minHeight: 0,
             overflowY: "auto",
             paddingRight: "2px",
           }}
         >
           {queries.map((q) => {
             const isActive = q.id === activeQueryId;
+            const isChecked = selectedQueryIds.includes(q.id);
+            const extractedMatch = q.queryText.match(/pointcloud_id\s*=\s*['"]([^'"]+)['"]/i);
+            const extractedId = extractedMatch ? extractedMatch[1] : null;
+            const summary = summaryMap[q.id];
+            const connectedPcs = summary?.connected_pointclouds || [];
+            const isLoadingStream =
+              isQueryLoading(q.id) ||
+              (extractedId ? isQueryLoading(extractedId) : false) ||
+              connectedPcs.some((pc) => isQueryLoading(pc.id));
+            const isLoadedStream =
+              isQueryLoaded(q.id) ||
+              (extractedId ? isQueryLoaded(extractedId) : false) ||
+              connectedPcs.some((pc) => isQueryLoaded(pc.id));
             const saveStatus = saveStatusMap[q.id];
 
             return (
@@ -493,7 +718,7 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
                   transition: "all 0.15s ease-in-out",
                 }}
               >
-                {/* Item Top Row: Name Editor and Delete Action */}
+                {/* Item Top Row: Selection Checkbox, Name Editor, Stream Badges & Delete */}
                 <div
                   style={{
                     display: "flex",
@@ -502,33 +727,43 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
                     gap: "8px",
                   }}
                 >
-                  <input
-                    type="text"
-                    value={q.name}
-                    onChange={(e) => handleUpdateQuery(q.id, "name", e.target.value)}
-                    placeholder="Query Name..."
-                    style={{
-                      background: "transparent",
-                      border: "1px solid transparent",
-                      borderRadius: "var(--radius-sm, 4px)",
-                      color: isActive
-                        ? "var(--color-text-primary, #ffffff)"
-                        : "var(--color-text-secondary, #d1d5db)",
-                      fontWeight: isActive ? 600 : 500,
-                      fontSize: "var(--font-size-sm, 13px)",
-                      padding: "2px 4px",
-                      outline: "none",
-                      flex: 1,
-                    }}
-                    onFocus={(e) => {
-                      e.target.style.border = "1px solid var(--color-border-strong, #374151)";
-                      e.target.style.background = "var(--color-bg-card, #1e1e24)";
-                    }}
-                    onBlur={(e) => {
-                      e.target.style.border = "1px solid transparent";
-                      e.target.style.background = "transparent";
-                    }}
-                  />
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1 }}>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => handleToggleSelectQuery(q.id)}
+                      style={{ accentColor: "#2563eb", cursor: "pointer" }}
+                      title="Select query for batch actions"
+                    />
+
+                    <input
+                      type="text"
+                      value={q.name}
+                      onChange={(e) => handleUpdateQuery(q.id, "name", e.target.value)}
+                      placeholder="Query Name..."
+                      style={{
+                        background: "transparent",
+                        border: "1px solid transparent",
+                        borderRadius: "var(--radius-sm, 4px)",
+                        color: isActive
+                          ? "var(--color-text-primary, #ffffff)"
+                          : "var(--color-text-secondary, #d1d5db)",
+                        fontWeight: isActive ? 600 : 500,
+                        fontSize: "var(--font-size-sm, 13px)",
+                        padding: "2px 4px",
+                        outline: "none",
+                        flex: 1,
+                      }}
+                      onFocus={(e) => {
+                        e.target.style.border = "1px solid var(--color-border-strong, #374151)";
+                        e.target.style.background = "var(--color-bg-card, #1e1e24)";
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.border = "1px solid transparent";
+                        e.target.style.background = "transparent";
+                      }}
+                    />
+                  </div>
 
                   <div
                     style={{
@@ -538,7 +773,33 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
                       flexShrink: 0,
                     }}
                   >
-                    {isActive && (
+                    {isLoadingStream ? (
+                      <span
+                        style={{
+                          fontSize: "10px",
+                          padding: "2px 6px",
+                          borderRadius: "var(--radius-sm, 4px)",
+                          background: "rgba(245, 158, 11, 0.2)",
+                          color: "#fbbf24",
+                          fontWeight: 500,
+                        }}
+                      >
+                        🌀 Streaming
+                      </span>
+                    ) : isLoadedStream ? (
+                      <span
+                        style={{
+                          fontSize: "10px",
+                          padding: "2px 6px",
+                          borderRadius: "var(--radius-sm, 4px)",
+                          background: "rgba(16, 185, 129, 0.2)",
+                          color: "#34d399",
+                          fontWeight: 500,
+                        }}
+                      >
+                        ⚡ Streamed
+                      </span>
+                    ) : isActive ? (
                       <span
                         style={{
                           fontSize: "10px",
@@ -551,7 +812,7 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
                       >
                         Active
                       </span>
-                    )}
+                    ) : null}
 
                     <button
                       type="button"
@@ -783,6 +1044,34 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
                           No connected metadata records found
                         </div>
                       )}
+
+                      {/* Connected Camera Headers List */}
+                      {summaryMap[q.id].connected_camera_headers && summaryMap[q.id].connected_camera_headers!.length > 0 && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                          <span style={{ color: "#9ca3af", fontSize: "10px" }}>
+                            Connected Camera Headers ({summaryMap[q.id].connected_camera_headers!.length}):
+                          </span>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                            {summaryMap[q.id].connected_camera_headers!.map((cam) => (
+                              <span
+                                key={cam.id}
+                                title={`Camera Header ID: ${cam.id} | PointCloud ID: ${cam.pointcloud_id} | Focal: ${cam.focal ?? "N/A"} | Res: ${cam.width ?? "?"}x${cam.height ?? "?"} | Model: ${cam.camera || "N/A"}`}
+                                style={{
+                                  background: "rgba(168, 85, 247, 0.15)",
+                                  border: "1px solid rgba(168, 85, 247, 0.3)",
+                                  color: "#c084fc",
+                                  fontSize: "10px",
+                                  padding: "1px 6px",
+                                  borderRadius: "4px",
+                                  fontFamily: "var(--font-mono, monospace)",
+                                }}
+                              >
+                                📷 {cam.camera || "Camera"} ({cam.width && cam.height ? `${cam.width}x${cam.height}` : cam.id.substring(0, 8)})
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div style={{ color: "#64748b", fontSize: "10px", fontStyle: "italic" }}>
@@ -851,26 +1140,47 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
                       🎯 Focus
                     </button>
 
-                    <button
-                      type="button"
-                      title="Run / Select this query"
-                      onClick={() => handleRun(q)}
-                      style={{
-                        background: isActive
-                          ? "var(--color-bg-button, #2563eb)"
-                          : "var(--color-bg-subtle, #1f2937)",
-                        border: isActive ? "none" : "1px solid var(--color-border-strong, #374151)",
-                        color: "#ffffff",
-                        borderRadius: "var(--radius-sm, 4px)",
-                        padding: "3px 10px",
-                        fontSize: "11px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        transition: "background 0.15s ease",
-                      }}
-                    >
-                      ⚡ Run
-                    </button>
+                    {isLoadedStream || isLoadingStream ? (
+                      <button
+                        type="button"
+                        title="Unload this query from 3D scene"
+                        onClick={() => onUnloadQuery?.(q)}
+                        style={{
+                          background: "rgba(239, 68, 68, 0.15)",
+                          border: "1px solid rgba(239, 68, 68, 0.3)",
+                          color: "#f87171",
+                          borderRadius: "var(--radius-sm, 4px)",
+                          padding: "3px 10px",
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          transition: "background 0.15s ease",
+                        }}
+                      >
+                        ⏸️ Unload
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        title="Run / Stream this query"
+                        onClick={() => handleRun(q)}
+                        style={{
+                          background: isActive
+                            ? "var(--color-bg-button, #2563eb)"
+                            : "var(--color-bg-subtle, #1f2937)",
+                          border: isActive ? "none" : "1px solid var(--color-border-strong, #374151)",
+                          color: "#ffffff",
+                          borderRadius: "var(--radius-sm, 4px)",
+                          padding: "3px 10px",
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          transition: "background 0.15s ease",
+                        }}
+                      >
+                        ⚡ Stream
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

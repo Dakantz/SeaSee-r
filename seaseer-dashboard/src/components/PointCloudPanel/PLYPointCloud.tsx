@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
@@ -138,6 +138,7 @@ function CameraPositionControls() {
             isDragging.current = true;
             dragButton.current = e.button;
             previousMouse.current = { x: e.clientX, y: e.clientY };
+            euler.current.setFromQuaternion(camera.quaternion, "YXZ");
         };
 
         const onPointerMove = (e: PointerEvent) => {
@@ -484,20 +485,40 @@ function PointCloudCenterMarkers() {
 }
 
 function CameraFocusController() {
-    const { camera } = useThree();
+    const { camera, gl } = useThree();
     const { focusedId, focusTrigger, catalog } = usePLYPointCloudContext();
-    const targetPos = useRef<THREE.Vector3 | null>(null);
+
+    const animState = useRef<{
+        startTime: number;
+        duration: number;
+        startPos: THREE.Vector3;
+        targetCamPos: THREE.Vector3;
+        targetCenter: THREE.Vector3;
+    } | null>(null);
+
+    const startFocusAnimation = useCallback((targetCenter: THREE.Vector3) => {
+        const targetCamPos = targetCenter.clone().add(new THREE.Vector3(0, 1500, 1500));
+
+        animState.current = {
+            startTime: performance.now() / 1000,
+            duration: 0.6,
+            startPos: camera.position.clone(),
+            targetCamPos: targetCamPos,
+            targetCenter: targetCenter.clone(),
+        };
+    }, [camera]);
 
     useEffect(() => {
         if (!focusedId) return;
         const item = catalog.find((pc) => pc.id === focusedId);
         if (item) {
             const [cx, cy, cz] = getItemCenter(item);
-            targetPos.current = new THREE.Vector3(cx, cy, cz).applyEuler(
+            const targetCenter = new THREE.Vector3(cx, cy, cz).applyEuler(
                 new THREE.Euler(-Math.PI / 2, 0, 0)
             );
+            startFocusAnimation(targetCenter);
         }
-    }, [focusedId, focusTrigger, catalog]);
+    }, [focusedId, focusTrigger, catalog, startFocusAnimation]);
 
     useEffect(() => {
         const handleFocusTarget = (e: Event) => {
@@ -511,25 +532,74 @@ function CameraFocusController() {
                 ({ x, y, z } = detail);
             }
             if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
-                targetPos.current = new THREE.Vector3(x, y, z).applyEuler(
+                const targetCenter = new THREE.Vector3(x, y, z).applyEuler(
                     new THREE.Euler(-Math.PI / 2, 0, 0)
                 );
+                startFocusAnimation(targetCenter);
             }
         };
 
         window.addEventListener("focus_camera_target", handleFocusTarget);
         return () => window.removeEventListener("focus_camera_target", handleFocusTarget);
-    }, []);
+    }, [startFocusAnimation]);
 
-    useFrame((_, delta) => {
-        if (targetPos.current) {
-            const targetCamPos = targetPos.current.clone().add(new THREE.Vector3(0, 1500, 1500));
-            camera.position.lerp(targetCamPos, Math.min(1, 5 * delta));
-            camera.lookAt(targetPos.current);
+    useEffect(() => {
+        const domElement = gl.domElement;
 
-            if (camera.position.distanceTo(targetCamPos) < 5.0) {
-                targetPos.current = null;
+        const stopAnimation = () => {
+            if (animState.current) {
+                animState.current = null;
             }
+        };
+
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (
+                document.activeElement &&
+                (document.activeElement.tagName === "INPUT" ||
+                    document.activeElement.tagName === "TEXTAREA" ||
+                    document.activeElement.tagName === "SELECT")
+            ) {
+                return;
+            }
+            const navKeys = [
+                "KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "Space",
+                "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"
+            ];
+            if (navKeys.includes(e.code)) {
+                stopAnimation();
+            }
+        };
+
+        domElement.addEventListener("pointerdown", stopAnimation);
+        domElement.addEventListener("wheel", stopAnimation, { passive: true });
+        domElement.addEventListener("touchstart", stopAnimation, { passive: true });
+        window.addEventListener("keydown", onKeyDown);
+
+        return () => {
+            domElement.removeEventListener("pointerdown", stopAnimation);
+            domElement.removeEventListener("wheel", stopAnimation);
+            domElement.removeEventListener("touchstart", stopAnimation);
+            window.removeEventListener("keydown", onKeyDown);
+        };
+    }, [gl]);
+
+    useFrame(() => {
+        if (!animState.current) return;
+
+        const { startTime, duration, startPos, targetCamPos, targetCenter } = animState.current;
+        const now = performance.now() / 1000;
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / duration);
+
+        const easeT = 1 - Math.pow(1 - progress, 3);
+
+        camera.position.lerpVectors(startPos, targetCamPos, easeT);
+        camera.lookAt(targetCenter);
+
+        if (progress >= 1) {
+            camera.position.copy(targetCamPos);
+            camera.lookAt(targetCenter);
+            animState.current = null;
         }
     });
 
@@ -539,47 +609,84 @@ function CameraFocusController() {
 function DBCameraTrajectoryDisplay() {
     const {
         showCameraTrajectories,
-        selectedId,
-        identifier,
         loadedGeometries,
+        loadingIds,
+        summaryMap,
         mode,
     } = usePLYPointCloudContext();
 
-    const activeIds = useMemo(() => {
-        const set = new Set<string>();
-        if (selectedId) set.add(selectedId);
-        if (identifier && identifier.trim().length > 0) set.add(identifier);
+    const displayedKeys = useMemo(() => {
+        const keys = new Set<string>();
         for (const id of loadedGeometries.keys()) {
-            if (id) set.add(id);
+            if (id) keys.add(id);
         }
-        return Array.from(set);
-    }, [selectedId, identifier, loadedGeometries]);
+        if (loadingIds) {
+            for (const id of loadingIds) {
+                if (id) keys.add(id);
+            }
+        }
+        return Array.from(keys);
+    }, [loadedGeometries, loadingIds]);
 
-    if (!showCameraTrajectories || activeIds.length === 0) return null;
+    if (!showCameraTrajectories || displayedKeys.length === 0) return null;
 
     const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+    const routesToRender: Array<{
+        key: string;
+        url: string;
+        allowedHeaderIds: Set<string>;
+        position: [number, number, number];
+    }> = [];
+
+    for (const qId of displayedKeys) {
+        const summary = summaryMap?.[qId];
+        const connectedHeaders = summary?.connected_camera_headers;
+        if (!connectedHeaders || connectedHeaders.length === 0) {
+            continue;
+        }
+
+        // Group headers by pointcloud_id
+        const headersByPc = new Map<string, Set<string>>();
+        for (const header of connectedHeaders) {
+            if (header.pointcloud_id && header.id) {
+                if (!headersByPc.has(header.pointcloud_id)) {
+                    headersByPc.set(header.pointcloud_id, new Set());
+                }
+                headersByPc.get(header.pointcloud_id)!.add(header.id);
+            }
+        }
+
+        headersByPc.forEach((headerIds, pcId) => {
+            const position: [number, number, number] =
+                mode === "plyUrl" ? [TARGET_X, 0, TARGET_Z] : [0, 0, 0];
+
+            routesToRender.push({
+                key: `${qId}-${pcId}`,
+                url: `${apiBaseUrl}/pointclouds/${pcId}/camera-routes`,
+                allowedHeaderIds: headerIds,
+                position,
+            });
+        });
+    }
+
+    if (routesToRender.length === 0) return null;
+
     return (
         <group>
-            {activeIds.map((id) => {
-                const position: [number, number, number] =
-                    mode === "plyUrl"
-                        ? [TARGET_X, 0, TARGET_Z]
-                        : [0, 0, 0];
-
-                return (
-                    <TrajectoryRenderer
-                        key={id}
-                        url={`${apiBaseUrl}/pointclouds/${id}/camera-routes`}
-                        position={position}
-                        rotation={[-Math.PI / 2, 0, 0]}
-                        color={0x00ffcc}
-                        lineWidth={3}
-                        showPoints={true}
-                        pointSize={1.5}
-                    />
-                );
-            })}
+            {routesToRender.map((route) => (
+                <TrajectoryRenderer
+                    key={route.key}
+                    url={route.url}
+                    allowedHeaderIds={route.allowedHeaderIds}
+                    position={route.position}
+                    rotation={[-Math.PI / 2, 0, 0]}
+                    color={0x00ffcc}
+                    lineWidth={3}
+                    showPoints={true}
+                    pointSize={1.5}
+                />
+            ))}
         </group>
     );
 }
@@ -591,20 +698,16 @@ export default function PLYPointCloud() {
         renderMode,
         wireframe,
         pointSize,
-        identifier,
         plyUrl,
-        loadBinaryPointCloud,
         loadPlyUrl,
         loadedGeometries,
     } = usePLYPointCloudContext();
 
     useEffect(() => {
-        if (mode === "binary" && identifier) {
-            loadBinaryPointCloud(identifier);
-        } else if (mode === "plyUrl") {
+        if (mode === "plyUrl") {
             loadPlyUrl(plyUrl);
         }
-    }, [mode, identifier, plyUrl, loadBinaryPointCloud, loadPlyUrl]);
+    }, [mode, plyUrl, loadPlyUrl]);
 
     useEffect(() => {
         if (geometry && renderMode === "mesh") {

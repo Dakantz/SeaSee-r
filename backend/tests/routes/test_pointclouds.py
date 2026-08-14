@@ -312,7 +312,7 @@ def test_endpoint_stream_summary_success():
 
     app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
 
-    sql_query = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod0 WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'"
+    sql_query = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'"
 
     try:
         response = client.get(f"/pointclouds/stream-summary?lod=0&query={sql_query}")

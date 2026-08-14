@@ -45,6 +45,88 @@
     border-top: 1px solid var(--color-border-solid-alt);
 }
 
+/* Collapsible Left Sidebar Styles for Custom Queries */
+.left-sidebar-panel {
+    background: var(--color-bg-surface);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    border-right: 1px solid var(--color-border-default);
+}
+
+.left-sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-md) var(--spacing-3xl);
+    background: var(--color-bg-card);
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.left-sidebar-title {
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.left-sidebar-toggle-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-md);
+    cursor: pointer;
+    padding: var(--spacing-3xs) var(--spacing-xs);
+    border-radius: var(--radius-sm);
+    transition: var(--transition-normal);
+}
+
+.left-sidebar-toggle-btn:hover {
+    background: var(--color-border-default);
+    color: var(--color-text-primary);
+}
+
+.left-sidebar-content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.left-sidebar-reopen-btn {
+    position: absolute;
+    top: var(--spacing-lg);
+    left: var(--spacing-lg);
+    z-index: var(--z-sticky);
+    background: var(--color-bg-card);
+    backdrop-filter: var(--backdrop-blur-md);
+    -webkit-backdrop-filter: var(--backdrop-blur-md);
+    border: 1px solid var(--color-border-strong);
+    color: var(--color-primary-text);
+    padding: var(--spacing-xs) var(--spacing-lg);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    cursor: pointer;
+    box-shadow: var(--shadow-md);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    transition: var(--transition-normal);
+}
+
+.left-sidebar-reopen-btn:hover {
+    background: var(--color-bg-card-hover);
+    border-color: var(--color-primary-border);
+    color: var(--color-text-primary);
+    transform: translateY(-1px);
+}
+
 /* Collapsible Sidebar Styles for Job System Overview */
 .jobs-sidebar-panel {
     background: var(--color-bg-surface);

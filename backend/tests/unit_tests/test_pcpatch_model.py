@@ -62,10 +62,16 @@ async def test_get_summary_info_transformation():
     mock_meta_res = MagicMock()
     mock_meta_res.scalars.return_value.all.return_value = [mock_meta]
 
-    mock_db.execute = AsyncMock(side_effect=[mock_summary_res, mock_fk_res, mock_meta_res])
+    mock_cam = MagicMock()
+    mock_cam.id = "c160394b-a241-49e5-bb66-97fee8bd85ef"
+    mock_cam.pointcloud_id = "e360394b-a241-49e5-bb66-97fee8bd85ef"
+    mock_cam_res = MagicMock()
+    mock_cam_res.scalars.return_value.all.return_value = [mock_cam]
+
+    mock_db.execute = AsyncMock(side_effect=[mock_summary_res, mock_fk_res, mock_meta_res, mock_cam_res])
 
     repo = PointCloudRepository(mock_db)
-    query = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod0 WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'"
+    query = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'"
 
     info = await repo.get_summary_info(query, lod=0)
     assert info["total_points"] == 12345
@@ -75,4 +81,6 @@ async def test_get_summary_info_transformation():
     }
     assert len(info["connected_pointclouds"]) == 1
     assert info["connected_pointclouds"][0].id == "e360394b-a241-49e5-bb66-97fee8bd85ef"
+    assert len(info["connected_camera_headers"]) == 1
+    assert info["connected_camera_headers"][0].id == "c160394b-a241-49e5-bb66-97fee8bd85ef"
 
