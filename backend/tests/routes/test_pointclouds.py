@@ -291,6 +291,56 @@ def test_endpoint_stream_binary_missing_required_params():
     assert res_no_query.status_code == 422
 
 
+def test_endpoint_stream_summary_success():
+    mock_service = MagicMock()
+    mock_service.get_pointcloud_stream_summary = AsyncMock(return_value={
+        "total_points": 1500,
+        "number_of_points": 1500,
+        "bounding_box": {
+            "min_x": -10.0, "min_y": -5.0, "min_z": 0.0,
+            "max_x": 10.0, "max_y": 5.0, "max_z": 20.0
+        },
+        "connected_pointclouds": [{
+            "id": "e360394b-a241-49e5-bb66-97fee8bd85ef",
+            "orig_filename": "test.ply",
+            "number_of_points": 1500,
+            "created_at": "2026-01-01T00:00:00Z",
+            "pcid": 1,
+            "transform_matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+        }]
+    })
+
+    app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
+
+    sql_query = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod0 WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'"
+
+    try:
+        response = client.get(f"/pointclouds/stream-summary?lod=0&query={sql_query}")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_points"] == 1500
+        assert data["number_of_points"] == 1500
+        assert data["bounding_box"] == {
+            "min_x": -10.0, "min_y": -5.0, "min_z": 0.0,
+            "max_x": 10.0, "max_y": 5.0, "max_z": 20.0
+        }
+        assert len(data["connected_pointclouds"]) == 1
+        assert data["connected_pointclouds"][0]["id"] == "e360394b-a241-49e5-bb66-97fee8bd85ef"
+        mock_service.get_pointcloud_stream_summary.assert_called_once_with(lod=0, custom_query=sql_query)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_endpoint_stream_summary_missing_required_params():
+    # Test missing lod parameter returns 422
+    res_no_lod = client.get("/pointclouds/stream-summary?query=SELECT 1")
+    assert res_no_lod.status_code == 422
+
+    # Test missing query parameter returns 422
+    res_no_query = client.get("/pointclouds/stream-summary?lod=0")
+    assert res_no_query.status_code == 422
+
+
 def test_ingest_opensfm_init_laz_file():
     mock_db = MagicMock()
     mock_db.commit = AsyncMock()

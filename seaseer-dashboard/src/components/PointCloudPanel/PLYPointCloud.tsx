@@ -499,6 +499,28 @@ function CameraFocusController() {
         }
     }, [focusedId, focusTrigger, catalog]);
 
+    useEffect(() => {
+        const handleFocusTarget = (e: Event) => {
+            const customEvent = e as CustomEvent<{ x: number; y: number; z: number } | [number, number, number]>;
+            const detail = customEvent.detail;
+            if (!detail) return;
+            let x: number, y: number, z: number;
+            if (Array.isArray(detail)) {
+                [x, y, z] = detail;
+            } else {
+                ({ x, y, z } = detail);
+            }
+            if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
+                targetPos.current = new THREE.Vector3(x, y, z).applyEuler(
+                    new THREE.Euler(-Math.PI / 2, 0, 0)
+                );
+            }
+        };
+
+        window.addEventListener("focus_camera_target", handleFocusTarget);
+        return () => window.removeEventListener("focus_camera_target", handleFocusTarget);
+    }, []);
+
     useFrame((_, delta) => {
         if (targetPos.current) {
             const targetCamPos = targetPos.current.clone().add(new THREE.Vector3(0, 1500, 1500));

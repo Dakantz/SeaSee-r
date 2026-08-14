@@ -45,6 +45,50 @@ export const createDefaultQuery = (
   };
 };
 
+export interface QuerySummaryData {
+  total_points: number;
+  number_of_points: number;
+  bounding_box?: {
+    min_x?: number | null;
+    min_y?: number | null;
+    min_z?: number | null;
+    max_x?: number | null;
+    max_y?: number | null;
+    max_z?: number | null;
+  } | null;
+  connected_pointclouds?: Array<{
+    id: string;
+    orig_filename: string;
+    number_of_points: number;
+    created_at?: string;
+    pcid?: number;
+    [key: string]: any;
+  }>;
+}
+
+/**
+ * Calculates the center 3D coordinates [x, y, z] of a query bounding box.
+ */
+export const getBoundingBoxCenter = (
+  bbox?: QuerySummaryData["bounding_box"]
+): [number, number, number] | null => {
+  if (
+    !bbox ||
+    bbox.min_x == null || bbox.max_x == null ||
+    bbox.min_y == null || bbox.max_y == null ||
+    bbox.min_z == null || bbox.max_z == null
+  ) {
+    return null;
+  }
+  return [
+    (bbox.min_x + bbox.max_x) / 2,
+    (bbox.min_y + bbox.max_y) / 2,
+    (bbox.min_z + bbox.max_z) / 2,
+  ];
+};
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
 const STORAGE_KEY = "seaseer_custom_sql_queries";
 
 /**
@@ -78,6 +122,8 @@ export interface CustomQueryManagerProps {
   onUpdateQuery?: (query: CustomQuery) => void;
   /** Callback triggered whenever the list of queries changes */
   onQueriesChange?: (queries: CustomQuery[]) => void;
+  /** Callback triggered to focus the camera on specific 3D coordinates */
+  onFocusCenter?: (center: [number, number, number] | { x: number; y: number; z: number }) => void;
 
   /* Legacy props maintained for component API compatibility */
   hoveredId?: string | null;
@@ -110,6 +156,8 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
   onDeleteQuery,
   onUpdateQuery,
   onQueriesChange,
+  onFocusCenter,
+  onMoveCamera,
   onSelect,
 }) => {
   // 1. Client-Side Storage & Local State Initialization
@@ -136,9 +184,49 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
   });
 
   const [saveStatusMap, setSaveStatusMap] = useState<Record<string, string>>({});
+  const [summaryMap, setSummaryMap] = useState<Record<string, QuerySummaryData>>({});
+  const [summaryLoadingMap, setSummaryLoadingMap] = useState<Record<string, boolean>>({});
+  const [summaryErrorMap, setSummaryErrorMap] = useState<Record<string, string | null>>({});
 
   const queries = externalQueries || internalQueries;
   const activeQueryId = externalActiveQueryId !== undefined ? externalActiveQueryId : activeId;
+
+  // Function to fetch summary information from /pointclouds/stream-summary
+  const fetchQuerySummary = async (queryId: string, queryText: string, lod = 0): Promise<QuerySummaryData | null> => {
+    if (!queryText || !queryText.trim()) return null;
+
+    setSummaryLoadingMap((prev) => ({ ...prev, [queryId]: true }));
+    setSummaryErrorMap((prev) => ({ ...prev, [queryId]: null }));
+
+    try {
+      const url = `${API_BASE_URL}/pointclouds/stream-summary?lod=${lod}&query=${encodeURIComponent(queryText.trim())}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Server returned HTTP ${response.status}`);
+      }
+      const data: QuerySummaryData = await response.json();
+      setSummaryMap((prev) => ({ ...prev, [queryId]: data }));
+      return data;
+    } catch (err: any) {
+      console.error(`Error fetching summary for query ${queryId}:`, err);
+      setSummaryErrorMap((prev) => ({
+        ...prev,
+        [queryId]: err.message || "Failed to fetch summary",
+      }));
+      return null;
+    } finally {
+      setSummaryLoadingMap((prev) => ({ ...prev, [queryId]: false }));
+    }
+  };
+
+  // Automatically fetch query summaries for any query missing summary data
+  useEffect(() => {
+    queries.forEach((q) => {
+      if (!summaryMap[q.id] && !summaryLoadingMap[q.id]) {
+        fetchQuerySummary(q.id, q.queryText);
+      }
+    });
+  }, [queries]);
 
   // Track previous selectedPointCloudId to detect new selections
   const prevSelectedIdRef = useRef<string | null | undefined>(selectedPointCloudId);
@@ -272,6 +360,29 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
     onSelectQuery?.(query.id);
     onSelect?.(query.id);
     onRunQuery?.(query);
+  };
+
+  // Handler to focus camera onto the 3D bounding box center of a query
+  const handleFocusQuery = async (query: CustomQuery) => {
+    setActiveId(query.id);
+    let summary: QuerySummaryData | null = summaryMap[query.id] || null;
+    if (!summary || !summary.bounding_box) {
+      summary = await fetchQuerySummary(query.id, query.queryText);
+    }
+
+    const center = getBoundingBoxCenter(summary?.bounding_box);
+    if (center) {
+      onFocusCenter?.(center);
+      window.dispatchEvent(
+        new CustomEvent("focus_camera_target", {
+          detail: { x: center[0], y: center[1], z: center[2] },
+        })
+      );
+    } else {
+      if (onMoveCamera && selectedPointCloudId) {
+        onMoveCamera(selectedPointCloudId);
+      }
+    }
   };
 
   return (
@@ -486,6 +597,200 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
                   />
                 </div>
 
+                {/* Summary Information Display Panel */}
+                <div
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: "var(--radius-sm, 6px)",
+                    background: "rgba(15, 17, 26, 0.7)",
+                    border: "1px solid rgba(255, 255, 255, 0.08)",
+                    fontSize: "11px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "6px",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        color: "var(--color-accent-text, #93c5fd)",
+                        fontSize: "11px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                    >
+                      📊 Query Summary
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => fetchQuerySummary(q.id, q.queryText)}
+                      disabled={summaryLoadingMap[q.id]}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: "#9ca3af",
+                        fontSize: "10px",
+                        cursor: summaryLoadingMap[q.id] ? "not-allowed" : "pointer",
+                        padding: "0 2px",
+                        textDecoration: "underline",
+                      }}
+                      title="Fetch / refresh query summary"
+                    >
+                      {summaryLoadingMap[q.id] ? "Calculating..." : "🔄 Refresh"}
+                    </button>
+                  </div>
+
+                  {summaryLoadingMap[q.id] ? (
+                    <div style={{ color: "#9ca3af", fontStyle: "italic", fontSize: "10px" }}>
+                      Calculating total points & 3D bounding box...
+                    </div>
+                  ) : summaryErrorMap[q.id] ? (
+                    <div style={{ color: "#f87171", fontSize: "10px" }}>
+                      ⚠️ {summaryErrorMap[q.id]}
+                    </div>
+                  ) : summaryMap[q.id] ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      {/* Point Count Badge */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span style={{ color: "#9ca3af", fontSize: "10px" }}>Selected Points:</span>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            color: "#10b981",
+                            background: "rgba(16, 185, 129, 0.12)",
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                            fontSize: "11px",
+                          }}
+                        >
+                          ⚡ {(summaryMap[q.id].total_points ?? 0).toLocaleString()} pts
+                        </span>
+                      </div>
+
+                      {/* 3D Bounding Box */}
+                      {summaryMap[q.id].bounding_box ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span style={{ color: "#9ca3af", fontSize: "10px" }}>Bounding Box (XYZ):</span>
+                            <button
+                              type="button"
+                              onClick={() => handleFocusQuery(q)}
+                              style={{
+                                background: "rgba(59, 130, 246, 0.15)",
+                                border: "1px solid rgba(59, 130, 246, 0.3)",
+                                color: "#60a5fa",
+                                borderRadius: "4px",
+                                padding: "1px 6px",
+                                fontSize: "10px",
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "3px",
+                              }}
+                              title="Focus camera to center of bounding box"
+                            >
+                              🎯 Focus
+                            </button>
+                          </div>
+                          <div
+                            style={{
+                              fontFamily: "var(--font-mono, monospace)",
+                              fontSize: "10px",
+                              color: "#cbd5e1",
+                              background: "rgba(255, 255, 255, 0.03)",
+                              padding: "4px 6px",
+                              borderRadius: "4px",
+                              display: "grid",
+                              gridTemplateColumns: "1fr 1fr",
+                              gap: "2px 8px",
+                            }}
+                          >
+                            <div>
+                              <span style={{ color: "#94a3b8" }}>Min:</span> [
+                              {summaryMap[q.id].bounding_box?.min_x !== null && summaryMap[q.id].bounding_box?.min_x !== undefined
+                                ? summaryMap[q.id].bounding_box!.min_x!.toFixed(2)
+                                : "N/A"}
+                              ,{" "}
+                              {summaryMap[q.id].bounding_box?.min_y !== null && summaryMap[q.id].bounding_box?.min_y !== undefined
+                                ? summaryMap[q.id].bounding_box!.min_y!.toFixed(2)
+                                : "N/A"}
+                              ,{" "}
+                              {summaryMap[q.id].bounding_box?.min_z !== null && summaryMap[q.id].bounding_box?.min_z !== undefined
+                                ? summaryMap[q.id].bounding_box!.min_z!.toFixed(2)
+                                : "N/A"}
+                              ]
+                            </div>
+                            <div>
+                              <span style={{ color: "#94a3b8" }}>Max:</span> [
+                              {summaryMap[q.id].bounding_box?.max_x !== null && summaryMap[q.id].bounding_box?.max_x !== undefined
+                                ? summaryMap[q.id].bounding_box!.max_x!.toFixed(2)
+                                : "N/A"}
+                              ,{" "}
+                              {summaryMap[q.id].bounding_box?.max_y !== null && summaryMap[q.id].bounding_box?.max_y !== undefined
+                                ? summaryMap[q.id].bounding_box!.max_y!.toFixed(2)
+                                : "N/A"}
+                              ,{" "}
+                              {summaryMap[q.id].bounding_box?.max_z !== null && summaryMap[q.id].bounding_box?.max_z !== undefined
+                                ? summaryMap[q.id].bounding_box!.max_z!.toFixed(2)
+                                : "N/A"}
+                              ]
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ color: "#64748b", fontSize: "10px", fontStyle: "italic" }}>
+                          No 3D bounding box available
+                        </div>
+                      )}
+
+                      {/* Connected Point Clouds List */}
+                      {summaryMap[q.id].connected_pointclouds && summaryMap[q.id].connected_pointclouds!.length > 0 ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                          <span style={{ color: "#9ca3af", fontSize: "10px" }}>
+                            Connected Metadata ({summaryMap[q.id].connected_pointclouds!.length}):
+                          </span>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                            {summaryMap[q.id].connected_pointclouds!.map((meta) => (
+                              <span
+                                key={meta.id}
+                                title={`ID: ${meta.id} | Total Points: ${meta.number_of_points?.toLocaleString() || "N/A"}`}
+                                style={{
+                                  background: "rgba(59, 130, 246, 0.15)",
+                                  border: "1px solid rgba(59, 130, 246, 0.3)",
+                                  color: "#93c5fd",
+                                  fontSize: "10px",
+                                  padding: "1px 6px",
+                                  borderRadius: "4px",
+                                  fontFamily: "var(--font-mono, monospace)",
+                                }}
+                              >
+                                📁 {meta.orig_filename || meta.id.substring(0, 8)} ({meta.number_of_points ? meta.number_of_points.toLocaleString() : "0"} pts)
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ color: "#64748b", fontSize: "10px", fontStyle: "italic" }}>
+                          No connected metadata records found
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ color: "#64748b", fontSize: "10px", fontStyle: "italic" }}>
+                      Click "Refresh" to calculate query info
+                    </div>
+                  )}
+                </div>
+
                 {/* Card Controls & Status Bar */}
                 <div
                   style={{
@@ -522,6 +827,28 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
                       }}
                     >
                       💾 Save
+                    </button>
+
+                    <button
+                      type="button"
+                      title="Focus camera on bounding box center"
+                      onClick={() => handleFocusQuery(q)}
+                      style={{
+                        background: "rgba(16, 185, 129, 0.15)",
+                        border: "1px solid rgba(16, 185, 129, 0.3)",
+                        color: "#34d399",
+                        borderRadius: "var(--radius-sm, 4px)",
+                        padding: "3px 8px",
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                    >
+                      🎯 Focus
                     </button>
 
                     <button

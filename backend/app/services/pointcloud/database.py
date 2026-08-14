@@ -40,6 +40,21 @@ class DatabasePointCloudStorageService:
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
 
+    async def get_pointcloud_stream_summary(
+        self, lod: int, custom_query: str
+    ) -> dict:
+        """
+        Returns summary (point count, bounding box, and connected pointcloud metadata) for the custom query selection.
+        """
+        if not custom_query or not custom_query.strip():
+            raise HTTPException(status_code=400, detail="Query parameter is required.")
+
+        try:
+            return await self.repository.get_summary_info(custom_query, lod=lod)
+        except Exception as e:
+            logger.error(f"Database query failed in get_pointcloud_stream_summary: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Database query failed: {str(e)}")
+
     async def get_pointcloud(self, identifier: str, lod: int = 0) -> StreamingResponse:
         """
         Streams point cloud data directly from database as binary PLY file.

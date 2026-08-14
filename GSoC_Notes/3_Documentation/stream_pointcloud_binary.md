@@ -24,6 +24,57 @@ Instead of transferring bloated JSON structures or generating intermediate `.ply
 
 ---
 
+## Stream Pointcloud Summary (`/pointclouds/stream-summary`)
+
+The `/pointclouds/stream-summary` endpoint mirrors `/pointclouds/stream-binary` parameters (`lod` and `query`) but instead of streaming binary vertex buffers, it returns a JSON summary containing the total point count selected by the custom query.
+
+### Endpoint Specification
+
+- **HTTP Method**: `GET`
+- **Path**: `/pointclouds/stream-summary`
+- **Response Content-Type**: `application/json`
+
+### Query Optimization Logic
+
+Instead of expanding point records via `PC_Explode(patch)` and streaming point data, the query string is edited automatically to sum point counts at the patch level using `PC_NumPoints(patch)`:
+
+```sql
+-- Original stream-binary query:
+SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod0 WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef';
+
+-- Transformed stream-summary query:
+SELECT COALESCE(SUM(PC_NumPoints(patch)), 0) FROM pointcloud_patches_lod0 WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef';
+```
+
+### Response Example
+
+```json
+{
+  "total_points": 150000,
+  "number_of_points": 150000,
+  "bounding_box": {
+    "min_x": -10.5,
+    "min_y": -5.2,
+    "min_z": 0.0,
+    "max_x": 20.3,
+    "max_y": 15.8,
+    "max_z": 12.4
+  },
+  "connected_pointclouds": [
+    {
+      "id": "e360394b-a241-49e5-bb66-97fee8bd85ef",
+      "orig_filename": "underwater_scan.ply",
+      "number_of_points": 150000,
+      "created_at": "2026-08-14T10:00:00Z",
+      "pcid": 1,
+      "transform_matrix": [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
+    }
+  ]
+}
+```
+
+---
+
 ## Binary Data Layout & Protocol
 
 Each point (vertex) in the binary stream is packed sequentially using a 16-byte aligned struct:

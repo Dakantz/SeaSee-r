@@ -68,6 +68,7 @@ export interface PLYPointCloudContextType {
     focusedId: string | null;
     focusTrigger: number;
     focusPointcloud: (id: string | null) => void;
+    focusCameraTarget: (target: [number, number, number] | { x: number; y: number; z: number }) => void;
     loadedGeometries: Map<string, THREE.BufferGeometry>;
     loadingIds: Set<string>;
     toggleStreamPointCloud: (id: string, lodToLoad?: number) => Promise<void>;
@@ -237,6 +238,20 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
             setFocusTrigger((prev) => prev + 1);
         }
     }, [selectPointcloud]);
+
+    const focusCameraTarget = useCallback((target: [number, number, number] | { x: number; y: number; z: number }) => {
+        let x: number, y: number, z: number;
+        if (Array.isArray(target)) {
+            [x, y, z] = target;
+        } else {
+            ({ x, y, z } = target);
+        }
+        window.dispatchEvent(
+            new CustomEvent("focus_camera_target", {
+                detail: { x, y, z },
+            })
+        );
+    }, []);
 
     const fetchCatalog = useCallback(async () => {
         setIsFetchingCatalog(true);
@@ -412,6 +427,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 focusedId,
                 focusTrigger,
                 focusPointcloud,
+                focusCameraTarget,
                 loadedGeometries,
                 loadingIds,
                 toggleStreamPointCloud,

@@ -6,7 +6,12 @@ from rq import Queue
 from typing import List, Union, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from app.schemas.pointcloud import PointCloudMetadataResponse, CameraHeaderResponse, CameraFrameResponse
+from app.schemas.pointcloud import (
+    PointCloudMetadataResponse,
+    CameraHeaderResponse,
+    CameraFrameResponse,
+    PointCloudStreamSummaryResponse
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, conlist
@@ -48,6 +53,19 @@ async def stream_pointcloud_binary(
     storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
 ):
     return await storage_service.stream_pointcloud_binary(lod=lod, custom_query=query)
+
+
+"""
+Retrieve point cloud selection summary (point count, bounding box, and connected metadata) for a custom query.
+Mirrors /stream-binary parameters.
+"""
+@router.get("/stream-summary", response_model=PointCloudStreamSummaryResponse)
+async def get_pointcloud_stream_summary(
+    lod: int = Query(..., ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
+    query: str = Query(..., description="SQL query to select points: \nExample: `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod0 WHERE pointcloud_id = '...'`"),
+    storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
+):
+    return await storage_service.get_pointcloud_stream_summary(lod=lod, custom_query=query)
 
 
 """

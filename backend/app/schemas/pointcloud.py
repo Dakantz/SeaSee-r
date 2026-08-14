@@ -59,3 +59,21 @@ class CameraFrameResponse(BaseModel):
     filename: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PointCloudBoundingBox(BaseModel):
+    min_x: Optional[float] = None
+    min_y: Optional[float] = None
+    min_z: Optional[float] = None
+    max_x: Optional[float] = None
+    max_y: Optional[float] = None
+    max_z: Optional[float] = None
+
+
+class PointCloudStreamSummaryResponse(BaseModel):
+    total_points: int
+    number_of_points: int
+    bounding_box: Optional[PointCloudBoundingBox] = None
+    connected_pointclouds: List[PointCloudMetadataResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)

@@ -13,6 +13,7 @@ export const CustomQueryManagerContainer: React.FC = () => {
   const catalog = contextState?.catalog ?? [];
   const hoverPointcloud = contextState?.hoverPointcloud ?? (() => {});
   const focusPointcloud = contextState?.focusPointcloud ?? (() => {});
+  const focusCameraTarget = contextState?.focusCameraTarget ?? (() => {});
   const executeCustomQuery = contextState?.executeCustomQuery;
   const setCustomQuery = contextState?.setCustomQuery;
 
@@ -37,6 +38,7 @@ export const CustomQueryManagerContainer: React.FC = () => {
       onRunQuery={handleRunQuery}
       onHover={hoverPointcloud}
       onMoveCamera={(id) => focusPointcloud(id)}
+      onFocusCenter={(center) => focusCameraTarget(center)}
     />
   );
 };
