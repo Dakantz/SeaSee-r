@@ -205,6 +205,13 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         if (queryToExecute !== undefined) {
             setCustomQuery(queryToExecute);
         }
+        if (queryToUse && queryToUse.trim()) {
+            window.dispatchEvent(
+                new CustomEvent("add_custom_query", {
+                    detail: { queryText: queryToUse },
+                })
+            );
+        }
         const targetId = selectedId || identifier;
         if (targetId && targetId.trim()) {
             await startProgressiveStream(targetId, 10, 0, queryToUse);

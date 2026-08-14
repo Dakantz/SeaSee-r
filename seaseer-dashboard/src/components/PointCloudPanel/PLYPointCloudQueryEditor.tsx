@@ -76,6 +76,18 @@ export default function PLYPointCloudQueryEditor({ style }: PLYPointCloudQueryEd
 
     const handleRunQuery = () => {
         executeCustomQuery(localQuery);
+        if (localQuery && localQuery.trim()) {
+            const foundPreset = QUERY_EXAMPLES.find((ex) => ex.query.trim() === localQuery.trim());
+            const queryName = foundPreset ? foundPreset.label : undefined;
+            window.dispatchEvent(
+                new CustomEvent("add_custom_query", {
+                    detail: {
+                        queryText: localQuery,
+                        name: queryName,
+                    },
+                })
+            );
+        }
     };
 
     const handleReset = () => {

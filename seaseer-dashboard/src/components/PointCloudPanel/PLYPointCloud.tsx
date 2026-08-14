@@ -5,9 +5,9 @@ import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import { generateDelaunayTerrainMesh } from "./utils/delaunayTriangulation";
 import { TrajectoryRenderer } from "../RovRenderer/trajectoryRenderer";
 
-export { PointCloudList } from "./PointCloudList";
-export { PointCloudListContainer } from "./PointCloudListContainer";
-export type { PointCloudItem, PointCloudListProps } from "./PointCloudList";
+export { CustomQueryManager, PointCloudList } from "./CustomQueryManager";
+export { CustomQueryManagerContainer, PointCloudListContainer } from "./CustomQueryManagerContainer";
+export type { CustomQuery, CustomQueryManagerProps, PointCloudItem, PointCloudListProps } from "./CustomQueryManager";
 
 
 // @ts-expect-error - geo-three submodule

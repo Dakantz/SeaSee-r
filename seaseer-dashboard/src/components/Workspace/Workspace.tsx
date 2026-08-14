@@ -11,7 +11,7 @@ import TelemetryPanel from "../TelemetoryPanel/TrajectoryPanel";
 import { JobSystemOverview } from "../JobSystemOverview";
 import { PLYPointCloudProvider } from "../PointCloudPanel/PLYPointCloudContext";
 import PLYPointCloudSidebar from "../PointCloudPanel/PLYPointCloudSidebar";
-import PointCloudListContainer from "../PointCloudPanel/PointCloudListContainer";
+import CustomQueryManagerContainer from "../PointCloudPanel/CustomQueryManagerContainer";
 
 import "./Workspace.css";
 
@@ -59,8 +59,8 @@ export default function Workspace() {
                                     </button>
                                 </div>
                                 <div className="jobs-sidebar-content">
-                                    {/* Standalone PointCloudList Component (Positioned outside DebugControls) */}
-                                    <PointCloudListContainer />
+                                    {/* Standalone CustomQueryManager Component */}
+                                    <CustomQueryManagerContainer />
 
                                     <hr className="jobs-sidebar-divider" />
 
