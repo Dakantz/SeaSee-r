@@ -8,6 +8,7 @@ import { TrajectoryRenderer } from "../RovRenderer/trajectoryRenderer";
 export { CustomQueryManager, PointCloudList } from "./CustomQueryManager";
 export { CustomQueryManagerContainer, PointCloudListContainer } from "./CustomQueryManagerContainer";
 export type { CustomQuery, CustomQueryManagerProps, PointCloudItem, PointCloudListProps } from "./CustomQueryManager";
+import { getBoundingBoxCenter, type CustomQuery, type QuerySummaryData } from "./CustomQueryManager";
 
 
 // @ts-expect-error - geo-three submodule
@@ -114,6 +115,15 @@ function getHeightFactor(y: number): number {
         : Math.max(0.0001, 0.1 * Math.exp(y / 1000));
 }
 
+const _tmpVecForward = new THREE.Vector3();
+const _tmpVecRight = new THREE.Vector3();
+const _tmpVecUp = new THREE.Vector3();
+const _tmpVecDir = new THREE.Vector3();
+
+const _colorSelected = new THREE.Color("#ff3344");
+const _colorHovered = new THREE.Color("#ffaa00");
+const _colorDefault = new THREE.Color("#00e5ff");
+
 function CameraPositionControls() {
     const { camera, gl } = useThree();
     const isDragging = useRef(false);
@@ -162,8 +172,8 @@ function CameraPositionControls() {
                 // Right or middle click: Pan camera position
                 const heightFactor = getHeightFactor(camera.position.y);
                 const panSpeed = 2.0 * heightFactor;
-                const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-                const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+                const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+                const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
 
                 right.y = 0;
                 up.y = 0;
@@ -184,11 +194,10 @@ function CameraPositionControls() {
             e.preventDefault();
             const heightFactor = getHeightFactor(camera.position.y);
             const zoomSpeed = 1.0 * heightFactor;
-            const dir = new THREE.Vector3();
-            camera.getWorldDirection(dir);
+            camera.getWorldDirection(_tmpVecDir);
 
             const moveDistance = -Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 100) * zoomSpeed;
-            camera.position.addScaledVector(dir, moveDistance);
+            camera.position.addScaledVector(_tmpVecDir, moveDistance);
         };
 
         const onContextMenu = (e: MouseEvent) => {
@@ -239,16 +248,14 @@ function CameraPositionControls() {
         const heightFactor = getHeightFactor(camera.position.y);
         const moveSpeed = (isShift ? 3000 : 800) * heightFactor * delta;
 
-        const forward = new THREE.Vector3();
-        camera.getWorldDirection(forward);
-
-        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+        camera.getWorldDirection(_tmpVecForward);
+        const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
 
         if (keys["KeyW"] || keys["ArrowUp"]) {
-            camera.position.addScaledVector(forward, moveSpeed);
+            camera.position.addScaledVector(_tmpVecForward, moveSpeed);
         }
         if (keys["KeyS"] || keys["ArrowDown"]) {
-            camera.position.addScaledVector(forward, -moveSpeed);
+            camera.position.addScaledVector(_tmpVecForward, -moveSpeed);
         }
         if (keys["KeyA"] || keys["ArrowLeft"]) {
             camera.position.addScaledVector(right, -moveSpeed);
@@ -268,7 +275,7 @@ function CameraPositionControls() {
 }
 
 function GeoThreeHeightmap() {
-    const { showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider, heightmapProvider } = usePLYPointCloudContext();
+    const { showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider } = usePLYPointCloudContext();
     const mapViewRef = useRef<any>(null);
 
     const mapView = useMemo(() => {
@@ -278,7 +285,7 @@ function GeoThreeHeightmap() {
             let heightProvider: any = null;
             const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-            const mapChoice = heightmapMapProvider ?? heightmapProvider ?? "OpenStreetMaps";
+            const mapChoice = heightmapMapProvider ?? "OpenStreetMaps";
             const heightChoice = heightmapHeightProvider ?? "Bathymetry";
 
             // 1. Map Imagery Provider
@@ -347,7 +354,7 @@ function GeoThreeHeightmap() {
             console.error("Failed to initialize GeoThree MapView:", err);
             return null;
         }
-    }, [showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider, heightmapProvider]);
+    }, [showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider]);
 
     useFrame(({ camera, gl, scene }) => {
         if (mapViewRef.current?.lod) {
@@ -370,28 +377,44 @@ function getItemCenter(item: PointCloudMetadataResponse): [number, number, numbe
     if (item.center && Array.isArray(item.center) && item.center.length === 3) {
         return [item.center[0], item.center[1], item.center[2]];
     }
-    if (
-        item.min_x != null && item.max_x != null &&
-        item.min_y != null && item.max_y != null &&
-        item.min_z != null && item.max_z != null
-    ) {
-        return [
-            (item.min_x + item.max_x) / 2.0,
-            (item.min_y + item.max_y) / 2.0,
-            (item.min_z + item.max_z) / 2.0,
-        ];
+    return [TARGET_X, 0, TARGET_Z];
+}
+
+function getQueryCenter(
+    query: CustomQuery,
+    summaryMap: Record<string, QuerySummaryData>,
+    catalog: PointCloudMetadataResponse[]
+): [number, number, number] {
+    const summary = summaryMap[query.id];
+    const center = getBoundingBoxCenter(summary);
+    if (center) {
+        return center;
+    }
+    const match = query.queryText.match(/pointcloud_id\s*=\s*['"]([^'"]+)['"]/i);
+    if (match) {
+        const pcId = match[1];
+        const catalogItem = catalog.find((c) => c.id === pcId);
+        if (catalogItem) {
+            return getItemCenter(catalogItem);
+        }
     }
     return [TARGET_X, 0, TARGET_Z];
 }
 
 function PointCloudCenterMarkers() {
     const {
+        queries,
+        summaryMap,
         catalog,
         selectedId,
         hoveredId,
         selectPointcloud,
         hoverPointcloud,
-        focusPointcloud,
+        fetchQuerySummary,
+        focusCameraTarget,
+        startProgressiveStream,
+        setCustomQuery,
+        identifier,
     } = usePLYPointCloudContext();
 
     const meshRef = useRef<THREE.InstancedMesh>(null);
@@ -406,18 +429,26 @@ function PointCloudCenterMarkers() {
                 Infinity
             );
         }
-    }, [catalog]);
+    }, [queries]);
+
+    useEffect(() => {
+        queries.forEach((q) => {
+            if (!summaryMap[q.id]) {
+                fetchQuerySummary(q.id, q.queryText);
+            }
+        });
+    }, [queries, summaryMap, fetchQuerySummary]);
 
     useFrame(({ camera }) => {
-        if (!meshRef.current || catalog.length === 0) return;
+        if (!meshRef.current || queries.length === 0) return;
 
-        catalog.forEach((item, index) => {
-            const [cx, cy, cz] = getItemCenter(item);
+        queries.forEach((query, index) => {
+            const [cx, cy, cz] = getQueryCenter(query, summaryMap, catalog);
             centerVec.set(cx, cy, cz).applyEuler(rotEuler);
             const dist = camera.position.distanceTo(centerVec);
 
-            const isSelected = item.id === selectedId;
-            const isHovered = item.id === hoveredId;
+            const isSelected = query.id === selectedId || (selectedId != null && selectedId.length > 0 && query.queryText.includes(selectedId));
+            const isHovered = query.id === hoveredId || (hoveredId != null && hoveredId.length > 0 && query.queryText.includes(hoveredId));
 
             const baseFactor = isSelected ? 0.025 : isHovered ? 0.02 : 0.012;
             const scale = Math.max(0.01, dist * baseFactor);
@@ -427,9 +458,7 @@ function PointCloudCenterMarkers() {
             dummy.updateMatrix();
             meshRef.current!.setMatrixAt(index, dummy.matrix);
 
-            const color = new THREE.Color(
-                isSelected ? "#ff3344" : isHovered ? "#ffaa00" : "#00e5ff"
-            );
+            const color = isSelected ? _colorSelected : isHovered ? _colorHovered : _colorDefault;
             meshRef.current!.setColorAt(index, color);
         });
 
@@ -439,37 +468,52 @@ function PointCloudCenterMarkers() {
         }
     });
 
-    if (catalog.length === 0) return null;
+    if (queries.length === 0) return null;
 
-    const handleSelect = (instanceId?: number) => {
-        if (instanceId !== undefined && catalog[instanceId]) {
-            const targetId = catalog[instanceId].id;
-            selectPointcloud(targetId);
+    const handleLoadQuery = (query: CustomQuery) => {
+        selectPointcloud(query.id);
+        if (setCustomQuery) {
+            setCustomQuery(query.queryText);
+        }
+        const match = query.queryText.match(/pointcloud_id\s*=\s*['"]([^'"]+)['"]/i);
+        const extractedId = match ? match[1] : null;
+        const targetId =
+            extractedId ||
+            selectedId ||
+            identifier ||
+            (catalog.length > 0 ? catalog[0].id : null);
+
+        if (targetId && targetId.trim() && startProgressiveStream) {
+            startProgressiveStream(targetId, 10, 0, query.queryText, query.id);
         }
     };
 
     return (
         <instancedMesh
             ref={meshRef}
-            args={[undefined, undefined, catalog.length]}
+            args={[undefined, undefined, queries.length]}
             rotation={[-Math.PI / 2, 0, 0]}
             onClick={(e) => {
                 e.stopPropagation();
-                handleSelect(e.instanceId);
+                if (e.instanceId !== undefined && queries[e.instanceId]) {
+                    const query = queries[e.instanceId];
+                    handleLoadQuery(query);
+                }
             }}
             onDoubleClick={(e) => {
                 e.stopPropagation();
-                if (e.instanceId !== undefined && catalog[e.instanceId]) {
-                    const targetId = catalog[e.instanceId].id;
-                    focusPointcloud(targetId);
-                    handleSelect(e.instanceId);
+                if (e.instanceId !== undefined && queries[e.instanceId]) {
+                    const query = queries[e.instanceId];
+                    handleLoadQuery(query);
+                    const center = getQueryCenter(query, summaryMap, catalog);
+                    focusCameraTarget(center);
                 }
             }}
             onPointerOver={(e) => {
                 e.stopPropagation();
                 document.body.style.cursor = "pointer";
-                if (e.instanceId !== undefined && catalog[e.instanceId]) {
-                    hoverPointcloud(catalog[e.instanceId].id);
+                if (e.instanceId !== undefined && queries[e.instanceId]) {
+                    hoverPointcloud(queries[e.instanceId].id);
                 }
             }}
             onPointerOut={(e) => {
@@ -694,26 +738,22 @@ function DBCameraTrajectoryDisplay() {
 export default function PLYPointCloud() {
     const {
         geometry,
-        mode,
         renderMode,
         wireframe,
         pointSize,
-        plyUrl,
-        loadPlyUrl,
         loadedGeometries,
     } = usePLYPointCloudContext();
 
     useEffect(() => {
-        if (mode === "plyUrl") {
-            loadPlyUrl(plyUrl);
+        if (renderMode === "mesh") {
+            if (geometry) {
+                generateDelaunayTerrainMesh(geometry, true);
+            }
+            loadedGeometries.forEach((geom) => {
+                generateDelaunayTerrainMesh(geom, true);
+            });
         }
-    }, [mode, plyUrl, loadPlyUrl]);
-
-    useEffect(() => {
-        if (geometry && renderMode === "mesh") {
-            generateDelaunayTerrainMesh(geometry, true);
-        }
-    }, [geometry, renderMode]);
+    }, [geometry, loadedGeometries, renderMode]);
 
     return (
         <group>
@@ -724,13 +764,13 @@ export default function PLYPointCloud() {
             <PointCloudCenterMarkers />
             <DBCameraTrajectoryDisplay />
 
-            {/* Render legacy / single active pointcloud geometry */}
-            {geometry && (
-                <group position={mode === "plyUrl" ? [TARGET_X, 0, TARGET_Z] : [0, 0, 0]}>
+            {/* Render dynamically streamed full pointcloud geometries */}
+            {Array.from(loadedGeometries.entries()).map(([id, geom]) => (
+                <group key={id}>
                     {renderMode === "mesh" ? (
-                        <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}>
+                        <mesh geometry={geom} rotation={[-Math.PI / 2, 0, 0]}>
                             <meshStandardMaterial
-                                vertexColors={!!geometry.attributes.color}
+                                vertexColors={!!geom.attributes.color}
                                 side={THREE.DoubleSide}
                                 wireframe={wireframe}
                                 roughness={0.5}
@@ -738,27 +778,14 @@ export default function PLYPointCloud() {
                             />
                         </mesh>
                     ) : (
-                        <points geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}>
+                        <points geometry={geom} rotation={[-Math.PI / 2, 0, 0]}>
                             <pointsMaterial
-                                vertexColors={!!geometry.attributes.color}
+                                vertexColors={!!geom.attributes.color}
                                 size={pointSize}
                                 sizeAttenuation
                             />
                         </points>
                     )}
-                </group>
-            )}
-
-            {/* Render dynamically streamed full pointcloud geometries */}
-            {Array.from(loadedGeometries.entries()).map(([id, geom]) => (
-                <group key={id}>
-                    <points geometry={geom} rotation={[-Math.PI / 2, 0, 0]}>
-                        <pointsMaterial
-                            vertexColors={!!geom.attributes.color}
-                            size={pointSize}
-                            sizeAttenuation
-                        />
-                    </points>
                 </group>
             ))}
         </group>

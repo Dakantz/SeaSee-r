@@ -300,6 +300,7 @@ def test_endpoint_stream_summary_success():
             "min_x": -10.0, "min_y": -5.0, "min_z": 0.0,
             "max_x": 10.0, "max_y": 5.0, "max_z": 20.0
         },
+        "center": [0.0, 0.0, 10.0],
         "connected_pointclouds": [{
             "id": "e360394b-a241-49e5-bb66-97fee8bd85ef",
             "orig_filename": "test.ply",
@@ -324,19 +325,19 @@ def test_endpoint_stream_summary_success():
             "min_x": -10.0, "min_y": -5.0, "min_z": 0.0,
             "max_x": 10.0, "max_y": 5.0, "max_z": 20.0
         }
+        assert data["center"] == [0.0, 0.0, 10.0]
+        assert data["centerpoint"] == [0.0, 0.0, 10.0]
         assert len(data["connected_pointclouds"]) == 1
         assert data["connected_pointclouds"][0]["id"] == "e360394b-a241-49e5-bb66-97fee8bd85ef"
-        mock_service.get_pointcloud_stream_summary.assert_called_once_with(lod=0, custom_query=sql_query)
+        mock_service.get_pointcloud_stream_summary.assert_called_once_with(custom_query=sql_query)
     finally:
         app.dependency_overrides.clear()
 
 
 def test_endpoint_stream_summary_missing_required_params():
-    # Test missing lod parameter returns 422
-    res_no_lod = client.get("/pointclouds/stream-summary?query=SELECT 1")
-    assert res_no_lod.status_code == 422
-
     # Test missing query parameter returns 422
+    res_no_query = client.get("/pointclouds/stream-summary")
+    assert res_no_query.status_code == 422
     res_no_query = client.get("/pointclouds/stream-summary?lod=0")
     assert res_no_query.status_code == 422
 

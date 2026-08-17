@@ -148,6 +148,7 @@ class PointCloudRepository:
             connected_camera_headers_list = list(res_cam.scalars().all())
 
         bounding_box = None
+        center = None
         if min_x is not None and max_x is not None and min_y is not None and max_y is not None and min_z is not None and max_z is not None:
             bounding_box = {
                 "min_x": min_x,
@@ -157,11 +158,18 @@ class PointCloudRepository:
                 "max_y": max_y,
                 "max_z": max_z
             }
+            center = [
+                (min_x + max_x) / 2.0,
+                (min_y + max_y) / 2.0,
+                (min_z + max_z) / 2.0,
+            ]
 
         return {
             "total_points": total_points,
             "number_of_points": total_points,
             "bounding_box": bounding_box,
+            "center": center,
+            "centerpoint": center,
             "connected_pointclouds": connected_metadata_list,
             "connected_camera_headers": connected_camera_headers_list
         }

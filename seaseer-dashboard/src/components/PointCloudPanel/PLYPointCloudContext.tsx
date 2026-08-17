@@ -1,8 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import * as THREE from "three";
-import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
 import type { PointCloudMetadataResponse } from "../../client";
-import type { QuerySummaryData } from "./CustomQueryManager";
+import type { QuerySummaryData, CustomQuery } from "./CustomQueryManager";
 
 export type MapProviderChoice = "OpenStreetMaps" | "Bathymetry" | "Emodnet" | "Debug" | "MapTilerBasic" | "MapTilerOutdoor" | "MapTilerSatellite" | "Bing";
 export type HeightProviderChoice = "Bathymetry" | "Emodnet" | "None" | "Debug" | "MapTiler" | "Bing";
@@ -28,19 +27,14 @@ export interface PLYPointCloudContextType {
     setHeightmapMapProvider: (provider: MapProviderChoice) => void;
     heightmapHeightProvider: HeightProviderChoice;
     setHeightmapHeightProvider: (provider: HeightProviderChoice) => void;
-    heightmapProvider: MapProviderChoice;
-    setHeightmapProvider: (provider: MapProviderChoice) => void;
     identifier: string;
     setIdentifier: (id: string) => void;
-    plyUrl: string;
-    setPlyUrl: (url: string) => void;
     lod: number;
     setLod: (lod: number) => void;
     geometry: THREE.BufferGeometry | null;
     isLoading: boolean;
     error: string | null;
     pointCount: number | null;
-    selectedFileName: string | null;
     keyLightIntensity: number;
     setKeyLightIntensity: (val: number) => void;
     fillLightIntensity: number;
@@ -52,12 +46,12 @@ export interface PLYPointCloudContextType {
     customQuery: string;
     setCustomQuery: (query: string) => void;
     startProgressiveStream: (idToLoad: string, startLod?: number, endLod?: number, overrideQuery?: string, streamKey?: string) => Promise<void>;
-    executeCustomQuery: (queryToExecute?: string) => Promise<void>;
-    loadBinaryPointCloud: (idToLoad: string, lodToLoad?: number) => Promise<void>;
-    loadPlyUrl: (urlToLoad: string) => void;
-    loadPlyFile: (file: File) => Promise<void>;
     showCameraTrajectories: boolean;
     setShowCameraTrajectories: (show: boolean) => void;
+
+    // Custom Queries state
+    queries: CustomQuery[];
+    setQueries: React.Dispatch<React.SetStateAction<CustomQuery[]>>;
 
     // Multi-pointcloud extension state & methods
     catalog: PointCloudMetadataResponse[];
@@ -81,7 +75,6 @@ export interface PLYPointCloudContextType {
 }
 
 const DEFAULT_HARDCODED_IDENTIFIER = "";
-const DEFAULT_PLY_URL = "/test_data/datasets/video_1/odm_filterpoints/point_cloud.ply";
 
 const PLYPointCloudContext = createContext<PLYPointCloudContextType | undefined>(undefined);
 
@@ -103,13 +96,11 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [heightmapMapProvider, setHeightmapMapProvider] = useState<MapProviderChoice>("OpenStreetMaps");
     const [heightmapHeightProvider, setHeightmapHeightProvider] = useState<HeightProviderChoice>("Emodnet");
     const [identifier, setIdentifier] = useState<string>(DEFAULT_HARDCODED_IDENTIFIER);
-    const [plyUrl, setPlyUrl] = useState<string>(DEFAULT_PLY_URL);
     const [lod, setLod] = useState<number>(0);
     const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [pointCount, setPointCount] = useState<number | null>(null);
-    const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
     const [keyLightIntensity, setKeyLightIntensity] = useState<number>(1.5);
     const [fillLightIntensity, setFillLightIntensity] = useState<number>(0.5);
     const [hemisphereLightIntensity, setHemisphereLightIntensity] = useState<number>(0.6);
@@ -117,6 +108,9 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [showCameraTrajectories, setShowCameraTrajectories] = useState<boolean>(true);
     const [customQuery, setCustomQuery] = useState<string>(DEFAULT_CUSTOM_QUERY);
     const [summaryMap, setSummaryMap] = useState<Record<string, QuerySummaryData>>({});
+
+    // Custom Queries state managed via CustomQueryManagerContainer
+    const [queries, setQueries] = useState<CustomQuery[]>([]);
 
     // Multi-pointcloud states
     const [catalog, setCatalog] = useState<PointCloudMetadataResponse[]>([]);
@@ -148,25 +142,6 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
             console.error(`Error fetching summary for query ${queryId}:`, err);
         }
         return null;
-    }, []);
-
-    const updateGeometryForId = useCallback((id: string, newGeom: THREE.BufferGeometry, currentLod: number, streamKey?: string) => {
-        const key = streamKey || id;
-        setLoadedGeometries((prev) => {
-            const next = new Map(prev);
-            const oldGeom = next.get(key);
-            if (oldGeom && oldGeom !== newGeom) {
-                oldGeom.dispose();
-            }
-            next.set(key, newGeom);
-            return next;
-        });
-
-        setGeometry(newGeom);
-
-        const count = newGeom.attributes.position ? newGeom.attributes.position.count : 0;
-        setPointCount(count);
-        setLod(currentLod);
     }, []);
 
     const startProgressiveStream = useCallback(async (idToLoad: string, startLod: number = 10, endLod: number = 0, overrideQuery?: string, streamKey?: string) => {
@@ -203,7 +178,18 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 signal: controller.signal,
                 onLodLoaded: (currentLod, newGeom) => {
                     if (controller.signal.aborted) return;
-                    updateGeometryForId(idToLoad, newGeom, currentLod, key);
+                    setLoadedGeometries((prev) => {
+                        const next = new Map(prev);
+                        const oldGeom = next.get(key);
+                        if (oldGeom && oldGeom !== newGeom) {
+                            oldGeom.dispose();
+                        }
+                        next.set(key, newGeom);
+                        return next;
+                    });
+                    const count = newGeom.attributes.position ? newGeom.attributes.position.count : 0;
+                    setPointCount(count);
+                    setLod(currentLod);
                     setIsLoading(false);
                 },
                 onError: (currentLod, err) => {
@@ -216,31 +202,18 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 setError(err.message || "Failed to load binary point cloud stream");
             }
         } finally {
-            if (!controller.signal.aborted) {
-                setIsLoading(false);
-                setLoadingIds((prev) => {
-                    const next = new Set(prev);
-                    next.delete(key);
-                    return next;
-                });
+            if (activeControllersRef.current.get(key) === controller) {
                 activeControllersRef.current.delete(key);
             }
+            setLoadingIds((prev) => {
+                const next = new Set(prev);
+                next.delete(key);
+                setIsLoading(next.size > 0);
+                return next;
+            });
+            setPointCloudLoading(key, false);
         }
-    }, [customQuery, updateGeometryForId]);
-
-    const executeCustomQuery = useCallback(async (queryToExecute?: string) => {
-        const queryToUse = queryToExecute !== undefined ? queryToExecute : customQuery;
-        if (queryToExecute !== undefined) {
-            setCustomQuery(queryToExecute);
-        }
-        if (queryToUse && queryToUse.trim()) {
-            window.dispatchEvent(
-                new CustomEvent("add_custom_query", {
-                    detail: { queryText: queryToUse },
-                })
-            );
-        }
-    }, [customQuery]);
+    }, [customQuery, fetchQuerySummary, summaryMap]);
 
     const selectPointcloud = useCallback((id: string | null) => {
         setSelectedId(id);
@@ -322,6 +295,10 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
             setPointCloudLoading(targetId, false);
         });
 
+        setSelectedId((prev) => (prev && idsToUnload.has(prev) ? null : prev));
+        setFocusedId((prev) => (prev && idsToUnload.has(prev) ? null : prev));
+        setHoveredId((prev) => (prev && idsToUnload.has(prev) ? null : prev));
+
         setLoadingIds((prev) => {
             const next = new Set(prev);
             idsToUnload.forEach((targetId) => next.delete(targetId));
@@ -369,70 +346,6 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         selectPointcloud(id);
     }, [loadedGeometries, unloadPointCloud, selectPointcloud]);
 
-    const loadPlyUrl = useCallback((urlToLoad: string) => {
-        if (!urlToLoad.trim()) return;
-        setIsLoading(true);
-        setError(null);
-        setGeometry((prev) => {
-            if (prev) prev.dispose();
-            return null;
-        });
-
-        const loader = new PLYLoader();
-        loader.load(
-            urlToLoad,
-            (geom) => {
-                geom.center();
-                geom.computeBoundingSphere();
-                const count = geom.attributes.position ? geom.attributes.position.count : 0;
-
-                setGeometry(geom);
-                setPointCount(count);
-                setIsLoading(false);
-            },
-            undefined,
-            (err) => {
-                console.error("PLY URL load error:", err);
-                setError("Failed to load PLY from URL");
-                setIsLoading(false);
-            }
-        );
-    }, []);
-
-    const loadBinaryPointCloud = useCallback(async (idToLoad: string, _startLod: number = 10) => {
-        if (!idToLoad.trim()) return;
-        setIdentifier(idToLoad);
-        setSelectedId(idToLoad);
-    }, []);
-
-    const loadPlyFile = useCallback(async (file: File) => {
-        setIsLoading(true);
-        setError(null);
-        setSelectedFileName(file.name);
-        setGeometry((prev) => {
-            if (prev) prev.dispose();
-            return null;
-        });
-
-        try {
-            const buffer = await file.arrayBuffer();
-            const loader = new PLYLoader();
-            const geom = loader.parse(buffer);
-
-            geom.center();
-            geom.computeBoundingSphere();
-            const count = geom.attributes.position ? geom.attributes.position.count : 0;
-
-            setGeometry(geom);
-            setPointCount(count);
-        } catch (err: any) {
-            console.error("PLY parse error:", err);
-            setError(err.message || "Failed to parse PLY file");
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
-
     return (
         <PLYPointCloudContext.Provider
             value={{
@@ -452,19 +365,14 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 setHeightmapMapProvider,
                 heightmapHeightProvider,
                 setHeightmapHeightProvider,
-                heightmapProvider: heightmapMapProvider,
-                setHeightmapProvider: setHeightmapMapProvider,
                 identifier,
                 setIdentifier,
-                plyUrl,
-                setPlyUrl,
                 lod,
                 setLod,
                 geometry,
                 isLoading,
                 error,
                 pointCount,
-                selectedFileName,
                 keyLightIntensity,
                 setKeyLightIntensity,
                 fillLightIntensity,
@@ -476,12 +384,12 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 customQuery,
                 setCustomQuery,
                 startProgressiveStream,
-                executeCustomQuery,
-                loadBinaryPointCloud,
-                loadPlyUrl,
-                loadPlyFile,
                 showCameraTrajectories,
                 setShowCameraTrajectories,
+
+                // Custom Queries exports
+                queries,
+                setQueries,
 
                 // Multi-pointcloud exports
                 catalog,

@@ -74,7 +74,26 @@ class PointCloudStreamSummaryResponse(BaseModel):
     total_points: int
     number_of_points: int
     bounding_box: Optional[PointCloudBoundingBox] = None
+    center: Optional[List[float]] = None
     connected_pointclouds: List[PointCloudMetadataResponse] = []
     connected_camera_headers: List[CameraHeaderResponse] = []
+
+    @computed_field
+    @property
+    def centerpoint(self) -> Optional[List[float]]:
+        if self.center:
+            return self.center
+        if (
+            self.bounding_box and
+            self.bounding_box.min_x is not None and self.bounding_box.max_x is not None and
+            self.bounding_box.min_y is not None and self.bounding_box.max_y is not None and
+            self.bounding_box.min_z is not None and self.bounding_box.max_z is not None
+        ):
+            return [
+                (self.bounding_box.min_x + self.bounding_box.max_x) / 2.0,
+                (self.bounding_box.min_y + self.bounding_box.max_y) / 2.0,
+                (self.bounding_box.min_z + self.bounding_box.max_z) / 2.0,
+            ]
+        return None
 
     model_config = ConfigDict(from_attributes=True)

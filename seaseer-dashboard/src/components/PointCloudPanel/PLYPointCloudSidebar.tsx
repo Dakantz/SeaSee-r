@@ -20,8 +20,6 @@ export interface PLYPointCloudSidebarProps {
     setHeightmapMapProvider?: (provider: MapProviderChoice) => void;
     heightmapHeightProvider?: HeightProviderChoice;
     setHeightmapHeightProvider?: (provider: HeightProviderChoice) => void;
-    heightmapProvider?: MapProviderChoice;
-    setHeightmapProvider?: (provider: MapProviderChoice) => void;
     lod?: number;
     isLoading?: boolean;
     error?: string | null;
@@ -56,8 +54,8 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const setShowHeightmap = props.setShowHeightmap ?? contextState?.setShowHeightmap ?? (() => {});
     const heightmapMode = props.heightmapMode ?? contextState?.heightmapMode ?? "HEIGHT";
     const setHeightmapMode = props.setHeightmapMode ?? contextState?.setHeightmapMode ?? (() => {});
-    const heightmapMapProvider = props.heightmapMapProvider ?? contextState?.heightmapMapProvider ?? props.heightmapProvider ?? contextState?.heightmapProvider ?? "OpenStreetMaps";
-    const setHeightmapMapProvider = props.setHeightmapMapProvider ?? contextState?.setHeightmapMapProvider ?? props.setHeightmapProvider ?? contextState?.setHeightmapProvider ?? (() => {});
+    const heightmapMapProvider = props.heightmapMapProvider ?? contextState?.heightmapMapProvider ?? "OpenStreetMaps";
+    const setHeightmapMapProvider = props.setHeightmapMapProvider ?? contextState?.setHeightmapMapProvider ?? (() => {});
     const heightmapHeightProvider = props.heightmapHeightProvider ?? contextState?.heightmapHeightProvider ?? "Bathymetry";
     const setHeightmapHeightProvider = props.setHeightmapHeightProvider ?? contextState?.setHeightmapHeightProvider ?? (() => {});
     const lod = props.lod ?? contextState?.lod ?? 0;

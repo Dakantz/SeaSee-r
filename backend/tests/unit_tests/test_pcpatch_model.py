@@ -79,6 +79,8 @@ async def test_get_summary_info_transformation():
         "min_x": -10.0, "min_y": -5.0, "min_z": 0.0,
         "max_x": 10.0, "max_y": 5.0, "max_z": 20.0
     }
+    assert info["center"] == [0.0, 0.0, 10.0]
+    assert info["centerpoint"] == [0.0, 0.0, 10.0]
     assert len(info["connected_pointclouds"]) == 1
     assert info["connected_pointclouds"][0].id == "e360394b-a241-49e5-bb66-97fee8bd85ef"
     assert len(info["connected_camera_headers"]) == 1
