@@ -1,5 +1,5 @@
 import React from "react";
-import type { FilterRule, FilterOperator } from "./filterUtils";
+import type { FilterRule, FilterOperator } from "./utils/filterUtils.ts";
 
 const AVAILABLE_FIELDS = [
   { label: "Point Cloud ID", value: "pointcloud_id", type: "string" },

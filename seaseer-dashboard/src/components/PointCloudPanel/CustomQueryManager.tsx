@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import { QuerySelector } from "./QuerySelector";
-import type { FilterRule } from "./filterUtils";
-import { fetchPointCloudSummary } from "./pointCloudApi";
+import type { FilterRule } from "./utils/filterUtils.ts";
+import { fetchPointCloudSummary } from "./utils/pointCloudApi.ts";
 
 export { QuerySelector } from "./QuerySelector";
 export { QuerySummary } from "./QuerySummary";
 export { FilterBuilder } from "./FilterBuilder";
-export * from "./filterUtils";
-export * from "./pointCloudApi";
+export * from "./utils/filterUtils.ts";
+export * from "./utils/pointCloudApi.ts";
 
 /**
  * Interface representing a Custom Query item in the Query Manager.

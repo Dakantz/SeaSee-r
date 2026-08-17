@@ -2,7 +2,7 @@ import React from "react";
 import type { CustomQuery, QuerySummaryData } from "./CustomQueryManager";
 import QuerySummary from "./QuerySummary";
 import { FilterBuilder } from "./FilterBuilder";
-import type { FilterRule } from "./filterUtils";
+import type { FilterRule } from "./utils/filterUtils.ts";
 
 export interface QuerySelectorProps {
   /** The custom query item data */

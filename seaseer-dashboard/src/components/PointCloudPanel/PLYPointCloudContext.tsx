@@ -2,8 +2,8 @@ import React, { createContext, useContext, useState, useCallback, useEffect, typ
 import * as THREE from "three";
 import type { PointCloudMetadataResponse } from "../../client";
 import type { QuerySummaryData, CustomQuery } from "./CustomQueryManager";
-import { fetchPointCloudSummary } from "./pointCloudApi";
-import type { FilterRule } from "./filterUtils";
+import { fetchPointCloudSummary } from "./utils/pointCloudApi.ts";
+import type { FilterRule } from "./utils/filterUtils.ts";
 
 export type MapProviderChoice = "OpenStreetMaps" | "Bathymetry" | "Emodnet" | "Debug" | "MapTilerBasic" | "MapTilerOutdoor" | "MapTilerSatellite" | "Bing";
 export type HeightProviderChoice = "Bathymetry" | "Emodnet" | "None" | "Debug" | "MapTiler" | "Bing";

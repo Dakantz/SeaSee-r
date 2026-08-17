@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { buildFilterQueryParams, type FilterRule } from "../filterUtils";
+import { buildFilterQueryParams, type FilterRule } from "./filterUtils.ts";
 
 /** Set tracking pointcloud IDs currently in the process of being loaded */
 const loadingPointClouds = new Set<string>();
