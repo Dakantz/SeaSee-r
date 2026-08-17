@@ -2,13 +2,13 @@ import React from "react";
 import type { CustomQuery, QuerySummaryData } from "./CustomQueryManager";
 import QuerySummary from "./QuerySummary";
 import { FilterBuilder } from "./FilterBuilder";
+import PointProgressBar from "./PointProgressBar";
+import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import type { FilterRule } from "./utils/filterUtils.ts";
 
 export interface QuerySelectorProps {
   /** The custom query item data */
   query: CustomQuery;
-  /** Indicates whether this query is currently active/selected */
-  isActive: boolean;
   /** Indicates whether points for this query are actively streaming */
   isLoadingStream: boolean;
   /** Indicates whether points for this query are fully streamed/loaded in 3D scene */
@@ -21,7 +21,7 @@ export interface QuerySelectorProps {
   summaryLoading?: boolean;
   /** Summary calculation error state */
   summaryError?: string | null;
-  /** Handler to update query fields (name, queryText, filters, etc.) */
+  /** Handler to update query fields (name, filters, etc.) */
   onUpdateQuery: (id: string, field: string, value: any) => void;
   /** Handler to delete a query */
   onDeleteQuery: (id: string) => void;
@@ -32,17 +32,31 @@ export interface QuerySelectorProps {
   /** Handler to focus camera on the query bounding box center */
   onFocusQuery: (query: CustomQuery) => void;
   /** Handler to refresh/re-fetch summary information for a query */
-  onRefreshSummary: (queryId: string, queryText: string) => void;
+  onRefreshSummary: (queryId: string, filters?: FilterRule[]) => void;
+  /** Indicates whether this query is currently hovered */
+  isHovered?: boolean;
+  /** Handler triggered when mouse enters/leaves the query card */
+  onHover?: (id: string | null) => void;
+  /** Initial expanded state (defaults to false / collapsed) */
+  defaultExpanded?: boolean;
+  /** Controlled expanded state (optional) */
+  isExpanded?: boolean;
+  /** Callback triggered when expanded state changes */
+  onToggleExpand?: (expanded: boolean) => void;
+  /** Optional override for number of points loaded */
+  loadedPointCount?: number;
 }
 
 /**
  * QuerySelector Component
  * Represents a single custom query card item in the query manager list.
+ * Supports expanding and collapsing into one single line (collapsed by default).
+ * Displays a live point loading progress bar that becomes 100% full when LOD0 is loaded.
  * Includes name editing, visual filter builder, status indicators, action buttons, and embeds QuerySummary.
  */
 export const QuerySelector: React.FC<QuerySelectorProps> = ({
   query,
-  isActive,
+  isHovered,
   isLoadingStream,
   isLoadedStream,
   saveStatus,
@@ -55,18 +69,73 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
   onUnloadQuery,
   onFocusQuery,
   onRefreshSummary,
+  onHover,
+  defaultExpanded = false,
+  isExpanded: externalIsExpanded,
+  onToggleExpand,
+  loadedPointCount: propLoadedPointCount,
 }) => {
+  const [internalIsExpanded, setInternalIsExpanded] = React.useState<boolean>(defaultExpanded);
+
+  const isExpanded = externalIsExpanded !== undefined ? externalIsExpanded : internalIsExpanded;
+
+  const handleToggleExpand = () => {
+    const nextState = !isExpanded;
+    if (externalIsExpanded === undefined) {
+      setInternalIsExpanded(nextState);
+    }
+    onToggleExpand?.(nextState);
+  };
+
+  // Determine actual number of points loaded from 3D context loadedGeometries
+  let loadedPoints = propLoadedPointCount ?? 0;
+  try {
+    const ctx = usePLYPointCloudContext();
+    if (ctx && ctx.loadedGeometries && propLoadedPointCount === undefined) {
+      const geom = ctx.loadedGeometries.get(query.id);
+      if (geom?.attributes?.position) {
+        loadedPoints = geom.attributes.position.count;
+      } else if (summary?.connected_pointclouds) {
+        let count = 0;
+        for (const pc of summary.connected_pointclouds) {
+          const pcGeom = ctx.loadedGeometries.get(pc.id);
+          if (pcGeom?.attributes?.position) {
+            count += pcGeom.attributes.position.count;
+          }
+        }
+        if (count > 0) loadedPoints = count;
+      }
+    }
+  } catch {
+    // Context unavailable
+  }
+
   return (
-    <div className={`query-selector ${isActive ? "query-selector--active" : ""}`}>
-      {/* Item Top Row: Name Editor, Stream Badges & Delete */}
+    <div
+      className={`query-selector ${isExpanded ? "query-selector--expanded" : "query-selector--collapsed"} ${isHovered ? "query-selector--hovered" : ""}`}
+      onMouseEnter={() => onHover?.(query.id)}
+      onMouseLeave={() => onHover?.(null)}
+    >
+      {/* Item Top Row: Expand/Collapse Toggle, Name Editor, Stream Badges & Actions */}
       <div className="query-selector__top-row">
+        <button
+          type="button"
+          className="query-selector__toggle-btn"
+          onClick={handleToggleExpand}
+          title={isExpanded ? "Collapse query details" : "Expand query details"}
+          aria-expanded={isExpanded}
+          aria-label={isExpanded ? "Collapse query details" : "Expand query details"}
+        >
+          {isExpanded ? "▼" : "▶"}
+        </button>
+
         <div className="query-selector__name-wrapper">
           <input
             type="text"
             value={query.name}
             onChange={(e) => onUpdateQuery(query.id, "name", e.target.value)}
             placeholder="Query Name..."
-            className={`query-selector__name-input ${isActive ? "query-selector__name-input--active" : ""}`}
+            className="query-selector__name-input"
           />
         </div>
 
@@ -79,52 +148,8 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
             <span className="query-selector__badge query-selector__badge--streamed">
               ⚡ Streamed
             </span>
-          ) : isActive ? (
-            <span className="query-selector__badge query-selector__badge--active">
-              Active
-            </span>
           ) : null}
 
-          <button
-            type="button"
-            title="Delete query"
-            onClick={() => onDeleteQuery(query.id)}
-            className="query-selector__delete-btn"
-          >
-            🗑️
-          </button>
-        </div>
-      </div>
-
-      {/* Visual Filter Builder UI */}
-      <div className="query-selector__filters-section">
-        <div className="query-selector__section-label">
-          Filters (Flexible Comparators)
-        </div>
-
-        <FilterBuilder
-          filters={query.filters || []}
-          onChange={(newFilters: FilterRule[]) => onUpdateQuery(query.id, "filters", newFilters)}
-        />
-      </div>
-
-      {/* Summary Information Display Panel */}
-      <QuerySummary
-        query={query}
-        summary={summary}
-        isLoading={summaryLoading}
-        error={summaryError}
-        onRefreshSummary={onRefreshSummary}
-        onFocusQuery={onFocusQuery}
-      />
-
-      {/* Card Controls & Status Bar */}
-      <div className="query-selector__bottom-bar">
-        <span className={`query-selector__status-text ${saveStatus === "Error saving" ? "query-selector__status-text--error" : ""}`}>
-          {saveStatus ? saveStatus : "Auto-saved"}
-        </span>
-
-        <div className="query-selector__btn-group">
           <button
             type="button"
             title="Focus camera on bounding box center"
@@ -148,15 +173,74 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
               type="button"
               title="Run / Stream this query"
               onClick={() => onRunQuery(query)}
-              className={`query-selector__btn--stream ${isActive ? "query-selector__btn--stream-active" : ""}`}
+              className="query-selector__btn--stream"
             >
               ⚡ Stream
             </button>
           )}
+
+          <button
+            type="button"
+            title="Delete query"
+            onClick={() => onDeleteQuery(query.id)}
+            className="query-selector__delete-btn"
+          >
+            🗑️
+          </button>
         </div>
       </div>
+
+      {/* Mini Progress Bar in Collapsed View */}
+      {!isExpanded && (isLoadingStream || isLoadedStream || loadedPoints > 0) && (
+        <PointProgressBar
+          loadedPoints={loadedPoints}
+          totalPoints={summary?.total_points}
+          isLoadingStream={isLoadingStream}
+          isLoadedStream={isLoadedStream}
+          compact
+        />
+      )}
+
+      {/* Expandable Details Content */}
+      {isExpanded && (
+        <>
+          {/* Visual Filter Builder UI */}
+          <div className="query-selector__filters-section">
+            <div className="query-selector__section-label">
+              Filters (Flexible Comparators)
+            </div>
+
+            <FilterBuilder
+              filters={query.filters || []}
+              onChange={(newFilters: FilterRule[]) => onUpdateQuery(query.id, "filters", newFilters)}
+            />
+          </div>
+
+          {/* Summary Information Display Panel */}
+          <QuerySummary
+            query={query}
+            summary={summary}
+            isLoading={summaryLoading}
+            error={summaryError}
+            onRefreshSummary={onRefreshSummary}
+            onFocusQuery={onFocusQuery}
+            loadedPoints={loadedPoints}
+            isLoadingStream={isLoadingStream}
+            isLoadedStream={isLoadedStream}
+          />
+
+          {/* Card Controls & Status Bar */}
+          <div className="query-selector__bottom-bar">
+            <span className={`query-selector__status-text ${saveStatus === "Error saving" ? "query-selector__status-text--error" : ""}`}>
+              {saveStatus ? saveStatus : "Auto-saved"}
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
 };
 
 export default QuerySelector;
+
+

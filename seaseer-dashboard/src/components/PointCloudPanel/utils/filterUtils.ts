@@ -9,7 +9,7 @@ export interface FilterRule {
 
 export interface StreamQueryParams {
   lod: number;
-  filters?: FilterRule[];
+  filters?: FilterRule[] | null;
 }
 
 /**
@@ -19,9 +19,9 @@ export interface StreamQueryParams {
  */
 export function buildFilterQueryParams(params: StreamQueryParams): URLSearchParams {
   const searchParams = new URLSearchParams();
-  searchParams.set("lod", params.lod.toString());
+  searchParams.set("lod", (params?.lod ?? 0).toString());
 
-  if (!params.filters) return searchParams;
+  if (!params?.filters || !Array.isArray(params.filters)) return searchParams;
 
   for (const rule of params.filters) {
     if (rule.value === "" || rule.value === undefined || rule.value === null) continue;

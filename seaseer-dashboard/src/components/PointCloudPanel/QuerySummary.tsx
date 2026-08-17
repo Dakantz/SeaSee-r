@@ -1,13 +1,18 @@
 import React, { useState } from "react";
 import type { CustomQuery, QuerySummaryData, ConnectedPointCloudMetadata } from "./CustomQueryManager";
+import PointProgressBar from "./PointProgressBar";
+import type { FilterRule } from "./utils/filterUtils.ts";
 
 export interface QuerySummaryProps {
   query: CustomQuery;
   summary?: QuerySummaryData | null;
   isLoading?: boolean;
   error?: string | null;
-  onRefreshSummary: (queryId: string, queryText: string) => void;
+  onRefreshSummary: (queryId: string, filters?: FilterRule[]) => void;
   onFocusQuery: (query: CustomQuery) => void;
+  loadedPoints?: number;
+  isLoadingStream?: boolean;
+  isLoadedStream?: boolean;
 }
 
 /**
@@ -245,7 +250,10 @@ export const QuerySummary: React.FC<QuerySummaryProps> = ({
   isLoading,
   error,
   onRefreshSummary,
-  onFocusQuery,
+  onFocusQuery: _onFocusQuery,
+  loadedPoints = 0,
+  isLoadingStream = false,
+  isLoadedStream = false,
 }) => {
   return (
     <div className="query-summary">
@@ -256,7 +264,7 @@ export const QuerySummary: React.FC<QuerySummaryProps> = ({
 
         <button
           type="button"
-          onClick={() => onRefreshSummary(query.id, query.queryText)}
+          onClick={() => onRefreshSummary(query.id, query.filters)}
           disabled={isLoading}
           className="query-summary__refresh-btn"
           title="Fetch / refresh query summary"
@@ -275,13 +283,13 @@ export const QuerySummary: React.FC<QuerySummaryProps> = ({
         </div>
       ) : summary ? (
         <div className="query-summary__content">
-          {/* Point Count Badge */}
-          <div className="query-summary__count-row">
-            <span className="query-summary__label">Total Points:</span>
-            <span className="query-summary__count-badge">
-              {(summary.total_points ?? 0).toLocaleString()} pts
-            </span>
-          </div>
+          {/* Point Load Progress Bar */}
+          <PointProgressBar
+            loadedPoints={loadedPoints}
+            totalPoints={summary.total_points}
+            isLoadingStream={isLoadingStream}
+            isLoadedStream={isLoadedStream}
+          />
 
           {/* Connected Point Clouds Metadata Section */}
           {summary.connected_pointclouds && summary.connected_pointclouds.length > 0 ? (

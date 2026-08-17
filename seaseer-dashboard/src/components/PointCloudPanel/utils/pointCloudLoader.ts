@@ -36,8 +36,6 @@ export interface ProgressiveLoadOptions {
     startLod?: number;
     /** Final Level of Detail (default: 0) */
     endLod?: number;
-    /** Optional custom SQL selection query */
-    customQuery?: string;
     /** Structured filter rules */
     filters?: FilterRule[];
     /** AbortSignal to cancel progressive loading mid-stream */
@@ -48,55 +46,20 @@ export interface ProgressiveLoadOptions {
     onError?: (lod: number, error: unknown) => void;
 }
 
-const DEFAULT_QUERY_TEMPLATE = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = ':id'";
-
-/**
- * Prepares the SQL query string for a specific LOD level and pointcloud ID.
- * Replaces table references with pointcloud_patches_lod{lod} and binds :id.
- */
-export function prepareQueryForLod(rawQuery: string | undefined, pointcloudId: string, lod: number): string {
-    const cleanId = pointcloudId.trim().split("?")[0];
-    let query = (rawQuery && rawQuery.trim()) ? rawQuery.trim() : DEFAULT_QUERY_TEMPLATE;
-
-    // 1) Replace table name: pointcloud_patches or pointcloud_patches_lod\d+ -> pointcloud_patches_lod{lod}
-    query = query.replace(/pointcloud_patches(_lod\d+)?/g, `pointcloud_patches_lod${lod}`);
-
-    // 2) Replace :id or ':id' with explicit quoted UUID string
-    query = query.replace(/'?:id'?/g, `'${cleanId}'`);
-
-    return query;
-}
-
 /**
  * Low-level helper to fetch and parse binary pointcloud buffer for a specific LOD.
  * Uses 16-byte packed vertex layout: [X:f32, Y:f32, Z:f32, R:u8, G:u8, B:u8, Pad:u8]
  */
 export async function fetchBinaryGeometry(
-    idToLoad: string,
+    _idToLoad: string,
     lodToLoad: number = 0,
     signal?: AbortSignal,
-    customQuery?: string,
     filters?: FilterRule[]
 ): Promise<THREE.BufferGeometry> {
     const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
-    const cleanId = idToLoad.trim().split("?")[0];
     
     // Convert structured filters into URL query parameters
     const searchParams = buildFilterQueryParams({ lod: lodToLoad, filters });
-
-    const hasPcId = searchParams.has("pointcloud_id");
-
-    // Backward compatibility: Extract pointcloud_id from cleanId or customQuery regex match if missing from filters
-    if (!hasPcId) {
-        let pcId = cleanId;
-        if (customQuery) {
-            const match = customQuery.match(/pointcloud_id\s*=\s*'([a-fA-F0-9-]+)'/i);
-            if (match) pcId = match[1];
-        }
-        if (pcId && pcId.length >= 32) {
-            searchParams.set("pointcloud_id", pcId);
-        }
-    }
 
     const url = `${API_BASE_URL}/pointclouds/stream-binary?${searchParams.toString()}`;
 
@@ -161,7 +124,6 @@ export async function loadProgressivePointCloud(
         streamKey,
         startLod = 10,
         endLod = 0,
-        customQuery,
         filters,
         signal,
         onLodLoaded,
@@ -186,7 +148,7 @@ export async function loadProgressivePointCloud(
             }
 
             try {
-                const geom = await fetchBinaryGeometry(id, currentLod, signal, customQuery, filters);
+                const geom = await fetchBinaryGeometry(id, currentLod, signal, filters);
 
                 if (signal?.aborted) {
                     geom.dispose();

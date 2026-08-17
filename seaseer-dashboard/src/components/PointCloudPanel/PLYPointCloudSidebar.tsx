@@ -55,7 +55,6 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const setHeightmapMapProvider = props.setHeightmapMapProvider ?? contextState?.setHeightmapMapProvider ?? (() => {});
     const heightmapHeightProvider = props.heightmapHeightProvider ?? contextState?.heightmapHeightProvider ?? "Bathymetry";
     const setHeightmapHeightProvider = props.setHeightmapHeightProvider ?? contextState?.setHeightmapHeightProvider ?? (() => {});
-    const lod = props.lod ?? contextState?.lod ?? 0;
     const isLoading = props.isLoading ?? contextState?.isLoading ?? false;
     const error = props.error ?? contextState?.error ?? null;
     const pointCount = props.pointCount ?? contextState?.pointCount ?? null;
@@ -72,12 +71,6 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const [searchQuery, setSearchQuery] = useState<string>("");
 
     const catalog = contextState?.catalog ?? datasets;
-    const selectedId = contextState?.selectedId ?? null;
-    const hoveredId = contextState?.hoveredId ?? null;
-    const focusPointcloud = contextState?.focusPointcloud ?? (() => {});
-    const loadedGeometries = contextState?.loadedGeometries ?? new Map();
-    const loadingIds = contextState?.loadingIds ?? new Set();
-    const toggleStreamPointCloud = contextState?.toggleStreamPointCloud ?? (async () => {});
 
     useEffect(() => {
         const fetchDatasets = async () => {
@@ -131,22 +124,15 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                             })
                             .map((item) => {
                                 const name = item.orig_filename || item.safe_filename || item.id;
-                                const isSelected = item.id === selectedId;
-                                const isHovered = item.id === hoveredId;
-                                const isStreamed = contextState?.isStreamLoaded ? contextState.isStreamLoaded(item.id) : loadedGeometries.has(item.id);
-                                const isLoadingStream = contextState?.isStreamLoading ? contextState.isStreamLoading(item.id) : loadingIds.has(item.id);
 
                                 return (
                                     <div
                                         key={item.id}
                                         onClick={() => {
-                                            const queryText = `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = '${item.id}'`;
                                             const queryName = name ? `Query for ${name}` : undefined;
                                             if (contextState?.addCustomQuery) {
                                                 contextState.addCustomQuery({
-                                                    queryText,
                                                     name: queryName,
-                                                    pointcloudId: item.id,
                                                     filters: [
                                                         {
                                                             id: `rule-${Date.now()}`,
@@ -158,7 +144,7 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                                 });
                                             }
                                         }}
-                                        className={`pointcloud-sidebar__item ${isSelected ? "pointcloud-sidebar__item--selected" : isHovered ? "pointcloud-sidebar__item--hovered" : ""}`}
+                                        className="pointcloud-sidebar__item"
                                     >
                                         <div className="pointcloud-sidebar__item-info">
                                             <span className="pointcloud-sidebar__item-title">
@@ -167,32 +153,6 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                             <span className="pointcloud-sidebar__item-count">
                                                 {item.number_of_points?.toLocaleString() ?? 0} pts
                                             </span>
-                                        </div>
-
-                                        <div className="pointcloud-sidebar__item-actions">
-                                            <button
-                                                type="button"
-                                                title="Focus 3D Camera"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    focusPointcloud(item.id);
-                                                }}
-                                                className="pointcloud-sidebar__btn--focus"
-                                            >
-                                                🎯 Focus
-                                            </button>
-                                            <button
-                                                type="button"
-                                                title={isStreamed ? "Unload Stream" : "Stream Full Geometry"}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    toggleStreamPointCloud(item.id, lod);
-                                                }}
-                                                disabled={isLoadingStream}
-                                                className={`pointcloud-sidebar__btn--stream ${isStreamed ? "pointcloud-sidebar__btn--stream-loaded" : ""}`}
-                                            >
-                                                {isLoadingStream ? "⏳" : isStreamed ? "👁️ Loaded" : "⚡ Stream"}
-                                            </button>
                                         </div>
                                     </div>
                                 );

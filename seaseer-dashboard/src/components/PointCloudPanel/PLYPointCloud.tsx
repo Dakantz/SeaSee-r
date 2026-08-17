@@ -120,7 +120,6 @@ const _tmpVecRight = new THREE.Vector3();
 const _tmpVecUp = new THREE.Vector3();
 const _tmpVecDir = new THREE.Vector3();
 
-const _colorSelected = new THREE.Color("#ff3344");
 const _colorHovered = new THREE.Color("#ffaa00");
 const _colorDefault = new THREE.Color("#00e5ff");
 
@@ -371,28 +370,19 @@ function GeoThreeHeightmap() {
     return <primitive object={mapView} position={[0, -0.5, 0]} />;
 }
 
-import type { PointCloudMetadataResponse } from "../../client";
 
-function getItemCenter(item: PointCloudMetadataResponse): [number, number, number] {
-    if (item.center && Array.isArray(item.center) && item.center.length === 3) {
-        return [item.center[0], item.center[1], item.center[2]];
-    }
-    return [TARGET_X, 0, TARGET_Z];
-}
 
 function PointCloudCenterMarkers() {
     const {
         queries,
         summaryMap,
-        catalog,
-        selectedId,
         hoveredId,
         selectPointcloud,
         hoverPointcloud,
         focusCameraTarget,
         startProgressiveStream,
-        setCustomQuery,
-        identifier,
+        isStreamLoading,
+        isStreamLoaded,
     } = usePLYPointCloudContext();
 
     const meshRef = useRef<THREE.InstancedMesh>(null);
@@ -417,10 +407,9 @@ function PointCloudCenterMarkers() {
             centerVec.set(cx, cy, cz).applyEuler(rotEuler);
             const dist = camera.position.distanceTo(centerVec);
 
-            const isSelected = query.id === selectedId || (selectedId != null && selectedId.length > 0 && query.queryText.includes(selectedId));
-            const isHovered = query.id === hoveredId || (hoveredId != null && hoveredId.length > 0 && query.queryText.includes(hoveredId));
+            const isHovered = query.id === hoveredId;
 
-            const baseFactor = isSelected ? 0.025 : isHovered ? 0.02 : 0.012;
+            const baseFactor = isHovered ? 0.02 : 0.012;
             const scale = Math.max(0.01, dist * baseFactor);
 
             dummy.position.set(cx, cy, cz);
@@ -428,7 +417,7 @@ function PointCloudCenterMarkers() {
             dummy.updateMatrix();
             meshRef.current!.setMatrixAt(index, dummy.matrix);
 
-            const color = isSelected ? _colorSelected : isHovered ? _colorHovered : _colorDefault;
+            const color = isHovered ? _colorHovered : _colorDefault;
             meshRef.current!.setColorAt(index, color);
         });
 
@@ -442,19 +431,8 @@ function PointCloudCenterMarkers() {
 
     const handleLoadQuery = (query: CustomQuery) => {
         selectPointcloud(query.id);
-        if (setCustomQuery) {
-            setCustomQuery(query.queryText);
-        }
-        const match = query.queryText.match(/pointcloud_id\s*=\s*['"]([^'"]+)['"]/i);
-        const extractedId = match ? match[1] : null;
-        const targetId =
-            extractedId ||
-            selectedId ||
-            identifier ||
-            (catalog.length > 0 ? catalog[0].id : null);
-
-        if (targetId && targetId.trim() && startProgressiveStream) {
-            startProgressiveStream(targetId, 10, 0, query.queryText, query.id, query.filters);
+        if (startProgressiveStream) {
+            startProgressiveStream(query.id, 10, 0, query.filters);
         }
     };
 
@@ -500,7 +478,7 @@ function PointCloudCenterMarkers() {
 
 function CameraFocusController() {
     const { camera, gl } = useThree();
-    const { focusedId, focusTrigger, catalog, cameraTarget } = usePLYPointCloudContext();
+    const { cameraTarget } = usePLYPointCloudContext();
 
     const animState = useRef<{
         startTime: number;
@@ -521,18 +499,6 @@ function CameraFocusController() {
             targetCenter: targetCenter.clone(),
         };
     }, [camera]);
-
-    useEffect(() => {
-        if (!focusedId) return;
-        const item = catalog.find((pc) => pc.id === focusedId);
-        if (item) {
-            const [cx, cy, cz] = getItemCenter(item);
-            const targetCenter = new THREE.Vector3(cx, cy, cz).applyEuler(
-                new THREE.Euler(-Math.PI / 2, 0, 0)
-            );
-            startFocusAnimation(targetCenter);
-        }
-    }, [focusedId, focusTrigger, catalog, startFocusAnimation]);
 
     useEffect(() => {
         if (!cameraTarget) return;

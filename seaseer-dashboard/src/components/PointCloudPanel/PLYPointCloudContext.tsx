@@ -10,12 +10,8 @@ export type HeightProviderChoice = "Bathymetry" | "Emodnet" | "None" | "Debug" |
 
 import { loadProgressivePointCloud, setPointCloudLoading } from "./utils/pointCloudLoader";
 
-export const DEFAULT_CUSTOM_QUERY = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches";
-
 export interface AddCustomQueryPayload {
-    queryText?: string;
     name?: string;
-    pointcloudId?: string;
     filters?: FilterRule[];
 }
 
@@ -52,9 +48,7 @@ export interface PLYPointCloudContextType {
     setHemisphereLightIntensity: (val: number) => void;
     ambientLightIntensity: number;
     setAmbientLightIntensity: (val: number) => void;
-    customQuery: string;
-    setCustomQuery: (query: string) => void;
-    startProgressiveStream: (idToLoad: string, startLod?: number, endLod?: number, overrideQuery?: string, streamKey?: string, filters?: FilterRule[]) => Promise<void>;
+    startProgressiveStream: (queryId: string, startLod?: number, endLod?: number, filters?: FilterRule[]) => Promise<void>;
     showCameraTrajectories: boolean;
     setShowCameraTrajectories: (show: boolean) => void;
 
@@ -67,24 +61,19 @@ export interface PLYPointCloudContextType {
     catalog: PointCloudMetadataResponse[];
     isFetchingCatalog: boolean;
     fetchCatalog: () => Promise<void>;
-    selectedId: string | null;
     selectPointcloud: (id: string | null) => void;
     hoveredId: string | null;
     hoverPointcloud: (id: string | null) => void;
-    focusedId: string | null;
-    focusTrigger: number;
-    focusPointcloud: (id: string | null) => void;
     cameraTarget: { x: number; y: number; z: number; timestamp: number } | null;
     focusCameraTarget: (target: [number, number, number] | { x: number; y: number; z: number }) => void;
     loadedGeometries: Map<string, THREE.BufferGeometry>;
     loadingIds: Set<string>;
-    isStreamLoaded: (idOrQueryId: string) => boolean;
-    isStreamLoading: (idOrQueryId: string) => boolean;
-    toggleStreamPointCloud: (id: string, lodToLoad?: number) => Promise<void>;
+    isStreamLoaded: (queryId: string) => boolean;
+    isStreamLoading: (queryId: string) => boolean;
     unloadPointCloud: (id: string) => void;
     summaryMap: Record<string, QuerySummaryData>;
     setSummaryMap: React.Dispatch<React.SetStateAction<Record<string, QuerySummaryData>>>;
-    fetchQuerySummary: (queryId: string, queryText: string, filters?: FilterRule[]) => Promise<QuerySummaryData | null>;
+    fetchQuerySummary: (queryId: string, filters?: FilterRule[], lod?: number) => Promise<QuerySummaryData | null>;
 }
 
 const DEFAULT_HARDCODED_IDENTIFIER = "";
@@ -119,7 +108,6 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [hemisphereLightIntensity, setHemisphereLightIntensity] = useState<number>(0.6);
     const [ambientLightIntensity, setAmbientLightIntensity] = useState<number>(0.4);
     const [showCameraTrajectories, setShowCameraTrajectories] = useState<boolean>(true);
-    const [customQuery, setCustomQuery] = useState<string>(DEFAULT_CUSTOM_QUERY);
     const [summaryMap, setSummaryMap] = useState<Record<string, QuerySummaryData>>({});
     const [cameraTarget, setCameraTarget] = useState<{ x: number; y: number; z: number; timestamp: number } | null>(null);
 
@@ -150,26 +138,23 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     // Multi-pointcloud states
     const [catalog, setCatalog] = useState<PointCloudMetadataResponse[]>([]);
     const [isFetchingCatalog, setIsFetchingCatalog] = useState<boolean>(false);
-    const [selectedId, setSelectedId] = useState<string | null>(null);
     const [hoveredId, setHoveredId] = useState<string | null>(null);
-    const [focusedId, setFocusedId] = useState<string | null>(null);
-    const [focusTrigger, setFocusTrigger] = useState<number>(0);
     const [loadedGeometries, setLoadedGeometries] = useState<Map<string, THREE.BufferGeometry>>(new Map());
     const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
 
     // AbortControllers map to manage in-flight progressive LOD loads per pointcloud/query
     const activeControllersRef = React.useRef<Map<string, AbortController>>(new Map());
 
-    const isStreamLoaded = useCallback((idOrQueryId: string): boolean => {
-        if (!idOrQueryId) return false;
-        if (loadedGeometries.has(idOrQueryId)) return true;
+    const isStreamLoaded = useCallback((queryId: string): boolean => {
+        if (!queryId) return false;
+        if (loadedGeometries.has(queryId)) return true;
         for (const loadedKey of loadedGeometries.keys()) {
-            if (loadedKey === idOrQueryId) return true;
-            const matchingQuery = queries.find((q) => q.id === loadedKey || q.id === idOrQueryId);
+            if (loadedKey === queryId) return true;
+            const matchingQuery = queries.find((q) => q.id === loadedKey || q.id === queryId);
             if (matchingQuery) {
-                const match = matchingQuery.queryText.match(/pointcloud_id\s*=\s*'([a-fA-F0-9-]+)'/i);
-                const pcId = matchingQuery.pointcloudId || (match ? match[1] : null);
-                if (pcId && (pcId === idOrQueryId || matchingQuery.id === idOrQueryId)) {
+                const pcIdFilter = matchingQuery.filters?.find((f) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator))?.value;
+                const pcId = pcIdFilter ? String(pcIdFilter) : null;
+                if (pcId && (pcId === queryId || matchingQuery.id === queryId)) {
                     return true;
                 }
             }
@@ -177,16 +162,16 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         return false;
     }, [loadedGeometries, queries]);
 
-    const isStreamLoading = useCallback((idOrQueryId: string): boolean => {
-        if (!idOrQueryId) return false;
-        if (loadingIds.has(idOrQueryId)) return true;
+    const isStreamLoading = useCallback((queryId: string): boolean => {
+        if (!queryId) return false;
+        if (loadingIds.has(queryId)) return true;
         for (const loadingKey of loadingIds) {
-            if (loadingKey === idOrQueryId) return true;
-            const matchingQuery = queries.find((q) => q.id === loadingKey || q.id === idOrQueryId);
+            if (loadingKey === queryId) return true;
+            const matchingQuery = queries.find((q) => q.id === loadingKey || q.id === queryId);
             if (matchingQuery) {
-                const match = matchingQuery.queryText.match(/pointcloud_id\s*=\s*'([a-fA-F0-9-]+)'/i);
-                const pcId = matchingQuery.pointcloudId || (match ? match[1] : null);
-                if (pcId && (pcId === idOrQueryId || matchingQuery.id === idOrQueryId)) {
+                const pcIdFilter = matchingQuery.filters?.find((f) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator))?.value;
+                const pcId = pcIdFilter ? String(pcIdFilter) : null;
+                if (pcId && (pcId === queryId || matchingQuery.id === queryId)) {
                     return true;
                 }
             }
@@ -194,20 +179,9 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         return false;
     }, [loadingIds, queries]);
 
-    const fetchQuerySummary = useCallback(async (queryId: string, queryText: string, filters?: FilterRule[], lod = 0) => {
-        if ((!queryText || !queryText.trim()) && (!filters || filters.length === 0)) return null;
+    const fetchQuerySummary = useCallback(async (queryId: string, filters?: FilterRule[], lod = 0) => {
         try {
-            let data: QuerySummaryData;
-            if (filters && filters.length > 0) {
-                data = await fetchPointCloudSummary({ lod, filters });
-            } else {
-                const match = queryText ? queryText.match(/pointcloud_id\s*=\s*'([a-fA-F0-9-]+)'/i) : null;
-                const targetPcId = match ? match[1] : null;
-                const effectiveFilters: FilterRule[] = targetPcId
-                    ? [{ id: "auto-pc-id", field: "pointcloud_id", operator: "eq", value: targetPcId }]
-                    : [];
-                data = await fetchPointCloudSummary({ lod, filters: effectiveFilters });
-            }
+            const data = await fetchPointCloudSummary({ lod, filters });
             setSummaryMap((prev) => ({ ...prev, [queryId]: data }));
             return data;
         } catch (err) {
@@ -217,57 +191,54 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     }, []);
 
     const startProgressiveStream = useCallback(async (
-        idToLoad: string,
+        queryId: string,
         startLod: number = 10,
         endLod: number = 0,
-        overrideQuery?: string,
-        streamKey?: string,
         filters?: FilterRule[]
     ) => {
-        if (!idToLoad.trim()) return;
+        if (!queryId.trim()) return;
 
-        const key = streamKey || idToLoad;
-        const queryToUse = overrideQuery !== undefined ? overrideQuery : customQuery;
-
-        if (!summaryMap[key] && queryToUse) {
-            fetchQuerySummary(key, queryToUse, filters);
+        if (isStreamLoading(queryId)) {
+            return;
         }
 
-        // Abort existing stream for this stream key if any
-        if (activeControllersRef.current.has(key)) {
-            activeControllersRef.current.get(key)?.abort();
-            activeControllersRef.current.delete(key);
+        if (!summaryMap[queryId]) {
+            fetchQuerySummary(queryId, filters);
         }
-        setPointCloudLoading(key, false);
+
+        // Abort existing stream for this query ID if any
+        if (activeControllersRef.current.has(queryId)) {
+            activeControllersRef.current.get(queryId)?.abort();
+            activeControllersRef.current.delete(queryId);
+        }
+        setPointCloudLoading(queryId, false);
 
         const controller = new AbortController();
-        activeControllersRef.current.set(key, controller);
+        activeControllersRef.current.set(queryId, controller);
 
         setIsLoading(true);
         setError(null);
-        setLoadingIds((prev) => new Set(prev).add(key));
+        setLoadingIds((prev) => new Set(prev).add(queryId));
 
         try {
             await loadProgressivePointCloud({
-                id: idToLoad,
-                streamKey: key,
+                id: queryId,
                 startLod,
                 endLod,
-                customQuery: queryToUse,
                 filters: filters,
                 signal: controller.signal,
                 onLodLoaded: (currentLod, newGeom) => {
                     if (controller.signal.aborted) return;
                     setLoadedGeometries((prev) => {
                         const next = new Map(prev);
-                        const oldGeom = next.get(key);
+                        const oldGeom = next.get(queryId);
                         if (oldGeom && oldGeom !== newGeom) {
                             if (!(oldGeom as any)._disposed) {
                                 (oldGeom as any)._disposed = true;
                                 oldGeom.dispose();
                             }
                         }
-                        next.set(key, newGeom);
+                        next.set(queryId, newGeom);
                         return next;
                     });
                     const count = newGeom.attributes.position ? newGeom.attributes.position.count : 0;
@@ -276,7 +247,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                     setIsLoading(false);
                 },
                 onError: (currentLod, err) => {
-                    console.warn(`Error loading LOD ${currentLod} for ${key}:`, err);
+                    console.warn(`Error loading LOD ${currentLod} for ${queryId}:`, err);
                 },
             });
         } catch (err: any) {
@@ -285,21 +256,20 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 setError(err.message || "Failed to load binary point cloud stream");
             }
         } finally {
-            if (activeControllersRef.current.get(key) === controller) {
-                activeControllersRef.current.delete(key);
+            if (activeControllersRef.current.get(queryId) === controller) {
+                activeControllersRef.current.delete(queryId);
             }
             setLoadingIds((prev) => {
                 const next = new Set(prev);
-                next.delete(key);
+                next.delete(queryId);
                 setIsLoading(next.size > 0);
                 return next;
             });
-            setPointCloudLoading(key, false);
+            setPointCloudLoading(queryId, false);
         }
-    }, [customQuery, fetchQuerySummary, summaryMap]);
+    }, [fetchQuerySummary, isStreamLoading, summaryMap]);
 
     const selectPointcloud = useCallback((id: string | null) => {
-        setSelectedId(id);
         if (id) {
             setIdentifier(id);
         }
@@ -309,25 +279,14 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         setHoveredId(id);
     }, []);
 
-    const focusPointcloud = useCallback((id: string | null) => {
-        setFocusedId(id);
-        if (id) {
-            selectPointcloud(id);
-            setFocusTrigger((prev) => prev + 1);
-        }
-    }, [selectPointcloud]);
-
     const addCustomQuery = useCallback((payload: AddCustomQueryPayload) => {
-        const { queryText, name, pointcloudId, filters } = payload;
-        const extractedMatch = queryText ? queryText.match(/pointcloud_id\s*=\s*['"]([^'"]+)['"]/i) : null;
-        const targetId = pointcloudId || (extractedMatch ? extractedMatch[1] : selectedId);
+        const { name, filters } = payload;
+        const pcIdRule = filters?.find((f) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator))?.value;
+        const targetId = pcIdRule ? String(pcIdRule) : null;
 
         setQueries((prevQueries) => {
             const existing = prevQueries.find((q) => {
-                if (targetId && (q.pointcloudId === targetId || q.filters?.some((f) => f.field === "pointcloud_id" && f.value === targetId))) {
-                    return true;
-                }
-                if (queryText && q.queryText.trim().replace(/\s+/g, " ") === queryText.trim().replace(/\s+/g, " ")) {
+                if (targetId && q.filters?.some((f) => f.field === "pointcloud_id" && f.value === targetId)) {
                     return true;
                 }
                 return false;
@@ -335,25 +294,23 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
             if (existing) return prevQueries;
 
             const now = new Date().toISOString();
-            const defaultFilters: FilterRule[] = filters && filters.length > 0
+            const defaultFilters: FilterRule[] = filters !== undefined
                 ? filters
                 : targetId
-                ? [{ id: `rule-${Date.now()}`, field: "pointcloud_id", operator: "eq", value: targetId }]
-                : [];
+                    ? [{ id: `rule-${Date.now()}`, field: "pointcloud_id", operator: "eq", value: targetId }]
+                    : [];
 
             const newQuery: CustomQuery = {
                 id: `query-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
                 name: name || `Custom Query #${prevQueries.length + 1}`,
-                queryText: queryText || (targetId ? `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = '${targetId}'` : ""),
                 filters: defaultFilters,
-                pointcloudId: targetId,
                 createdAt: now,
                 updatedAt: now,
             };
 
             return [...prevQueries, newQuery];
         });
-    }, [selectedId]);
+    }, []);
 
     const focusCameraTarget = useCallback((target: [number, number, number] | { x: number; y: number; z: number }) => {
         let x: number, y: number, z: number;
@@ -391,60 +348,30 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     }, [fetchCatalog]);
 
     const unloadPointCloud = useCallback((id: string) => {
-        const idsToUnload = new Set<string>([id]);
-        const summary = summaryMap[id];
-        if (summary?.connected_pointclouds) {
-            summary.connected_pointclouds.forEach((conn) => {
-                if (conn.id) idsToUnload.add(conn.id);
-            });
+        if (activeControllersRef.current.has(id)) {
+            activeControllersRef.current.get(id)?.abort();
+            activeControllersRef.current.delete(id);
         }
-        if (summary?.connected_camera_headers) {
-            summary.connected_camera_headers.forEach((cam) => {
-                if (cam.pointcloud_id) idsToUnload.add(cam.pointcloud_id);
-            });
-        }
+        setPointCloudLoading(id, false);
 
-        queries.forEach((q) => {
-            const match = q.queryText.match(/pointcloud_id\s*=\s*'([a-fA-F0-9-]+)'/i);
-            const pcId = q.pointcloudId || (match ? match[1] : null);
-            if (pcId && idsToUnload.has(pcId)) {
-                idsToUnload.add(q.id);
-            }
-            if (pcId && idsToUnload.has(q.id)) {
-                idsToUnload.add(pcId);
-            }
-        });
-
-        idsToUnload.forEach((targetId) => {
-            if (activeControllersRef.current.has(targetId)) {
-                activeControllersRef.current.get(targetId)?.abort();
-                activeControllersRef.current.delete(targetId);
-            }
-            setPointCloudLoading(targetId, false);
-        });
-
-        setSelectedId((prev) => (prev && idsToUnload.has(prev) ? null : prev));
-        setFocusedId((prev) => (prev && idsToUnload.has(prev) ? null : prev));
-        setHoveredId((prev) => (prev && idsToUnload.has(prev) ? null : prev));
+        setHoveredId((prev) => (prev === id ? null : prev));
 
         setLoadingIds((prev) => {
             const next = new Set(prev);
-            idsToUnload.forEach((targetId) => next.delete(targetId));
+            next.delete(id);
             return next;
         });
 
         setLoadedGeometries((prev) => {
             const next = new Map(prev);
-            idsToUnload.forEach((targetId) => {
-                const existing = next.get(targetId);
-                if (existing) {
-                    if (!(existing as any)._disposed) {
-                        (existing as any)._disposed = true;
-                        existing.dispose();
-                    }
-                    next.delete(targetId);
+            const existing = next.get(id);
+            if (existing) {
+                if (!(existing as any)._disposed) {
+                    (existing as any)._disposed = true;
+                    existing.dispose();
                 }
-            });
+                next.delete(id);
+            }
 
             if (next.size === 0) {
                 setGeometry((prevGeom) => {
@@ -458,28 +385,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
 
             return next;
         });
-    }, [summaryMap, queries]);
-
-    const toggleStreamPointCloud = useCallback(async (id: string, lodToLoad: number = 10) => {
-        if (isStreamLoaded(id)) {
-            unloadPointCloud(id);
-            return;
-        }
-
-        selectPointcloud(id);
-
-        const matchingQuery = queries.find((q) => {
-            const match = q.queryText.match(/pointcloud_id\s*=\s*'([a-fA-F0-9-]+)'/i);
-            const pcId = q.pointcloudId || (match ? match[1] : null);
-            return pcId === id;
-        });
-
-        if (matchingQuery) {
-            await startProgressiveStream(id, lodToLoad, 0, matchingQuery.queryText, matchingQuery.id, matchingQuery.filters);
-        } else {
-            await startProgressiveStream(id, lodToLoad, 0, undefined, id);
-        }
-    }, [isStreamLoaded, unloadPointCloud, selectPointcloud, queries, startProgressiveStream]);
+    }, []);
 
     return (
         <PLYPointCloudContext.Provider
@@ -516,8 +422,6 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 setHemisphereLightIntensity,
                 ambientLightIntensity,
                 setAmbientLightIntensity,
-                customQuery,
-                setCustomQuery,
                 startProgressiveStream,
                 showCameraTrajectories,
                 setShowCameraTrajectories,
@@ -531,20 +435,15 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 catalog,
                 isFetchingCatalog,
                 fetchCatalog,
-                selectedId,
                 selectPointcloud,
                 hoveredId,
                 hoverPointcloud,
-                focusedId,
-                focusTrigger,
-                focusPointcloud,
                 cameraTarget,
                 focusCameraTarget,
                 loadedGeometries,
                 loadingIds,
                 isStreamLoaded,
                 isStreamLoading,
-                toggleStreamPointCloud,
                 unloadPointCloud,
                 summaryMap,
                 setSummaryMap,
