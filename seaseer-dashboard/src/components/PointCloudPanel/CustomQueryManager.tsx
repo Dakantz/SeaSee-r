@@ -30,14 +30,14 @@ export interface CustomQuery {
  */
 export type PointCloudItem = CustomQuery;
 
-export const DEFAULT_POINTCLOUD_UUID = "e360394b-a241-49e5-bb66-97fee8bd85ef";
-
 /**
  * Generates default SQL query text for a given pointcloud UUID.
  */
 export const buildDefaultQueryText = (pointcloudId?: string | null): string => {
-  const targetId = pointcloudId && pointcloudId.trim() !== "" ? pointcloudId : DEFAULT_POINTCLOUD_UUID;
-  return `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = '${targetId}'`;
+  const targetId = pointcloudId && pointcloudId.trim() !== "" ? pointcloudId.trim() : null;
+  return targetId
+    ? `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = '${targetId}'`
+    : `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches`;
 };
 
 /**
@@ -48,10 +48,10 @@ export const createDefaultQuery = (
   pointcloudName?: string | null,
   indexHint?: number
 ): CustomQuery => {
-  const targetId = pointcloudId && pointcloudId.trim() !== "" ? pointcloudId : DEFAULT_POINTCLOUD_UUID;
+  const targetId = pointcloudId && pointcloudId.trim() !== "" ? pointcloudId.trim() : null;
   const displayName = pointcloudName && pointcloudName.trim() !== ""
     ? pointcloudName
-    : (targetId.length > 8 ? targetId.substring(0, 8) : targetId);
+    : (targetId ? (targetId.length > 8 ? targetId.substring(0, 8) : targetId) : "Point Cloud");
   const countLabel = indexHint ? ` #${indexHint}` : "";
   const now = new Date().toISOString();
 
@@ -59,19 +59,41 @@ export const createDefaultQuery = (
     id: `query-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     name: `Query for ${displayName}${countLabel}`,
     queryText: buildDefaultQueryText(targetId),
-    filters: [
-      {
-        id: `rule-${Date.now()}`,
-        field: "pointcloud_id",
-        operator: "eq",
-        value: targetId,
-      },
-    ],
+    filters: targetId
+      ? [
+          {
+            id: `rule-${Date.now()}`,
+            field: "pointcloud_id",
+            operator: "eq",
+            value: targetId,
+          },
+        ]
+      : [],
     pointcloudId: targetId,
     createdAt: now,
     updatedAt: now,
   };
 };
+
+export interface ConnectedPointCloudMetadata {
+  id: string;
+  orig_filename: string;
+  safe_filename?: string | null;
+  number_of_points: number;
+  created_at?: string;
+  pcid?: number;
+  job_id?: string | null;
+  video_metadata_id?: string | null;
+  min_x?: number | null;
+  min_y?: number | null;
+  min_z?: number | null;
+  max_x?: number | null;
+  max_y?: number | null;
+  max_z?: number | null;
+  center?: [number, number, number] | number[] | null;
+  transform_matrix?: number[];
+  [key: string]: any;
+}
 
 export interface QuerySummaryData {
   total_points: number;
@@ -86,14 +108,7 @@ export interface QuerySummaryData {
   } | null;
   center?: [number, number, number] | number[] | null;
   centerpoint?: [number, number, number] | number[] | null;
-  connected_pointclouds?: Array<{
-    id: string;
-    orig_filename: string;
-    number_of_points: number;
-    created_at?: string;
-    pcid?: number;
-    [key: string]: any;
-  }>;
+  connected_pointclouds?: ConnectedPointCloudMetadata[];
   connected_camera_headers?: Array<{
     id: string;
     pointcloud_id: string;
@@ -221,15 +236,10 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) {
             list = parsed;
-          } else {
-            list = [createDefaultQuery(selectedPointCloudId || DEFAULT_POINTCLOUD_UUID, selectedPointCloudName)];
           }
-        } else {
-          list = [createDefaultQuery(selectedPointCloudId || DEFAULT_POINTCLOUD_UUID, selectedPointCloudName)];
         }
       } catch (e) {
         console.error("Failed to load queries from localStorage:", e);
-        list = [createDefaultQuery(selectedPointCloudId || DEFAULT_POINTCLOUD_UUID, selectedPointCloudName)];
       }
     }
 
@@ -342,68 +352,7 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
     }
   }, [internalQueries, externalQueries, onQueriesChange]);
 
-  // Listen for custom queries executed elsewhere (e.g. PLYPointCloudSidebar) when un-controlled
-  useEffect(() => {
-    if (externalQueries) return; // Managed by Container
 
-    const handleAddQueryEvent = (e: Event) => {
-      const customEvent = e as CustomEvent<{
-        queryText?: string;
-        name?: string;
-        pointcloudId?: string;
-        filters?: FilterRule[];
-      }>;
-      const { queryText, name, pointcloudId, filters } = customEvent.detail || {};
-
-      const extractedMatch = queryText ? queryText.match(/pointcloud_id\s*=\s*['"]([^'"]+)['"]/i) : null;
-      const targetPcId = pointcloudId || (extractedMatch ? extractedMatch[1] : null);
-
-      const existing = queries.find((q) => {
-        if (targetPcId && (q.pointcloudId === targetPcId || q.filters?.some((f) => f.field === "pointcloud_id" && f.value === targetPcId))) {
-          return true;
-        }
-        if (queryText && normalizeSql(q.queryText) === normalizeSql(queryText)) {
-          return true;
-        }
-        return false;
-      });
-
-      if (existing) {
-        setActiveId(existing.id);
-        handleRun(existing);
-        handleFocusQuery(existing);
-        return;
-      }
-
-      const now = new Date().toISOString();
-      const defaultFilters: FilterRule[] = filters && filters.length > 0
-        ? filters
-        : targetPcId
-        ? [{ id: `rule-${Date.now()}`, field: "pointcloud_id", operator: "eq", value: targetPcId }]
-        : [];
-
-      const newQuery: CustomQuery = {
-        id: `query-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        name: name || `Custom Query #${queries.length + 1}`,
-        queryText: queryText || buildDefaultQueryText(targetPcId),
-        filters: defaultFilters,
-        pointcloudId: targetPcId,
-        createdAt: now,
-        updatedAt: now,
-      };
-      const updatedQueries = [...queries, newQuery];
-      setInternalQueries(updatedQueries);
-      setActiveId(newQuery.id);
-      onQueriesChange?.(updatedQueries);
-      handleRun(newQuery);
-      handleFocusQuery(newQuery);
-    };
-
-    window.addEventListener("add_custom_query", handleAddQueryEvent);
-    return () => {
-      window.removeEventListener("add_custom_query", handleAddQueryEvent);
-    };
-  }, [queries, externalQueries, onQueriesChange]);
 
   // 3. Default Query Generation on prop change
   useEffect(() => {
@@ -434,7 +383,7 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
       setActiveId(newQuery.id);
       
       onQueriesChange?.(updatedQueries);
-      onAddQuery?.(selectedPointCloudId);
+      onAddQuery?.(selectedPointCloudId ?? undefined);
       handleRun(newQuery);
       handleFocusQuery(newQuery);
     }
@@ -442,7 +391,7 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
 
   // Handler to manually add a new query
   const handleAddNewQuery = (targetPcId?: string) => {
-    const pcId = targetPcId || selectedPointCloudId || DEFAULT_POINTCLOUD_UUID;
+    const pcId = targetPcId || selectedPointCloudId || undefined;
     const candidateText = buildDefaultQueryText(pcId);
     const normCandidate = normalizeSql(candidateText);
     const existing = queries.find((q) => normalizeSql(q.queryText) === normCandidate);
@@ -535,11 +484,6 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
     const center = getBoundingBoxCenter(summary);
     if (center) {
       onFocusCenter?.(center);
-      window.dispatchEvent(
-        new CustomEvent("focus_camera_target", {
-          detail: { x: center[0], y: center[1], z: center[2] },
-        })
-      );
     } else {
       if (onMoveCamera && selectedPointCloudId) {
         onMoveCamera(selectedPointCloudId);
@@ -548,63 +492,17 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        flex: 1,
-        height: "100%",
-        minHeight: 0,
-        gap: "var(--spacing-sm, 12px)",
-        background: "var(--color-bg-card, #1e1e24)",
-        border: "1px solid var(--color-border-strong, #2a2b36)",
-        borderRadius: "var(--radius-lg, 8px)",
-        padding: "var(--spacing-md, 16px)",
-        color: "var(--color-text-primary, #f0f0f5)",
-        fontFamily: "var(--font-sans, system-ui, sans-serif)",
-        fontSize: "var(--font-size-sm, 14px)",
-        boxSizing: "border-box",
-      }}
-    >
+    <div className="custom-query-manager">
       {/* Header & Catalog Summary */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          paddingBottom: "var(--spacing-xs, 8px)",
-          borderBottom: "1px solid var(--color-border-subtle, #2d2e3d)",
-        }}
-      >
-        <span
-          style={{
-            fontWeight: "var(--font-weight-semibold, 600)",
-            fontSize: "var(--font-size-xs, 12px)",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-            color: "var(--color-accent-text, #93c5fd)",
-          }}
-        >
+      <div className="custom-query-manager__header">
+        <span className="custom-query-manager__title">
           Custom Queries ({queries.length})
         </span>
 
         <button
           type="button"
           onClick={() => handleAddNewQuery()}
-          style={{
-            background: "var(--color-bg-button, #2563eb)",
-            border: "none",
-            color: "#ffffff",
-            borderRadius: "var(--radius-sm, 4px)",
-            padding: "4px 10px",
-            fontSize: "var(--font-size-xs, 12px)",
-            fontWeight: 500,
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-            transition: "background 0.15s ease",
-          }}
+          className="custom-query-manager__add-btn"
           title="Add a new custom SQL query"
         >
           + New Query
@@ -613,29 +511,11 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
 
       {/* Query Cards List */}
       {queries.length === 0 ? (
-        <div
-          style={{
-            textAlign: "center",
-            padding: "var(--spacing-lg, 24px) var(--spacing-sm, 12px)",
-            color: "var(--color-text-muted, #9ca3af)",
-            fontSize: "var(--font-size-xs, 12px)",
-            fontStyle: "italic",
-          }}
-        >
+        <div className="custom-query-manager__empty">
           No custom queries available. Click "+ New Query" to add one.
         </div>
       ) : (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "var(--spacing-sm, 12px)",
-            flex: 1,
-            minHeight: 0,
-            overflowY: "auto",
-            paddingRight: "2px",
-          }}
-        >
+        <div className="custom-query-manager__list">
           {queries.map((q) => {
             const isActive = q.id === activeQueryId;
             const extractedMatch = q.queryText.match(/pointcloud_id\s*=\s*['"]([^'"]+)['"]/i);

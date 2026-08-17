@@ -8,7 +8,7 @@ import { TrajectoryRenderer } from "../RovRenderer/trajectoryRenderer";
 export { CustomQueryManager, PointCloudList } from "./CustomQueryManager";
 export { CustomQueryManagerContainer, PointCloudListContainer } from "./CustomQueryManagerContainer";
 export type { CustomQuery, CustomQueryManagerProps, PointCloudItem, PointCloudListProps } from "./CustomQueryManager";
-import { getBoundingBoxCenter, type CustomQuery, type QuerySummaryData } from "./CustomQueryManager";
+import { getBoundingBoxCenter, type CustomQuery } from "./CustomQueryManager";
 
 
 // @ts-expect-error - geo-three submodule
@@ -380,27 +380,6 @@ function getItemCenter(item: PointCloudMetadataResponse): [number, number, numbe
     return [TARGET_X, 0, TARGET_Z];
 }
 
-function getQueryCenter(
-    query: CustomQuery,
-    summaryMap: Record<string, QuerySummaryData>,
-    catalog: PointCloudMetadataResponse[]
-): [number, number, number] {
-    const summary = summaryMap[query.id];
-    const center = getBoundingBoxCenter(summary);
-    if (center) {
-        return center;
-    }
-    const match = query.queryText.match(/pointcloud_id\s*=\s*['"]([^'"]+)['"]/i);
-    if (match) {
-        const pcId = match[1];
-        const catalogItem = catalog.find((c) => c.id === pcId);
-        if (catalogItem) {
-            return getItemCenter(catalogItem);
-        }
-    }
-    return [TARGET_X, 0, TARGET_Z];
-}
-
 function PointCloudCenterMarkers() {
     const {
         queries,
@@ -410,7 +389,6 @@ function PointCloudCenterMarkers() {
         hoveredId,
         selectPointcloud,
         hoverPointcloud,
-        fetchQuerySummary,
         focusCameraTarget,
         startProgressiveStream,
         setCustomQuery,
@@ -431,19 +409,11 @@ function PointCloudCenterMarkers() {
         }
     }, [queries]);
 
-    useEffect(() => {
-        queries.forEach((q) => {
-            if (!summaryMap[q.id]) {
-                fetchQuerySummary(q.id, q.queryText);
-            }
-        });
-    }, [queries, summaryMap, fetchQuerySummary]);
-
     useFrame(({ camera }) => {
         if (!meshRef.current || queries.length === 0) return;
 
         queries.forEach((query, index) => {
-            const [cx, cy, cz] = getQueryCenter(query, summaryMap, catalog);
+            const [cx, cy, cz] = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, 0, TARGET_Z];
             centerVec.set(cx, cy, cz).applyEuler(rotEuler);
             const dist = camera.position.distanceTo(centerVec);
 
@@ -484,7 +454,7 @@ function PointCloudCenterMarkers() {
             (catalog.length > 0 ? catalog[0].id : null);
 
         if (targetId && targetId.trim() && startProgressiveStream) {
-            startProgressiveStream(targetId, 10, 0, query.queryText, query.id);
+            startProgressiveStream(targetId, 10, 0, query.queryText, query.id, query.filters);
         }
     };
 
@@ -505,7 +475,7 @@ function PointCloudCenterMarkers() {
                 if (e.instanceId !== undefined && queries[e.instanceId]) {
                     const query = queries[e.instanceId];
                     handleLoadQuery(query);
-                    const center = getQueryCenter(query, summaryMap, catalog);
+                    const center = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, 0, TARGET_Z];
                     focusCameraTarget(center);
                 }
             }}
@@ -530,7 +500,7 @@ function PointCloudCenterMarkers() {
 
 function CameraFocusController() {
     const { camera, gl } = useThree();
-    const { focusedId, focusTrigger, catalog } = usePLYPointCloudContext();
+    const { focusedId, focusTrigger, catalog, cameraTarget } = usePLYPointCloudContext();
 
     const animState = useRef<{
         startTime: number;
@@ -565,27 +535,15 @@ function CameraFocusController() {
     }, [focusedId, focusTrigger, catalog, startFocusAnimation]);
 
     useEffect(() => {
-        const handleFocusTarget = (e: Event) => {
-            const customEvent = e as CustomEvent<{ x: number; y: number; z: number } | [number, number, number]>;
-            const detail = customEvent.detail;
-            if (!detail) return;
-            let x: number, y: number, z: number;
-            if (Array.isArray(detail)) {
-                [x, y, z] = detail;
-            } else {
-                ({ x, y, z } = detail);
-            }
-            if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
-                const targetCenter = new THREE.Vector3(x, y, z).applyEuler(
-                    new THREE.Euler(-Math.PI / 2, 0, 0)
-                );
-                startFocusAnimation(targetCenter);
-            }
-        };
-
-        window.addEventListener("focus_camera_target", handleFocusTarget);
-        return () => window.removeEventListener("focus_camera_target", handleFocusTarget);
-    }, [startFocusAnimation]);
+        if (!cameraTarget) return;
+        const { x, y, z } = cameraTarget;
+        if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
+            const targetCenter = new THREE.Vector3(x, y, z).applyEuler(
+                new THREE.Euler(-Math.PI / 2, 0, 0)
+            );
+            startFocusAnimation(targetCenter);
+        }
+    }, [cameraTarget, startFocusAnimation]);
 
     useEffect(() => {
         const domElement = gl.domElement;

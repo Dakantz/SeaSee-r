@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { buildFilterQueryParams, type FilterRule } from "../filterUtils";
 
 /** Set tracking pointcloud IDs currently in the process of being loaded */
 const loadingPointClouds = new Set<string>();
@@ -37,6 +38,8 @@ export interface ProgressiveLoadOptions {
     endLod?: number;
     /** Optional custom SQL selection query */
     customQuery?: string;
+    /** Structured filter rules */
+    filters?: FilterRule[];
     /** AbortSignal to cancel progressive loading mid-stream */
     signal?: AbortSignal;
     /** Callback fired when an LOD successfully loads and is ready for rendering */
@@ -45,7 +48,7 @@ export interface ProgressiveLoadOptions {
     onError?: (lod: number, error: unknown) => void;
 }
 
-const DEFAULT_QUERY_TEMPLATE = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'";
+const DEFAULT_QUERY_TEMPLATE = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = ':id'";
 
 /**
  * Prepares the SQL query string for a specific LOD level and pointcloud ID.
@@ -72,23 +75,30 @@ export async function fetchBinaryGeometry(
     idToLoad: string,
     lodToLoad: number = 0,
     signal?: AbortSignal,
-    customQuery?: string
+    customQuery?: string,
+    filters?: FilterRule[]
 ): Promise<THREE.BufferGeometry> {
     const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
     const cleanId = idToLoad.trim().split("?")[0];
     
-    // Extract pointcloud_id from cleanId or customQuery regex match
-    let pcId = cleanId;
-    if (customQuery) {
-        const match = customQuery.match(/pointcloud_id\s*=\s*'([a-fA-F0-9-]+)'/i);
-        if (match) pcId = match[1];
+    // Convert structured filters into URL query parameters
+    const searchParams = buildFilterQueryParams({ lod: lodToLoad, filters });
+
+    const hasPcId = searchParams.has("pointcloud_id");
+
+    // Backward compatibility: Extract pointcloud_id from cleanId or customQuery regex match if missing from filters
+    if (!hasPcId) {
+        let pcId = cleanId;
+        if (customQuery) {
+            const match = customQuery.match(/pointcloud_id\s*=\s*'([a-fA-F0-9-]+)'/i);
+            if (match) pcId = match[1];
+        }
+        if (pcId && pcId.length >= 32) {
+            searchParams.set("pointcloud_id", pcId);
+        }
     }
 
-    let queryParams = `lod=${lodToLoad}`;
-    if (pcId && pcId.length >= 32) {
-        queryParams += `&pointcloud_id=${encodeURIComponent(pcId)}`;
-    }
-    const url = `${API_BASE_URL}/pointclouds/stream-binary?${queryParams}`;
+    const url = `${API_BASE_URL}/pointclouds/stream-binary?${searchParams.toString()}`;
 
     const res = await fetch(url, { signal });
 
@@ -152,6 +162,7 @@ export async function loadProgressivePointCloud(
         startLod = 10,
         endLod = 0,
         customQuery,
+        filters,
         signal,
         onLodLoaded,
         onError,
@@ -175,7 +186,7 @@ export async function loadProgressivePointCloud(
             }
 
             try {
-                const geom = await fetchBinaryGeometry(id, currentLod, signal, customQuery);
+                const geom = await fetchBinaryGeometry(id, currentLod, signal, customQuery, filters);
 
                 if (signal?.aborted) {
                     geom.dispose();
@@ -202,4 +213,5 @@ export async function loadProgressivePointCloud(
 
     return currentBestGeometry;
 }
+
 

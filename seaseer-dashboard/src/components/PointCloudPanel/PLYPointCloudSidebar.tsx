@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import type { PointCloudMetadataResponse } from "../../client";
 import { usePLYPointCloudContext, type MapProviderChoice, type HeightProviderChoice } from "./PLYPointCloudContext";
 
-
-
 export interface PLYPointCloudSidebarProps {
     renderMode?: "points" | "mesh";
     setRenderMode?: (mode: "points" | "mesh") => void;
@@ -97,39 +95,16 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
         fetchDatasets();
     }, []);
 
-
     return (
-        <div
-            style={{
-                background: "var(--color-bg-card)",
-                border: "1px solid var(--color-border-strong)",
-                borderRadius: "var(--radius-lg)",
-                padding: "var(--spacing-md)",
-                color: "var(--color-text-primary)",
-                fontFamily: "var(--font-sans)",
-                fontSize: "var(--font-size-sm)",
-            }}
-        >
-            <div
-                style={{
-                    fontWeight: "var(--font-weight-semibold)",
-                    fontSize: "var(--font-size-sm)",
-                    marginBottom: "var(--spacing-sm)",
-                    color: "var(--color-accent-text)",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "var(--spacing-xs)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                }}
-            >
+        <div className="pointcloud-sidebar">
+            <div className="pointcloud-sidebar__header">
                 DebugControls
             </div>
 
             {/* Multi-PointCloud Catalog List */}
-            <div style={{ marginTop: "var(--spacing-3xs)", display: "flex", flexDirection: "column", gap: "var(--spacing-xs)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <label style={{ fontSize: "var(--font-size-xs)", fontWeight: "var(--font-weight-semibold)", color: "var(--color-accent-text)" }}>
+            <div className="pointcloud-sidebar__section">
+                <div className="pointcloud-sidebar__section-header">
+                    <label className="pointcloud-sidebar__section-label">
                         PointCloud Catalog ({catalog.length})
                     </label>
                 </div>
@@ -139,33 +114,12 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search point clouds..."
-                    style={{
-                        background: "var(--color-bg-subtle)",
-                        border: "1px solid var(--color-border-strong)",
-                        color: "var(--color-text-secondary)",
-                        padding: "var(--spacing-2xs) var(--spacing-xs)",
-                        borderRadius: "var(--radius-sm)",
-                        fontSize: "var(--font-size-xs)",
-                        width: "100%",
-                        boxSizing: "border-box",
-                    }}
+                    className="pointcloud-sidebar__search-input"
                 />
 
-                <div
-                    style={{
-                        maxHeight: "220px",
-                        overflowY: "auto",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "var(--spacing-3xs)",
-                        background: "var(--color-bg-subtle)",
-                        border: "1px solid var(--color-border-subtle)",
-                        borderRadius: "var(--radius-sm)",
-                        padding: "var(--spacing-3xs)",
-                    }}
-                >
+                <div className="pointcloud-sidebar__catalog-list">
                     {catalog.length === 0 ? (
-                        <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", padding: "var(--spacing-xs)", textAlign: "center" }}>
+                        <div className="pointcloud-sidebar__empty">
                             No point clouds available.
                         </div>
                     ) : (
@@ -179,8 +133,8 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                 const name = item.orig_filename || item.safe_filename || item.id;
                                 const isSelected = item.id === selectedId;
                                 const isHovered = item.id === hoveredId;
-                                const isStreamed = loadedGeometries.has(item.id);
-                                const isLoadingStream = loadingIds.has(item.id);
+                                const isStreamed = contextState?.isStreamLoaded ? contextState.isStreamLoaded(item.id) : loadedGeometries.has(item.id);
+                                const isLoadingStream = contextState?.isStreamLoading ? contextState.isStreamLoading(item.id) : loadingIds.has(item.id);
 
                                 return (
                                     <div
@@ -188,50 +142,34 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                         onClick={() => {
                                             const queryText = `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = '${item.id}'`;
                                             const queryName = name ? `Query for ${name}` : undefined;
-                                            window.dispatchEvent(
-                                                new CustomEvent("add_custom_query", {
-                                                    detail: {
-                                                        queryText,
-                                                        name: queryName,
-                                                        pointcloudId: item.id,
-                                                        filters: [
-                                                            {
-                                                                id: `rule-${Date.now()}`,
-                                                                field: "pointcloud_id",
-                                                                operator: "eq",
-                                                                value: item.id,
-                                                            },
-                                                        ],
-                                                    },
-                                                })
-                                            );
+                                            if (contextState?.addCustomQuery) {
+                                                contextState.addCustomQuery({
+                                                    queryText,
+                                                    name: queryName,
+                                                    pointcloudId: item.id,
+                                                    filters: [
+                                                        {
+                                                            id: `rule-${Date.now()}`,
+                                                            field: "pointcloud_id",
+                                                            operator: "eq",
+                                                            value: item.id,
+                                                        },
+                                                    ],
+                                                });
+                                            }
                                         }}
-                                        style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "space-between",
-                                            padding: "var(--spacing-2xs) var(--spacing-xs)",
-                                            borderRadius: "var(--radius-xs)",
-                                            background: isSelected
-                                                ? "rgba(255, 51, 68, 0.2)"
-                                                : isHovered
-                                                ? "rgba(255, 170, 0, 0.15)"
-                                                : "transparent",
-                                            borderLeft: isSelected ? "3px solid #ff3344" : isHovered ? "3px solid #ffaa00" : "3px solid transparent",
-                                            cursor: "pointer",
-                                            transition: "all 0.15s ease",
-                                        }}
+                                        className={`pointcloud-sidebar__item ${isSelected ? "pointcloud-sidebar__item--selected" : isHovered ? "pointcloud-sidebar__item--hovered" : ""}`}
                                     >
-                                        <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", marginRight: "var(--spacing-xs)", flex: 1 }}>
-                                            <span style={{ fontSize: "var(--font-size-xs)", fontWeight: "var(--font-weight-medium)", color: "var(--color-text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                        <div className="pointcloud-sidebar__item-info">
+                                            <span className="pointcloud-sidebar__item-title">
                                                 {name}
                                             </span>
-                                            <span style={{ fontSize: "10px", color: "var(--color-text-muted)" }}>
+                                            <span className="pointcloud-sidebar__item-count">
                                                 {item.number_of_points?.toLocaleString() ?? 0} pts
                                             </span>
                                         </div>
 
-                                        <div style={{ display: "flex", gap: "var(--spacing-3xs)", flexShrink: 0 }}>
+                                        <div className="pointcloud-sidebar__item-actions">
                                             <button
                                                 type="button"
                                                 title="Focus 3D Camera"
@@ -239,15 +177,7 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                                     e.stopPropagation();
                                                     focusPointcloud(item.id);
                                                 }}
-                                                style={{
-                                                    background: "rgba(0, 229, 255, 0.15)",
-                                                    border: "1px solid rgba(0, 229, 255, 0.4)",
-                                                    color: "#00e5ff",
-                                                    borderRadius: "var(--radius-xs)",
-                                                    padding: "2px 6px",
-                                                    fontSize: "11px",
-                                                    cursor: "pointer",
-                                                }}
+                                                className="pointcloud-sidebar__btn--focus"
                                             >
                                                 🎯 Focus
                                             </button>
@@ -259,15 +189,7 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                                     toggleStreamPointCloud(item.id, lod);
                                                 }}
                                                 disabled={isLoadingStream}
-                                                style={{
-                                                    background: isStreamed ? "rgba(0, 230, 118, 0.2)" : "var(--color-bg-card)",
-                                                    border: isStreamed ? "1px solid #00e676" : "1px solid var(--color-border-strong)",
-                                                    color: isStreamed ? "#00e676" : "var(--color-text-muted)",
-                                                    borderRadius: "var(--radius-xs)",
-                                                    padding: "2px 6px",
-                                                    fontSize: "11px",
-                                                    cursor: "pointer",
-                                                }}
+                                                className={`pointcloud-sidebar__btn--stream ${isStreamed ? "pointcloud-sidebar__btn--stream-loaded" : ""}`}
                                             >
                                                 {isLoadingStream ? "⏳" : isStreamed ? "👁️ Loaded" : "⚡ Stream"}
                                             </button>
@@ -279,72 +201,28 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                 </div>
             </div>
 
-
             {/* Display Settings */}
-            <div
-                style={{
-                    marginTop: "var(--spacing-md)",
-                    paddingTop: "var(--spacing-xs)",
-                    borderTop: "1px solid var(--color-border-subtle)",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "var(--spacing-xs)",
-                }}
-            >
-                <div
-                    style={{
-                        fontWeight: "var(--font-weight-semibold)",
-                        fontSize: "var(--font-size-2xs)",
-                        color: "var(--color-text-muted)",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                    }}
-                >
+            <div className="pointcloud-sidebar__display-settings">
+                <div className="pointcloud-sidebar__sub-title">
                     Display Settings
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: "var(--spacing-xs)" }}>
-                    <label style={{ flex: 1, fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                <div className="pointcloud-sidebar__control-row">
+                    <label className="pointcloud-sidebar__label">
                         Render Mode:
                     </label>
-                    <div
-                        style={{
-                            display: "flex",
-                            gap: "var(--spacing-3xs)",
-                            background: "var(--color-bg-subtle)",
-                            padding: "var(--spacing-3xs)",
-                            borderRadius: "var(--radius-sm)",
-                        }}
-                    >
+                    <div className="pointcloud-sidebar__button-group">
                         <button
                             type="button"
                             onClick={() => setRenderMode("points")}
-                            style={{
-                                padding: "var(--spacing-3xs) var(--spacing-xs)",
-                                background: renderMode === "points" ? "var(--color-accent)" : "transparent",
-                                color: renderMode === "points" ? "var(--color-text-contrast)" : "var(--color-text-muted)",
-                                border: "none",
-                                borderRadius: "var(--radius-xs)",
-                                cursor: "pointer",
-                                fontSize: "var(--font-size-xs)",
-                                fontWeight: "var(--font-weight-medium)",
-                            }}
+                            className={`pointcloud-sidebar__mode-btn ${renderMode === "points" ? "pointcloud-sidebar__mode-btn--active" : ""}`}
                         >
                             Points
                         </button>
                         <button
                             type="button"
                             onClick={() => setRenderMode("mesh")}
-                            style={{
-                                padding: "var(--spacing-3xs) var(--spacing-xs)",
-                                background: renderMode === "mesh" ? "var(--color-accent)" : "transparent",
-                                color: renderMode === "mesh" ? "var(--color-text-contrast)" : "var(--color-text-muted)",
-                                border: "none",
-                                borderRadius: "var(--radius-xs)",
-                                cursor: "pointer",
-                                fontSize: "var(--font-size-xs)",
-                                fontWeight: "var(--font-weight-medium)",
-                            }}
+                            className={`pointcloud-sidebar__mode-btn ${renderMode === "mesh" ? "pointcloud-sidebar__mode-btn--active" : ""}`}
                         >
                             Mesh
                         </button>
@@ -352,20 +230,20 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                 </div>
 
                 {renderMode === "mesh" ? (
-                    <label style={{ display: "flex", alignItems: "center", gap: "var(--spacing-xs)", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)", cursor: "pointer" }}>
+                    <label className="pointcloud-sidebar__checkbox-label">
                         <input
                             type="checkbox"
                             checked={wireframe}
                             onChange={(e) => setWireframe(e.target.checked)}
-                            style={{ cursor: "pointer" }}
+                            className="pointcloud-sidebar__checkbox"
                         />
                         Wireframe Overlay
                     </label>
                 ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                    <div className="pointcloud-sidebar__slider-group">
+                        <div className="pointcloud-sidebar__slider-header">
                             <span>Point Size:</span>
-                            <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--font-size-2xs)" }}>{pointSize.toFixed(2)}</span>
+                            <span className="pointcloud-sidebar__mono-val">{pointSize.toFixed(2)}</span>
                         </div>
                         <input
                             type="range"
@@ -374,112 +252,85 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                             step="0.01"
                             value={pointSize}
                             onChange={(e) => setPointSize(parseFloat(e.target.value))}
-                            style={{ width: "100%", cursor: "pointer" }}
+                            className="pointcloud-sidebar__slider"
                         />
                     </div>
                 )}
 
                 {/* Geo-Three Heightmap Controls */}
-                <div style={{ marginTop: "var(--spacing-xs)", paddingTop: "var(--spacing-xs)", borderTop: "1px dashed var(--color-border-subtle)", display: "flex", flexDirection: "column", gap: "var(--spacing-xs)" }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: "var(--spacing-xs)", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)", cursor: "pointer", fontWeight: "var(--font-weight-medium)" }}>
+                <div className="pointcloud-sidebar__dashed-divider">
+                    <label className="pointcloud-sidebar__checkbox-label pointcloud-sidebar__checkbox-label--medium">
                         <input
                             type="checkbox"
                             checked={showHeightmap}
                             onChange={(e) => setShowHeightmap(e.target.checked)}
-                            style={{ cursor: "pointer" }}
+                            className="pointcloud-sidebar__checkbox"
                         />
                         Geo-Three Heightmap Terrain
                     </label>
 
                     {showHeightmap && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-xs)", paddingLeft: "var(--spacing-xs)" }}>
+                        <div className="pointcloud-sidebar__sub-group">
                             {/* Map Provider Select */}
-                            <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                                <label style={{ fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)" }}>Map Imagery Provider:</label>
+                            <div className="pointcloud-sidebar__slider-group">
+                                <label className="pointcloud-sidebar__sub-title">Map Imagery Provider:</label>
                                 <select
                                     value={heightmapMapProvider}
                                     onChange={(e) => setHeightmapMapProvider(e.target.value as any)}
-                                    style={{
-                                        background: "var(--color-bg-subtle)",
-                                        border: "1px solid var(--color-border-strong)",
-                                        color: "var(--color-text-secondary)",
-                                        padding: "var(--spacing-3xs) var(--spacing-xs)",
-                                        borderRadius: "var(--radius-xs)",
-                                        fontSize: "var(--font-size-xs)",
-                                        width: "100%",
-                                        cursor: "pointer",
-                                    }}
+                                    className="pointcloud-sidebar__select"
                                 >
-                                    <option value="OpenStreetMaps" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>OpenStreetMap</option>
-                                    <option value="Bathymetry" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>SeaSee Bathymetry</option>
-                                    <option value="Emodnet" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>EMODnet Bathymetry</option>
-                                    <option value="Debug" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Debug Grid</option>
-                                    <option value="MapTilerBasic" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Vector Map Tiler Basic</option>
-                                    <option value="MapTilerOutdoor" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Vector Map Tiler Outdoor</option>
-                                    <option value="MapTilerSatellite" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Satellite Maps Tiler</option>
-                                    <option value="Bing" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Bing Maps</option>
+                                    <option value="OpenStreetMaps" className="pointcloud-sidebar__select-option">OpenStreetMap</option>
+                                    <option value="Bathymetry" className="pointcloud-sidebar__select-option">SeaSee Bathymetry</option>
+                                    <option value="Emodnet" className="pointcloud-sidebar__select-option">EMODnet Bathymetry</option>
+                                    <option value="Debug" className="pointcloud-sidebar__select-option">Debug Grid</option>
+                                    <option value="MapTilerBasic" className="pointcloud-sidebar__select-option">Vector Map Tiler Basic</option>
+                                    <option value="MapTilerOutdoor" className="pointcloud-sidebar__select-option">Vector Map Tiler Outdoor</option>
+                                    <option value="MapTilerSatellite" className="pointcloud-sidebar__select-option">Satellite Maps Tiler</option>
+                                    <option value="Bing" className="pointcloud-sidebar__select-option">Bing Maps</option>
                                 </select>
                             </div>
 
                             {/* Height Provider Select */}
-                            <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                                <label style={{ fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)" }}>Height Data Provider:</label>
+                            <div className="pointcloud-sidebar__slider-group">
+                                <label className="pointcloud-sidebar__sub-title">Height Data Provider:</label>
                                 <select
                                     value={heightmapHeightProvider}
                                     onChange={(e) => setHeightmapHeightProvider(e.target.value as any)}
-                                    style={{
-                                        background: "var(--color-bg-subtle)",
-                                        border: "1px solid var(--color-border-strong)",
-                                        color: "var(--color-text-secondary)",
-                                        padding: "var(--spacing-3xs) var(--spacing-xs)",
-                                        borderRadius: "var(--radius-xs)",
-                                        fontSize: "var(--font-size-xs)",
-                                        width: "100%",
-                                        cursor: "pointer",
-                                    }}
+                                    className="pointcloud-sidebar__select"
                                 >
-                                    <option value="Bathymetry" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>SeaSeer Bathymetry</option>
-                                    <option value="Emodnet" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>EMODnet Bathymetry</option>
-                                    <option value="None" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>None (Flat Surface)</option>
-                                    <option value="Debug" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Height Debug Grid</option>
-                                    <option value="MapTiler" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Height Map Tiler</option>
+                                    <option value="Bathymetry" className="pointcloud-sidebar__select-option">SeaSeer Bathymetry</option>
+                                    <option value="Emodnet" className="pointcloud-sidebar__select-option">EMODnet Bathymetry</option>
+                                    <option value="None" className="pointcloud-sidebar__select-option">None (Flat Surface)</option>
+                                    <option value="Debug" className="pointcloud-sidebar__select-option">Height Debug Grid</option>
+                                    <option value="MapTiler" className="pointcloud-sidebar__select-option">Height Map Tiler</option>
                                 </select>
                             </div>
 
-                            <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                                <label style={{ fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)" }}>Heightmap Mode:</label>
+                            <div className="pointcloud-sidebar__slider-group">
+                                <label className="pointcloud-sidebar__sub-title">Heightmap Mode:</label>
                                 <select
                                     value={heightmapMode}
                                     onChange={(e) => setHeightmapMode(e.target.value as any)}
-                                    style={{
-                                        background: "var(--color-bg-subtle)",
-                                        border: "1px solid var(--color-border-strong)",
-                                        color: "var(--color-text-secondary)",
-                                        padding: "var(--spacing-3xs) var(--spacing-xs)",
-                                        borderRadius: "var(--radius-xs)",
-                                        fontSize: "var(--font-size-xs)",
-                                        width: "100%",
-                                        cursor: "pointer",
-                                    }}
+                                    className="pointcloud-sidebar__select"
                                 >
-                                    <option value="HEIGHT" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>CPU Height (HeightNode)</option>
-                                    <option value="HEIGHT_SHADER" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>GPU Shader Height</option>
-                                    <option value="MARTINI" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Martini Mesh</option>
-                                    <option value="PLANAR" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Planar (2D Map)</option>
+                                    <option value="HEIGHT" className="pointcloud-sidebar__select-option">CPU Height (HeightNode)</option>
+                                    <option value="HEIGHT_SHADER" className="pointcloud-sidebar__select-option">GPU Shader Height</option>
+                                    <option value="MARTINI" className="pointcloud-sidebar__select-option">Martini Mesh</option>
+                                    <option value="PLANAR" className="pointcloud-sidebar__select-option">Planar (2D Map)</option>
                                 </select>
                             </div>
 
                             {/* Lighting Intensity Controls */}
-                            <div style={{ marginTop: "var(--spacing-xs)", paddingTop: "var(--spacing-xs)", borderTop: "1px dashed var(--color-border-subtle)", display: "flex", flexDirection: "column", gap: "var(--spacing-xs)" }}>
-                                <div style={{ fontWeight: "var(--font-weight-semibold)", fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                            <div className="pointcloud-sidebar__dashed-divider">
+                                <div className="pointcloud-sidebar__sub-title">
                                     Lighting Intensity Controls
                                 </div>
 
                                 {/* Key Sun Light (NW) */}
-                                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                                <div className="pointcloud-sidebar__slider-group">
+                                    <div className="pointcloud-sidebar__slider-header">
                                         <span>Key Sun Light (NW):</span>
-                                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--font-size-2xs)" }}>{keyLightIntensity.toFixed(1)}</span>
+                                        <span className="pointcloud-sidebar__mono-val">{keyLightIntensity.toFixed(1)}</span>
                                     </div>
                                     <input
                                         type="range"
@@ -488,15 +339,15 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                         step="0.1"
                                         value={keyLightIntensity}
                                         onChange={(e) => setKeyLightIntensity(parseFloat(e.target.value))}
-                                        style={{ width: "100%", cursor: "pointer" }}
+                                        className="pointcloud-sidebar__slider"
                                     />
                                 </div>
 
                                 {/* Fill Light (SE) */}
-                                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                                <div className="pointcloud-sidebar__slider-group">
+                                    <div className="pointcloud-sidebar__slider-header">
                                         <span>Fill Light (SE):</span>
-                                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--font-size-2xs)" }}>{fillLightIntensity.toFixed(1)}</span>
+                                        <span className="pointcloud-sidebar__mono-val">{fillLightIntensity.toFixed(1)}</span>
                                     </div>
                                     <input
                                         type="range"
@@ -505,15 +356,15 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                         step="0.1"
                                         value={fillLightIntensity}
                                         onChange={(e) => setFillLightIntensity(parseFloat(e.target.value))}
-                                        style={{ width: "100%", cursor: "pointer" }}
+                                        className="pointcloud-sidebar__slider"
                                     />
                                 </div>
 
                                 {/* Hemisphere Sky/Ground Light */}
-                                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                                <div className="pointcloud-sidebar__slider-group">
+                                    <div className="pointcloud-sidebar__slider-header">
                                         <span>Hemisphere Light:</span>
-                                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--font-size-2xs)" }}>{hemisphereLightIntensity.toFixed(1)}</span>
+                                        <span className="pointcloud-sidebar__mono-val">{hemisphereLightIntensity.toFixed(1)}</span>
                                     </div>
                                     <input
                                         type="range"
@@ -522,15 +373,15 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                         step="0.1"
                                         value={hemisphereLightIntensity}
                                         onChange={(e) => setHemisphereLightIntensity(parseFloat(e.target.value))}
-                                        style={{ width: "100%", cursor: "pointer" }}
+                                        className="pointcloud-sidebar__slider"
                                     />
                                 </div>
 
                                 {/* Ambient Base Light */}
-                                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                                <div className="pointcloud-sidebar__slider-group">
+                                    <div className="pointcloud-sidebar__slider-header">
                                         <span>Ambient Light:</span>
-                                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--font-size-2xs)" }}>{ambientLightIntensity.toFixed(1)}</span>
+                                        <span className="pointcloud-sidebar__mono-val">{ambientLightIntensity.toFixed(1)}</span>
                                     </div>
                                     <input
                                         type="range"
@@ -539,38 +390,27 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                         step="0.1"
                                         value={ambientLightIntensity}
                                         onChange={(e) => setAmbientLightIntensity(parseFloat(e.target.value))}
-                                        style={{ width: "100%", cursor: "pointer" }}
+                                        className="pointcloud-sidebar__slider"
                                     />
                                 </div>
                             </div>
                         </div>
                     )}
                 </div>
-
-
             </div>
 
             {/* Status / Errors / Stats */}
-            <div
-                style={{
-                    marginTop: "var(--spacing-sm)",
-                    paddingTop: "var(--spacing-xs)",
-                    borderTop: "1px solid var(--color-border-subtle)",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                }}
-            >
+            <div className="pointcloud-sidebar__status-bar">
                 {isLoading ? (
-                    <span style={{ color: "var(--color-warning)", fontStyle: "italic", fontSize: "var(--font-size-xs)" }}>Loading...</span>
+                    <span className="pointcloud-sidebar__status--loading">Loading...</span>
                 ) : error ? (
-                    <span style={{ color: "var(--color-danger-text)", fontSize: "var(--font-size-2xs)" }}>{error}</span>
+                    <span className="pointcloud-sidebar__status--error">{error}</span>
                 ) : pointCount !== null ? (
-                    <span style={{ color: "var(--color-success-text)", fontWeight: "var(--font-weight-medium)", fontSize: "var(--font-size-xs)" }}>
+                    <span className="pointcloud-sidebar__status--success">
                         {pointCount.toLocaleString()} pts loaded
                     </span>
                 ) : (
-                    <span style={{ color: "var(--color-text-subtle)", fontSize: "var(--font-size-xs)" }}>No points loaded</span>
+                    <span className="pointcloud-sidebar__status--muted">No points loaded</span>
                 )}
             </div>
         </div>
