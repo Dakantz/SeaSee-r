@@ -1,10 +1,12 @@
 import logging
 import uuid
-from typing import List, Optional, AsyncGenerator, Tuple, Any
+from typing import List, Optional, AsyncGenerator, Tuple, Any, Dict, Union
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text, select
+from sqlalchemy import text, select, bindparam
 from app.models.pointcloud import PointCloudMetadata
 from app.models.camera import CameraHeader
+from app.schemas.filter import FilterCriterion
+
 
 logger = logging.getLogger(__name__)
 
@@ -75,55 +77,53 @@ class PointCloudRepository:
             logger.error(f"Error querying total point count for {pointcloud_id} lod={lod}: {e}", exc_info=True)
             return 0
 
-    async def get_summary_point_count(self, custom_query: str, lod: int = 0) -> int:
+    async def get_summary_point_count(
+        self,
+        filters: Optional[Union[List[FilterCriterion], Dict[str, Any]]] = None,
+        filter_params: Optional[Dict[str, Any]] = None,
+        lod: int = 0
+    ) -> int:
         """
-        Executes modified summary query (using SUM(PC_NumPoints(patch))) to efficiently count selected points.
+        Executes summary query to efficiently count selected points using parameter filters.
         """
-        info = await self.get_summary_info(custom_query, lod=lod)
+        effective_filters = filters if filters is not None else filter_params
+        info = await self.get_summary_info(filters=effective_filters, lod=lod)
         return info["total_points"]
 
-    async def get_summary_info(self, custom_query: str, lod: int = 0) -> dict:
+    async def get_summary_info(
+        self,
+        filters: Optional[Union[List[FilterCriterion], Dict[str, Any]]] = None,
+        filter_params: Optional[Dict[str, Any]] = None,
+        lod: int = 0
+    ) -> dict:
         """
-        Executes modified summary queries to return:
+        Executes summary queries using parameter filters to return:
         - total point count
         - bounding box (min_x, min_y, min_z, max_x, max_y, max_z)
         - list of connected PointCloudMetadata objects via FK pointcloud_id
+        - list of connected CameraHeader objects
         """
-        import re
-        inner_query = custom_query.strip()
-        target_table = f"pointcloud_patches_lod{lod}"
-        inner_query = re.sub(r'\bpointcloud_patches(?:_lod\d+)?\b', target_table, inner_query, flags=re.IGNORECASE)
+        from app.services.pointcloud.query_builder import PointCloudQueryBuilder
 
-        # Transform stream selection queries (PC_Explode) to patch queries (SELECT *) for stream-summary
-        inner_query = re.sub(r'SELECT\s+PC_Explode\(patch\)\s+AS\s+pt\s+FROM', 'SELECT * FROM', inner_query, flags=re.IGNORECASE)
+        effective_filters = filters if filters is not None else filter_params
 
-        full_summary_str = f"""
-            SELECT 
-                COALESCE(SUM(PC_NumPoints(patch)), 0) AS total_points,
-                MIN(PC_PatchMin(patch, 'X')) AS min_x,
-                MIN(PC_PatchMin(patch, 'Y')) AS min_y,
-                MIN(PC_PatchMin(patch, 'Z')) AS min_z,
-                MAX(PC_PatchMax(patch, 'X')) AS max_x,
-                MAX(PC_PatchMax(patch, 'Y')) AS max_y,
-                MAX(PC_PatchMax(patch, 'Z')) AS max_z
-            FROM (
-                {inner_query}
-            ) AS points;
-        """
+        summary_sql, distinct_ids_sql, bind_params, expanding_params = PointCloudQueryBuilder.build_summary_query(
+            filters=effective_filters,
+            lod=lod
+        )
 
-        distinct_fk_str = f"""
-            SELECT DISTINCT pointcloud_id
-            FROM (
-                {inner_query}
-            ) AS points;
-        """
+        sum_stmt = text(summary_sql)
+        distinct_stmt = text(distinct_ids_sql)
+        if expanding_params:
+            sum_stmt = sum_stmt.bindparams(*(bindparam(p, expanding=True) for p in expanding_params))
+            distinct_stmt = distinct_stmt.bindparams(*(bindparam(p, expanding=True) for p in expanding_params))
 
         total_points = 0
         min_x, min_y, min_z = None, None, None
         max_x, max_y, max_z = None, None, None
 
-        logger.info(f"Executing modified summary query: {full_summary_str}")
-        res = await self.db.execute(text(full_summary_str), {"lod": lod})
+        logger.info(f"Executing parameterized summary query: {summary_sql} with params {bind_params}")
+        res = await self.db.execute(sum_stmt, bind_params)
         row = res.first()
         if row:
             total_points = int(row[0] or 0)
@@ -136,7 +136,7 @@ class PointCloudRepository:
 
         connected_metadata_list = []
         connected_camera_headers_list = []
-        res_fk = await self.db.execute(text(distinct_fk_str), {"lod": lod})
+        res_fk = await self.db.execute(distinct_stmt, bind_params)
         connected_ids = [r[0] for r in res_fk.all() if r[0] is not None]
         if connected_ids:
             stmt = select(PointCloudMetadata).where(PointCloudMetadata.id.in_(connected_ids))
@@ -175,37 +175,32 @@ class PointCloudRepository:
         }
 
     async def stream_points(
-        self, custom_query: str, lod: int = 0
+        self,
+        filters: Optional[Union[List[FilterCriterion], Dict[str, Any]]] = None,
+        filter_params: Optional[Dict[str, Any]] = None,
+        lod: int = 0
     ) -> AsyncGenerator[Tuple[float, float, float, int, int, int], None]:
         """
         Streams points directly from pgPointcloud table using PC_Explode and PC_Get.
-        Executes custom_query as the inner point selection subquery.
+        Uses PointCloudQueryBuilder to construct parameterized SQL.
         Yields tuple: (x, y, z, r, g, b)
         """
-        import re
+        from app.services.pointcloud.query_builder import PointCloudQueryBuilder
         import app.services.pointcloud.database as db_mod
 
-        inner_query = custom_query.strip()
-        target_table = f"pointcloud_patches_lod{lod}"
-        inner_query = re.sub(r'\bpointcloud_patches(?:_lod\d+)?\b', target_table, inner_query, flags=re.IGNORECASE)
+        effective_filters = filters if filters is not None else filter_params
 
-        full_query_str = f"""
-            SELECT 
-                PC_Get(pt, 'X')         as x,
-                PC_Get(pt, 'Y')         as y,
-                PC_Get(pt, 'Z')         as z,
-                PC_Get(pt, 'Red')       as r,
-                PC_Get(pt, 'Green')     as g,
-                PC_Get(pt, 'Blue')      as b
-            FROM (
-                {inner_query}
-            ) AS points;
-        """
+        sql, bind_params, expanding_params = PointCloudQueryBuilder.build_binary_stream_query(
+            filters=effective_filters,
+            lod=lod
+        )
 
-        query = text(full_query_str)
+        query = text(sql)
+        if expanding_params:
+            query = query.bindparams(*(bindparam(p, expanding=True) for p in expanding_params))
 
         async with db_mod.async_session() as session:
-            stream_result = await session.stream(query, {"lod": lod})
+            stream_result = await session.stream(query, bind_params)
             async for record in stream_result:
                 x = float(record[0]) if len(record) > 0 and record[0] is not None else 0.0
                 y = float(record[1]) if len(record) > 1 and record[1] is not None else 0.0

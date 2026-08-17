@@ -129,10 +129,14 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         if (!queryText || !queryText.trim()) return null;
         try {
             const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
-            const summaryQueryText = queryText.trim().replace(/SELECT\s+PC_Explode\(patch\)\s+AS\s+pt\s+FROM/i, "SELECT * FROM");
-            const response = await fetch(
-                `${API_BASE_URL}/pointclouds/stream-summary?lod=0&query=${encodeURIComponent(summaryQueryText)}`
-            );
+            const match = queryText.match(/pointcloud_id\s*=\s*'([a-fA-F0-9-]+)'/i);
+            const targetPcId = match ? match[1] : null;
+            let params = "lod=0";
+            if (targetPcId) {
+                params += `&pointcloud_id=${encodeURIComponent(targetPcId)}`;
+            }
+            const response = await fetch(`${API_BASE_URL}/pointclouds/stream-summary?${params}`);
+
             if (response.ok) {
                 const data: QuerySummaryData = await response.json();
                 setSummaryMap((prev) => ({ ...prev, [queryId]: data }));

@@ -5,6 +5,11 @@ from app.core.database import get_db_session
 from app.repositories.pointcloud_repository import PointCloudRepository
 from app.services.pointcloud.exporters import BinaryStreamExporter, PLYStreamExporter
 from app.services.pointcloud.database import DatabasePointCloudStorageService
+from app.api.dependencies.filter_parser import QueryFilterParser
+from app.services.pointcloud.query_builder import FILTER_FIELD_MAP
+
+POINTCLOUD_ALLOWED_FIELDS = set(FILTER_FIELD_MAP.keys())
+pointcloud_filter_parser = QueryFilterParser(allowed_fields=POINTCLOUD_ALLOWED_FIELDS)
 
 
 def get_pointcloud_repository(

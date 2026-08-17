@@ -76,10 +76,22 @@ export async function fetchBinaryGeometry(
 ): Promise<THREE.BufferGeometry> {
     const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
     const cleanId = idToLoad.trim().split("?")[0];
-    const finalQuery = prepareQueryForLod(customQuery, cleanId, lodToLoad);
-    const url = `${API_BASE_URL}/pointclouds/stream-binary?lod=${lodToLoad}&query=${encodeURIComponent(finalQuery)}`;
+    
+    // Extract pointcloud_id from cleanId or customQuery regex match
+    let pcId = cleanId;
+    if (customQuery) {
+        const match = customQuery.match(/pointcloud_id\s*=\s*'([a-fA-F0-9-]+)'/i);
+        if (match) pcId = match[1];
+    }
+
+    let queryParams = `lod=${lodToLoad}`;
+    if (pcId && pcId.length >= 32) {
+        queryParams += `&pointcloud_id=${encodeURIComponent(pcId)}`;
+    }
+    const url = `${API_BASE_URL}/pointclouds/stream-binary?${queryParams}`;
 
     const res = await fetch(url, { signal });
+
     if (!res.ok) {
         throw new Error(`Backend returned status ${res.status}: ${res.statusText}`);
     }

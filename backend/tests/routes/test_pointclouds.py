@@ -77,9 +77,9 @@ class TestPointCloudServices(TestCase):
     def test_database_service_stream_binary_invalid_uuid(self):
         mock_db = MagicMock()
         db_service = DatabasePointCloudStorageService(db_session=mock_db)
-        with self.assertRaises(HTTPException) as context:
-            asyncio.run(db_service.stream_pointcloud_binary(lod=0, custom_query=""))
-        self.assertEqual(context.exception.status_code, 400)
+        # Verify call succeeds with empty filter params
+        response = asyncio.run(db_service.stream_pointcloud_binary(lod=0, filter_params={}))
+        self.assertEqual(response.media_type, "application/octet-stream")
 
     def test_database_service_stream_binary_success(self):
         import struct
@@ -107,13 +107,12 @@ class TestPointCloudServices(TestCase):
         mock_db = MagicMock()
         mock_db.execute = AsyncMock(return_value=mock_meta_result)
 
-        sql_query = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod1 WHERE pointcloud_id = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'"
-
         with patch("app.services.pointcloud.database.async_session", return_value=AsyncSessionContextManager()):
             db_service = DatabasePointCloudStorageService(db_session=mock_db)
-            response = asyncio.run(db_service.stream_pointcloud_binary(lod=1, custom_query=sql_query))
+            response = asyncio.run(db_service.stream_pointcloud_binary(lod=1, filter_params={"pointcloud_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"}))
             
             self.assertEqual(response.media_type, "application/octet-stream")
+
 
             async def consume_stream():
                 chunks = []
@@ -233,11 +232,12 @@ def test_endpoint_stream_binary():
 
     app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
 
-    sql_query = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod2 WHERE pointcloud_id = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'"
+    pc_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
 
     try:
-        response = client.get(f"/pointclouds/stream-binary?lod=2&query={sql_query}")
+        response = client.get(f"/pointclouds/stream-binary?lod=2&pointcloud_id={pc_id}")
         assert response.status_code == 200
+
         assert response.headers["content-type"] == "application/octet-stream"
         assert len(response.content) == 16
         x, y, z, r, g, b, a = struct.unpack('<3f4B', response.content)
@@ -248,7 +248,7 @@ def test_endpoint_stream_binary():
         assert g == 128
         assert b == 0
         assert a == 255
-        mock_service.stream_pointcloud_binary.assert_called_once_with(lod=2, custom_query=sql_query)
+        mock_service.stream_pointcloud_binary.assert_called_once()
     finally:
         app.dependency_overrides.clear()
 
@@ -267,15 +267,15 @@ def test_endpoint_stream_binary_lod10():
 
     app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
 
-    sql_query = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches_lod10 WHERE pointcloud_id = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'"
+    pc_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
 
     try:
-        response = client.get(f"/pointclouds/stream-binary?lod=10&query={sql_query}")
+        response = client.get(f"/pointclouds/stream-binary?lod=10&pointcloud_id={pc_id}")
         assert response.status_code == 200
-        mock_service.stream_pointcloud_binary.assert_called_once_with(lod=10, custom_query=sql_query)
+        mock_service.stream_pointcloud_binary.assert_called_once()
 
         # Test invalid LOD > 10 returns 422 Unprocessable Entity
-        err_response = client.get(f"/pointclouds/stream-binary?lod=11&query={sql_query}")
+        err_response = client.get(f"/pointclouds/stream-binary?lod=11&pointcloud_id={pc_id}")
         assert err_response.status_code == 422
     finally:
         app.dependency_overrides.clear()
@@ -283,12 +283,8 @@ def test_endpoint_stream_binary_lod10():
 
 def test_endpoint_stream_binary_missing_required_params():
     # Test missing lod parameter returns 422
-    res_no_lod = client.get("/pointclouds/stream-binary?query=SELECT 1")
+    res_no_lod = client.get("/pointclouds/stream-binary?pointcloud_id=a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
     assert res_no_lod.status_code == 422
-
-    # Test missing query parameter returns 422
-    res_no_query = client.get("/pointclouds/stream-binary?lod=0")
-    assert res_no_query.status_code == 422
 
 
 def test_endpoint_stream_summary_success():
@@ -313,10 +309,10 @@ def test_endpoint_stream_summary_success():
 
     app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
 
-    sql_query = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'"
+    pc_id = "e360394b-a241-49e5-bb66-97fee8bd85ef"
 
     try:
-        response = client.get(f"/pointclouds/stream-summary?lod=0&query={sql_query}")
+        response = client.get(f"/pointclouds/stream-summary?lod=0&pointcloud_id={pc_id}&number_of_points_gte=100")
         assert response.status_code == 200
         data = response.json()
         assert data["total_points"] == 1500
@@ -329,17 +325,49 @@ def test_endpoint_stream_summary_success():
         assert data["centerpoint"] == [0.0, 0.0, 10.0]
         assert len(data["connected_pointclouds"]) == 1
         assert data["connected_pointclouds"][0]["id"] == "e360394b-a241-49e5-bb66-97fee8bd85ef"
-        mock_service.get_pointcloud_stream_summary.assert_called_once_with(custom_query=sql_query)
+        mock_service.get_pointcloud_stream_summary.assert_called_once()
     finally:
         app.dependency_overrides.clear()
 
 
-def test_endpoint_stream_summary_missing_required_params():
-    # Test missing query parameter returns 422
-    res_no_query = client.get("/pointclouds/stream-summary")
-    assert res_no_query.status_code == 422
-    res_no_query = client.get("/pointclouds/stream-summary?lod=0")
-    assert res_no_query.status_code == 422
+def test_query_builder_parameter_parsing():
+    from app.services.pointcloud.query_builder import PointCloudQueryBuilder, parse_filter_key
+
+    field, op = parse_filter_key("number_of_points__gte")
+    assert field == "number_of_points"
+    assert op == "gte"
+
+    field2, op2 = parse_filter_key("video_start_at_lt")
+    assert field2 == "video_start_at"
+    assert op2 == "lt"
+
+    sql, bind, _ = PointCloudQueryBuilder.build_binary_stream_query(
+        filters={
+            "pointcloud_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+            "number_of_points_gte": 100,
+            "video_start_at_gte": "2026-01-01T00:00:00Z"
+        },
+        lod=2
+    )
+
+    assert "pointcloud_patches_lod2" in sql
+    assert "pm.id =" in sql
+    assert "pm.number_of_points >=" in sql
+    assert len(bind) == 3
+
+
+def test_endpoint_stream_binary_invalid_field_400():
+    res = client.get("/pointclouds/stream-binary?lod=0&unapproved_field=123")
+    assert res.status_code == 400
+    assert "Invalid or unauthorized filter field" in res.json()["detail"]
+
+
+def test_endpoint_stream_summary_invalid_operator_400():
+    res = client.get("/pointclouds/stream-summary?lod=0&number_of_points__invalidop=100")
+    assert res.status_code == 400
+    assert "Invalid filter operator" in res.json()["detail"]
+
+
 
 
 def test_ingest_opensfm_init_laz_file():

@@ -4,8 +4,9 @@ from redis import Redis
 from rq import Queue
 
 from typing import List, Union, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
+
 from app.schemas.pointcloud import (
     PointCloudMetadataResponse,
     CameraHeaderResponse,
@@ -17,7 +18,8 @@ from sqlalchemy import select
 from pydantic import BaseModel, conlist
 
 from app.services.pointcloud import DatabasePointCloudStorageService
-from app.api.dependencies.pointcloud import get_pointcloud_service
+from app.api.dependencies.pointcloud import get_pointcloud_service, pointcloud_filter_parser
+from app.schemas.filter import FilterCriterion
 from app.core.config import settings
 from app.core.database import get_db_session
 from app.models.job import Job
@@ -44,27 +46,37 @@ async def list_pointclouds(
 
 """
 Stream point cloud data directly from database as raw binary buffer (Float32 XYZ, Uint8 RGB).
-Requires a lod parameter and a query string parameter.
+Supports flexible field filtering with comparison operators using field__operator=value syntax.
 """
 @router.get("/stream-binary")
 async def stream_pointcloud_binary(
     lod: int = Query(..., ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
-    query: str = Query(..., description="SQL query to select points: \nExample: `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'`"),
+    filters: List[FilterCriterion] = Depends(pointcloud_filter_parser),
     storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
 ):
-    return await storage_service.stream_pointcloud_binary(lod=lod, custom_query=query)
+    return await storage_service.stream_pointcloud_binary(
+        lod=lod,
+        filters=filters
+    )
 
 
 """
-Retrieve point cloud selection summary (point count, bounding box, and connected metadata) for a custom query.
-Mirrors /stream-binary parameters.
+Retrieve point cloud selection summary (point count, bounding box, and connected metadata).
+Supports flexible field filtering with comparison operators using field__operator=value syntax.
 """
 @router.get("/stream-summary", response_model=PointCloudStreamSummaryResponse)
 async def get_pointcloud_stream_summary(
-    query: str = Query(..., description="SQL query to select points: \nExample: `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'`"),
+    lod: int = Query(default=0, ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
+    filters: List[FilterCriterion] = Depends(pointcloud_filter_parser),
     storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
 ):
-    return await storage_service.get_pointcloud_stream_summary(custom_query=query)
+    return await storage_service.get_pointcloud_stream_summary(
+        filters=filters,
+        lod=lod
+    )
+
+
+
 
 
 """

@@ -1,8 +1,9 @@
 import logging
 import numpy as np
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, List, Union, Dict, Any
 from app.repositories.pointcloud_repository import PointCloudRepository
 from app.services.pointcloud.exporters.base import BasePointCloudExporter
+from app.schemas.filter import FilterCriterion
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +26,22 @@ class BinaryStreamExporter(BasePointCloudExporter):
         super().__init__(repository)
         self.chunk_size = chunk_size
 
-    async def export_stream(self, custom_query: str, lod: int = 0) -> AsyncGenerator[bytes, None]:
+    async def export_stream(
+        self,
+        filters: Optional[Union[List[FilterCriterion], Dict[str, Any]]] = None,
+        filter_params: Optional[dict] = None,
+        lod: int = 0
+    ) -> AsyncGenerator[bytes, None]:
+        effective_filters = filters if filters is not None else filter_params
         try:
             batch_capacity = self.chunk_size // 16
             points_batch = []
 
-            async for x, y, z, r, g, b in self.repository.stream_points(custom_query=custom_query, lod=lod):
+            async for x, y, z, r, g, b in self.repository.stream_points(
+                filters=effective_filters,
+                lod=lod
+            ):
+
                 r_u8 = min(255, max(0, r >> 8 if r > 255 else r))
                 g_u8 = min(255, max(0, g >> 8 if g > 255 else g))
                 b_u8 = min(255, max(0, b >> 8 if b > 255 else b))
@@ -48,4 +59,3 @@ class BinaryStreamExporter(BasePointCloudExporter):
         except Exception as e:
             logger.error(f"Error during binary streaming lod={lod}: {e}", exc_info=True)
             raise e
-

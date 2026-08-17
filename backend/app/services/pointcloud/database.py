@@ -3,7 +3,7 @@ import os
 import re
 import subprocess
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Union, Dict, Any
 from urllib.parse import unquote
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import async_session
 from app.repositories.pointcloud_repository import PointCloudRepository
 from app.services.pointcloud.exporters import BinaryStreamExporter, PLYStreamExporter
+from app.schemas.filter import FilterCriterion
 
 logger = logging.getLogger(__name__)
 
@@ -23,37 +24,47 @@ class DatabasePointCloudStorageService:
         self.ply_exporter = PLYStreamExporter(self.repository)
 
     async def stream_pointcloud_binary(
-        self, lod: int, custom_query: str
+        self,
+        lod: int,
+        filters: Optional[Union[List[FilterCriterion], Dict[str, Any]]] = None,
+        filter_params: Optional[dict] = None
     ) -> StreamingResponse:
         """
         Streams point cloud data directly from database as raw binary buffer (Float32 XYZ, Uint8 RGB).
-        Requires lod and custom_query parameters.
+        Supports parameter filters.
         """
-        if not custom_query or not custom_query.strip():
-            raise HTTPException(status_code=400, detail="Query parameter is required.")
-
+        effective_filters = filters if filters is not None else filter_params
         filename = f"pointcloud_lod{lod}.bin"
 
         return StreamingResponse(
-            self.binary_exporter.export_stream(custom_query=custom_query, lod=lod),
+            self.binary_exporter.export_stream(
+                filters=effective_filters,
+                lod=lod
+            ),
             media_type="application/octet-stream",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
 
     async def get_pointcloud_stream_summary(
-        self, custom_query: str
+        self,
+        filters: Optional[Union[List[FilterCriterion], Dict[str, Any]]] = None,
+        filter_params: Optional[dict] = None,
+        lod: int = 0
     ) -> dict:
         """
-        Returns summary (point count, bounding box, and connected pointcloud metadata) for the custom query selection.
+        Returns summary (point count, bounding box, and connected pointcloud metadata) for the parameter selection.
         """
-        if not custom_query or not custom_query.strip():
-            raise HTTPException(status_code=400, detail="Query parameter is required.")
-
+        effective_filters = filters if filters is not None else filter_params
         try:
-            return await self.repository.get_summary_info(custom_query)
+            return await self.repository.get_summary_info(
+                filters=effective_filters,
+                lod=lod
+            )
+
         except Exception as e:
             logger.error(f"Database query failed in get_pointcloud_stream_summary: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Database query failed: {str(e)}")
+
 
     async def get_pointcloud(self, identifier: str, lod: int = 0) -> StreamingResponse:
         """

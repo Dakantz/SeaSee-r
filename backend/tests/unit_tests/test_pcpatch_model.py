@@ -71,9 +71,7 @@ async def test_get_summary_info_transformation():
     mock_db.execute = AsyncMock(side_effect=[mock_summary_res, mock_fk_res, mock_meta_res, mock_cam_res])
 
     repo = PointCloudRepository(mock_db)
-    query = "SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = 'e360394b-a241-49e5-bb66-97fee8bd85ef'"
-
-    info = await repo.get_summary_info(query, lod=0)
+    info = await repo.get_summary_info(filters={"pointcloud_id": "e360394b-a241-49e5-bb66-97fee8bd85ef"}, lod=0)
     assert info["total_points"] == 12345
     assert info["bounding_box"] == {
         "min_x": -10.0, "min_y": -5.0, "min_z": 0.0,

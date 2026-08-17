@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
+import { QuerySelector } from "./QuerySelector";
+
+export { QuerySelector } from "./QuerySelector";
+export { QuerySummary } from "./QuerySummary";
 
 /**
  * Interface representing a Custom SQL Query item in the Custom Query Manager.
@@ -169,8 +173,7 @@ export type PointCloudListProps = CustomQueryManagerProps;
 /**
  * Custom Query Manager Component
  * 
- * Manages rendering, manual editing, client-side persistence (localStorage),
- * multi-query selection, and automatic generation of custom SQL queries for PostGIS / pgPointCloud datasets.
+ * Manages state, client-side persistence (localStorage), and renders a list of QuerySelector items.
  */
 export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
   initialQueries,
@@ -280,9 +283,15 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
     setSummaryErrorMap((prev) => ({ ...prev, [queryId]: null }));
 
     try {
-      const summaryQueryText = queryText.trim().replace(/SELECT\s+PC_Explode\(patch\)\s+AS\s+pt\s+FROM/i, "SELECT * FROM");
-      const url = `${API_BASE_URL}/pointclouds/stream-summary?lod=${lod}&query=${encodeURIComponent(summaryQueryText)}`;
+      const match = queryText.match(/pointcloud_id\s*=\s*'([a-fA-F0-9-]+)'/i);
+      const targetPcId = match ? match[1] : null;
+      let params = `lod=${lod}`;
+      if (targetPcId) {
+        params += `&pointcloud_id=${encodeURIComponent(targetPcId)}`;
+      }
+      const url = `${API_BASE_URL}/pointclouds/stream-summary?${params}`;
       const response = await fetch(url);
+
       if (!response.ok) {
         throw new Error(`Server returned HTTP ${response.status}`);
       }
@@ -613,464 +622,23 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
             const saveStatus = saveStatusMap[q.id];
 
             return (
-              <div
+              <QuerySelector
                 key={q.id}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "8px",
-                  padding: "12px",
-                  borderRadius: "var(--radius-md, 6px)",
-                  background: isActive
-                    ? "var(--color-bg-accent-subtle, rgba(59, 130, 246, 0.12))"
-                    : "var(--color-bg-subtle, #14151b)",
-                  border: isActive
-                    ? "1px solid var(--color-accent, #3b82f6)"
-                    : "1px solid var(--color-border-subtle, #2a2b36)",
-                  transition: "all 0.15s ease-in-out",
-                }}
-              >
-                {/* Item Top Row: Name Editor, Stream Badges & Delete */}
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "8px",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1 }}>
-                    <input
-                      type="text"
-                      value={q.name}
-                      onChange={(e) => handleUpdateQuery(q.id, "name", e.target.value)}
-                      placeholder="Query Name..."
-                      style={{
-                        background: "transparent",
-                        border: "1px solid transparent",
-                        borderRadius: "var(--radius-sm, 4px)",
-                        color: isActive
-                          ? "var(--color-text-primary, #ffffff)"
-                          : "var(--color-text-secondary, #d1d5db)",
-                        fontWeight: isActive ? 600 : 500,
-                        fontSize: "var(--font-size-sm, 13px)",
-                        padding: "2px 4px",
-                        outline: "none",
-                        flex: 1,
-                      }}
-                      onFocus={(e) => {
-                        e.target.style.border = "1px solid var(--color-border-strong, #374151)";
-                        e.target.style.background = "var(--color-bg-card, #1e1e24)";
-                      }}
-                      onBlur={(e) => {
-                        e.target.style.border = "1px solid transparent";
-                        e.target.style.background = "transparent";
-                      }}
-                    />
-                  </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {isLoadingStream ? (
-                      <span
-                        style={{
-                          fontSize: "10px",
-                          padding: "2px 6px",
-                          borderRadius: "var(--radius-sm, 4px)",
-                          background: "rgba(245, 158, 11, 0.2)",
-                          color: "#fbbf24",
-                          fontWeight: 500,
-                        }}
-                      >
-                        🌀 Streaming
-                      </span>
-                    ) : isLoadedStream ? (
-                      <span
-                        style={{
-                          fontSize: "10px",
-                          padding: "2px 6px",
-                          borderRadius: "var(--radius-sm, 4px)",
-                          background: "rgba(16, 185, 129, 0.2)",
-                          color: "#34d399",
-                          fontWeight: 500,
-                        }}
-                      >
-                        ⚡ Streamed
-                      </span>
-                    ) : isActive ? (
-                      <span
-                        style={{
-                          fontSize: "10px",
-                          padding: "2px 6px",
-                          borderRadius: "var(--radius-sm, 4px)",
-                          background: "rgba(59, 130, 246, 0.2)",
-                          color: "#60a5fa",
-                          fontWeight: 500,
-                        }}
-                      >
-                        Active
-                      </span>
-                    ) : null}
-
-                    <button
-                      type="button"
-                      title="Delete query"
-                      onClick={() => handleDeleteQuery(q.id)}
-                      style={{
-                        background: "rgba(248, 113, 113, 0.1)",
-                        border: "1px solid rgba(248, 113, 113, 0.3)",
-                        color: "#f87171",
-                        borderRadius: "var(--radius-sm, 4px)",
-                        padding: "3px 6px",
-                        fontSize: "11px",
-                        cursor: "pointer",
-                        transition: "all 0.15s ease",
-                      }}
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                </div>
-
-                {/* SQL Query Textarea */}
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  <textarea
-                    rows={4}
-                    value={q.queryText}
-                    onChange={(e) => handleUpdateQuery(q.id, "queryText", e.target.value)}
-                    placeholder="Enter SQL query (e.g. SELECT PC_Explode(patch)...)"
-                    style={{
-                      background: "var(--color-bg-card, #1e1e24)",
-                      border: "1px solid var(--color-border-strong, #2a2b36)",
-                      color: "#00e5ff",
-                      fontFamily: "var(--font-mono, monospace)",
-                      fontSize: "11px",
-                      lineHeight: "1.4",
-                      padding: "8px",
-                      borderRadius: "var(--radius-sm, 4px)",
-                      resize: "vertical",
-                      width: "100%",
-                      boxSizing: "border-box",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-
-                {/* Summary Information Display Panel */}
-                <div
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: "var(--radius-sm, 6px)",
-                    background: "rgba(15, 17, 26, 0.7)",
-                    border: "1px solid rgba(255, 255, 255, 0.08)",
-                    fontSize: "11px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "6px",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontWeight: 600,
-                        color: "var(--color-accent-text, #93c5fd)",
-                        fontSize: "11px",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "4px",
-                      }}
-                    >
-                      📊 Query Summary
-                    </span>
-
-                    <button
-                      type="button"
-                      onClick={() => fetchQuerySummary(q.id, q.queryText)}
-                      disabled={summaryLoadingMap[q.id]}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        color: "#9ca3af",
-                        fontSize: "10px",
-                        cursor: summaryLoadingMap[q.id] ? "not-allowed" : "pointer",
-                        padding: "0 2px",
-                        textDecoration: "underline",
-                      }}
-                      title="Fetch / refresh query summary"
-                    >
-                      {summaryLoadingMap[q.id] ? "Calculating..." : "🔄 Refresh"}
-                    </button>
-                  </div>
-
-                  {summaryLoadingMap[q.id] ? (
-                    <div style={{ color: "#9ca3af", fontStyle: "italic", fontSize: "10px" }}>
-                      Calculating total points & 3D bounding box...
-                    </div>
-                  ) : summaryErrorMap[q.id] ? (
-                    <div style={{ color: "#f87171", fontSize: "10px" }}>
-                      ⚠️ {summaryErrorMap[q.id]}
-                    </div>
-                  ) : summaryMap[q.id] ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                      {/* Point Count Badge */}
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        <span style={{ color: "#9ca3af", fontSize: "10px" }}>Selected Points:</span>
-                        <span
-                          style={{
-                            fontWeight: 700,
-                            color: "#10b981",
-                            background: "rgba(16, 185, 129, 0.12)",
-                            padding: "2px 6px",
-                            borderRadius: "4px",
-                            fontSize: "11px",
-                          }}
-                        >
-                          ⚡ {(summaryMap[q.id].total_points ?? 0).toLocaleString()} pts
-                        </span>
-                      </div>
-
-                      {/* 3D Bounding Box */}
-                      {summaryMap[q.id].bounding_box ? (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <span style={{ color: "#9ca3af", fontSize: "10px" }}>Bounding Box (XYZ):</span>
-                            <button
-                              type="button"
-                              onClick={() => handleFocusQuery(q)}
-                              style={{
-                                background: "rgba(59, 130, 246, 0.15)",
-                                border: "1px solid rgba(59, 130, 246, 0.3)",
-                                color: "#60a5fa",
-                                borderRadius: "4px",
-                                padding: "1px 6px",
-                                fontSize: "10px",
-                                cursor: "pointer",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "3px",
-                              }}
-                              title="Focus camera to center of bounding box"
-                            >
-                              🎯 Focus
-                            </button>
-                          </div>
-                          <div
-                            style={{
-                              fontFamily: "var(--font-mono, monospace)",
-                              fontSize: "10px",
-                              color: "#cbd5e1",
-                              background: "rgba(255, 255, 255, 0.03)",
-                              padding: "4px 6px",
-                              borderRadius: "4px",
-                              display: "grid",
-                              gridTemplateColumns: "1fr 1fr",
-                              gap: "2px 8px",
-                            }}
-                          >
-                            <div>
-                              <span style={{ color: "#94a3b8" }}>Min:</span> [
-                              {summaryMap[q.id].bounding_box?.min_x !== null && summaryMap[q.id].bounding_box?.min_x !== undefined
-                                ? summaryMap[q.id].bounding_box!.min_x!.toFixed(2)
-                                : "N/A"}
-                              ,{" "}
-                              {summaryMap[q.id].bounding_box?.min_y !== null && summaryMap[q.id].bounding_box?.min_y !== undefined
-                                ? summaryMap[q.id].bounding_box!.min_y!.toFixed(2)
-                                : "N/A"}
-                              ,{" "}
-                              {summaryMap[q.id].bounding_box?.min_z !== null && summaryMap[q.id].bounding_box?.min_z !== undefined
-                                ? summaryMap[q.id].bounding_box!.min_z!.toFixed(2)
-                                : "N/A"}
-                              ]
-                            </div>
-                            <div>
-                              <span style={{ color: "#94a3b8" }}>Max:</span> [
-                              {summaryMap[q.id].bounding_box?.max_x !== null && summaryMap[q.id].bounding_box?.max_x !== undefined
-                                ? summaryMap[q.id].bounding_box!.max_x!.toFixed(2)
-                                : "N/A"}
-                              ,{" "}
-                              {summaryMap[q.id].bounding_box?.max_y !== null && summaryMap[q.id].bounding_box?.max_y !== undefined
-                                ? summaryMap[q.id].bounding_box!.max_y!.toFixed(2)
-                                : "N/A"}
-                              ,{" "}
-                              {summaryMap[q.id].bounding_box?.max_z !== null && summaryMap[q.id].bounding_box?.max_z !== undefined
-                                ? summaryMap[q.id].bounding_box!.max_z!.toFixed(2)
-                                : "N/A"}
-                              ]
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={{ color: "#64748b", fontSize: "10px", fontStyle: "italic" }}>
-                          No 3D bounding box available
-                        </div>
-                      )}
-
-                      {/* Connected Point Clouds List */}
-                      {summaryMap[q.id].connected_pointclouds && summaryMap[q.id].connected_pointclouds!.length > 0 ? (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-                          <span style={{ color: "#9ca3af", fontSize: "10px" }}>
-                            Connected Metadata ({summaryMap[q.id].connected_pointclouds!.length}):
-                          </span>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-                            {summaryMap[q.id].connected_pointclouds!.map((meta) => (
-                              <span
-                                key={meta.id}
-                                title={`ID: ${meta.id} | Total Points: ${meta.number_of_points?.toLocaleString() || "N/A"}`}
-                                style={{
-                                  background: "rgba(59, 130, 246, 0.15)",
-                                  border: "1px solid rgba(59, 130, 246, 0.3)",
-                                  color: "#93c5fd",
-                                  fontSize: "10px",
-                                  padding: "1px 6px",
-                                  borderRadius: "4px",
-                                  fontFamily: "var(--font-mono, monospace)",
-                                }}
-                              >
-                                📁 {meta.orig_filename || meta.id.substring(0, 8)} ({meta.number_of_points ? meta.number_of_points.toLocaleString() : "0"} pts)
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={{ color: "#64748b", fontSize: "10px", fontStyle: "italic" }}>
-                          No connected metadata records found
-                        </div>
-                      )}
-
-                      {/* Connected Camera Headers List */}
-                      {summaryMap[q.id].connected_camera_headers && summaryMap[q.id].connected_camera_headers!.length > 0 && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-                          <span style={{ color: "#9ca3af", fontSize: "10px" }}>
-                            Connected Camera Headers ({summaryMap[q.id].connected_camera_headers!.length}):
-                          </span>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-                            {summaryMap[q.id].connected_camera_headers!.map((cam) => (
-                              <span
-                                key={cam.id}
-                                title={`Camera Header ID: ${cam.id} | PointCloud ID: ${cam.pointcloud_id} | Focal: ${cam.focal ?? "N/A"} | Res: ${cam.width ?? "?"}x${cam.height ?? "?"} | Model: ${cam.camera || "N/A"}`}
-                                style={{
-                                  background: "rgba(168, 85, 247, 0.15)",
-                                  border: "1px solid rgba(168, 85, 247, 0.3)",
-                                  color: "#c084fc",
-                                  fontSize: "10px",
-                                  padding: "1px 6px",
-                                  borderRadius: "4px",
-                                  fontFamily: "var(--font-mono, monospace)",
-                                }}
-                              >
-                                📷 {cam.camera || "Camera"} ({cam.width && cam.height ? `${cam.width}x${cam.height}` : cam.id.substring(0, 8)})
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div style={{ color: "#64748b", fontSize: "10px", fontStyle: "italic" }}>
-                      Click "Refresh" to calculate query info
-                    </div>
-                  )}
-                </div>
-
-                {/* Card Controls & Status Bar */}
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginTop: "2px",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: "11px",
-                      color: saveStatus === "Error saving" ? "#f87171" : "var(--color-text-muted, #9ca3af)",
-                      fontStyle: "italic",
-                    }}
-                  >
-                    {saveStatus ? saveStatus : "Auto-saved"}
-                  </span>
-
-                  <div style={{ display: "flex", gap: "6px" }}>
-
-                    <button
-                      type="button"
-                      title="Focus camera on bounding box center"
-                      onClick={() => handleFocusQuery(q)}
-                      style={{
-                        background: "rgba(16, 185, 129, 0.15)",
-                        border: "1px solid rgba(16, 185, 129, 0.3)",
-                        color: "#34d399",
-                        borderRadius: "var(--radius-sm, 4px)",
-                        padding: "3px 8px",
-                        fontSize: "11px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        transition: "all 0.15s ease",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "4px",
-                      }}
-                    >
-                      🎯 Focus
-                    </button>
-
-                    {isLoadedStream || isLoadingStream ? (
-                      <button
-                        type="button"
-                        title="Unload this query from 3D scene"
-                        onClick={() => onUnloadQuery?.(q)}
-                        style={{
-                          background: "rgba(239, 68, 68, 0.15)",
-                          border: "1px solid rgba(239, 68, 68, 0.3)",
-                          color: "#f87171",
-                          borderRadius: "var(--radius-sm, 4px)",
-                          padding: "3px 10px",
-                          fontSize: "11px",
-                          fontWeight: 600,
-                          cursor: "pointer",
-                          transition: "background 0.15s ease",
-                        }}
-                      >
-                        ⏸️ Unload
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        title="Run / Stream this query"
-                        onClick={() => handleRun(q)}
-                        style={{
-                          background: isActive
-                            ? "var(--color-bg-button, #2563eb)"
-                            : "var(--color-bg-subtle, #1f2937)",
-                          border: isActive ? "none" : "1px solid var(--color-border-strong, #374151)",
-                          color: "#ffffff",
-                          borderRadius: "var(--radius-sm, 4px)",
-                          padding: "3px 10px",
-                          fontSize: "11px",
-                          fontWeight: 600,
-                          cursor: "pointer",
-                          transition: "background 0.15s ease",
-                        }}
-                      >
-                        ⚡ Stream
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
+                query={q}
+                isActive={isActive}
+                isLoadingStream={isLoadingStream}
+                isLoadedStream={isLoadedStream}
+                saveStatus={saveStatus}
+                summary={summary}
+                summaryLoading={summaryLoadingMap[q.id]}
+                summaryError={summaryErrorMap[q.id]}
+                onUpdateQuery={handleUpdateQuery}
+                onDeleteQuery={handleDeleteQuery}
+                onRunQuery={handleRun}
+                onUnloadQuery={onUnloadQuery}
+                onFocusQuery={handleFocusQuery}
+                onRefreshSummary={fetchQuerySummary}
+              />
             );
           })}
         </div>
