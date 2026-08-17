@@ -1,6 +1,8 @@
 import React from "react";
 import type { CustomQuery, QuerySummaryData } from "./CustomQueryManager";
 import QuerySummary from "./QuerySummary";
+import { FilterBuilder } from "./FilterBuilder";
+import type { FilterRule } from "./filterUtils";
 
 export interface QuerySelectorProps {
   /** The custom query item data */
@@ -19,8 +21,8 @@ export interface QuerySelectorProps {
   summaryLoading?: boolean;
   /** Summary calculation error state */
   summaryError?: string | null;
-  /** Handler to update query name or queryText */
-  onUpdateQuery: (id: string, field: "name" | "queryText", value: string) => void;
+  /** Handler to update query fields (name, queryText, filters, etc.) */
+  onUpdateQuery: (id: string, field: string, value: any) => void;
   /** Handler to delete a query */
   onDeleteQuery: (id: string) => void;
   /** Handler to run/stream a query */
@@ -36,7 +38,7 @@ export interface QuerySelectorProps {
 /**
  * QuerySelector Component
  * Represents a single custom query card item in the query manager list.
- * Includes name editing, SQL text editor, status indicators, action buttons, and embeds QuerySummary.
+ * Includes name editing, visual filter builder, status indicators, action buttons, and embeds QuerySummary.
  */
 export const QuerySelector: React.FC<QuerySelectorProps> = ({
   query,
@@ -179,27 +181,15 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
         </div>
       </div>
 
-      {/* SQL Query Textarea */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-        <textarea
-          rows={4}
-          value={query.queryText}
-          onChange={(e) => onUpdateQuery(query.id, "queryText", e.target.value)}
-          placeholder="Enter SQL query (e.g. SELECT PC_Explode(patch)...)"
-          style={{
-            background: "var(--color-bg-card, #1e1e24)",
-            border: "1px solid var(--color-border-strong, #2a2b36)",
-            color: "#00e5ff",
-            fontFamily: "var(--font-mono, monospace)",
-            fontSize: "11px",
-            lineHeight: "1.4",
-            padding: "8px",
-            borderRadius: "var(--radius-sm, 4px)",
-            resize: "vertical",
-            width: "100%",
-            boxSizing: "border-box",
-            outline: "none",
-          }}
+      {/* Visual Filter Builder UI */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+        <div style={{ fontSize: "11px", color: "var(--color-text-secondary, #9ca3af)", fontWeight: 600 }}>
+          Filters (Flexible Comparators)
+        </div>
+
+        <FilterBuilder
+          filters={query.filters || []}
+          onChange={(newFilters: FilterRule[]) => onUpdateQuery(query.id, "filters", newFilters)}
         />
       </div>
 

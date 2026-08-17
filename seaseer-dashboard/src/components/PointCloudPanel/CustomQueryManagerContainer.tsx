@@ -5,6 +5,7 @@ import CustomQueryManager, {
   createDefaultQuery,
   DEFAULT_POINTCLOUD_UUID,
 } from "./CustomQueryManager";
+import type { FilterRule } from "./filterUtils";
 
 const STORAGE_KEY = "seaseer_custom_sql_queries";
 
@@ -64,25 +65,43 @@ export const CustomQueryManagerContainer: React.FC = () => {
     }
   }, [queries, setQueries]);
 
-  // Global event listener for custom queries added outside CustomQueryManager (e.g. PLYPointCloudQueryEditor)
+  // Global event listener for custom queries added outside CustomQueryManager (e.g. PLYPointCloudSidebar)
   useEffect(() => {
     const handleAddQueryEvent = (e: Event) => {
-      const customEvent = e as CustomEvent<{ queryText: string; name?: string }>;
-      const { queryText, name } = customEvent.detail || {};
-      if (!queryText || !queryText.trim()) return;
+      const customEvent = e as CustomEvent<{
+        queryText?: string;
+        name?: string;
+        pointcloudId?: string;
+        filters?: FilterRule[];
+      }>;
+      const { queryText, name, pointcloudId, filters } = customEvent.detail || {};
 
-      const normNew = queryText.trim().replace(/\s+/g, " ");
-      const existing = queries.find((q) => q.queryText.trim().replace(/\s+/g, " ") === normNew);
+      const extractedMatch = queryText ? queryText.match(/pointcloud_id\s*=\s*['"]([^'"]+)['"]/i) : null;
+      const extractedId = pointcloudId || (extractedMatch ? extractedMatch[1] : selectedId);
+
+      const existing = queries.find((q) => {
+        if (extractedId && (q.pointcloudId === extractedId || q.filters?.some((f) => f.field === "pointcloud_id" && f.value === extractedId))) {
+          return true;
+        }
+        if (queryText && q.queryText.trim().replace(/\s+/g, " ") === queryText.trim().replace(/\s+/g, " ")) {
+          return true;
+        }
+        return false;
+      });
       if (existing) return;
 
       const now = new Date().toISOString();
-      const extractedMatch = queryText.match(/pointcloud_id\s*=\s*['"]([^'"]+)['"]/i);
-      const extractedId = extractedMatch ? extractedMatch[1] : selectedId;
+      const defaultFilters: FilterRule[] = filters && filters.length > 0
+        ? filters
+        : extractedId
+        ? [{ id: `rule-${Date.now()}`, field: "pointcloud_id", operator: "eq", value: extractedId }]
+        : [];
 
       const newQuery: CustomQuery = {
         id: `query-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         name: name || `Custom Query #${queries.length + 1}`,
-        queryText: queryText,
+        queryText: queryText || (extractedId ? `SELECT PC_Explode(patch) AS pt FROM pointcloud_patches WHERE pointcloud_id = '${extractedId}'` : ""),
+        filters: defaultFilters,
         pointcloudId: extractedId,
         createdAt: now,
         updatedAt: now,

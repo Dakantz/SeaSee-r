@@ -1,18 +1,24 @@
 import React, { useState, useEffect, useRef } from "react";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import { QuerySelector } from "./QuerySelector";
+import type { FilterRule } from "./filterUtils";
+import { fetchPointCloudSummary } from "./pointCloudApi";
 
 export { QuerySelector } from "./QuerySelector";
 export { QuerySummary } from "./QuerySummary";
+export { FilterBuilder } from "./FilterBuilder";
+export * from "./filterUtils";
+export * from "./pointCloudApi";
 
 /**
- * Interface representing a Custom SQL Query item in the Custom Query Manager.
- * Encapsulates the SQL text along with connected metadata, target pointcloud ID, and timestamps.
+ * Interface representing a Custom Query item in the Query Manager.
+ * Encapsulates structured filter rules, target pointcloud ID, summary data, and timestamps.
  */
 export interface CustomQuery {
   id: string; // Unique identifier (UUID or key)
   name: string; // Display name / label for the query
-  queryText: string; // SQL query text string
+  queryText: string; // Query text string (legacy compatibility)
+  filters?: FilterRule[]; // Structured filter rules for field__operator=value queries
   pointcloudId?: string | null; // Connected target pointcloud ID
   summary?: QuerySummaryData | null; // Connected summary metadata & bounding box
   createdAt?: string; // ISO creation timestamp
@@ -53,6 +59,14 @@ export const createDefaultQuery = (
     id: `query-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     name: `Query for ${displayName}${countLabel}`,
     queryText: buildDefaultQueryText(targetId),
+    filters: [
+      {
+        id: `rule-${Date.now()}`,
+        field: "pointcloud_id",
+        operator: "eq",
+        value: targetId,
+      },
+    ],
     pointcloudId: targetId,
     createdAt: now,
     updatedAt: now,
@@ -107,8 +121,6 @@ export const getBoundingBoxCenter = (
   }
   return null;
 };
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 const STORAGE_KEY = "seaseer_custom_sql_queries";
 
@@ -276,26 +288,22 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
   };
 
   // Function to fetch summary information from /pointclouds/stream-summary
-  const fetchQuerySummary = async (queryId: string, queryText: string, lod = 0): Promise<QuerySummaryData | null> => {
-    if (!queryText || !queryText.trim()) return null;
-
+  const fetchQuerySummary = async (queryId: string, queryText?: string, filters?: FilterRule[], lod = 0): Promise<QuerySummaryData | null> => {
     setSummaryLoadingMap((prev) => ({ ...prev, [queryId]: true }));
     setSummaryErrorMap((prev) => ({ ...prev, [queryId]: null }));
 
     try {
-      const match = queryText.match(/pointcloud_id\s*=\s*'([a-fA-F0-9-]+)'/i);
-      const targetPcId = match ? match[1] : null;
-      let params = `lod=${lod}`;
-      if (targetPcId) {
-        params += `&pointcloud_id=${encodeURIComponent(targetPcId)}`;
+      let data: QuerySummaryData;
+      if (filters && filters.length > 0) {
+        data = await fetchPointCloudSummary({ lod, filters });
+      } else {
+        const match = queryText ? queryText.match(/pointcloud_id\s*=\s*'([a-fA-F0-9-]+)'/i) : null;
+        const targetPcId = match ? match[1] : null;
+        const effectiveFilters: FilterRule[] = targetPcId
+          ? [{ id: "auto-pc-id", field: "pointcloud_id", operator: "eq", value: targetPcId }]
+          : [];
+        data = await fetchPointCloudSummary({ lod, filters: effectiveFilters });
       }
-      const url = `${API_BASE_URL}/pointclouds/stream-summary?${params}`;
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error(`Server returned HTTP ${response.status}`);
-      }
-      const data: QuerySummaryData = await response.json();
       updateSummaryMap((prev) => ({ ...prev, [queryId]: data }));
       return data;
     } catch (err: any) {
@@ -314,7 +322,7 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
   useEffect(() => {
     queries.forEach((q) => {
       if (!summaryMap[q.id] && !summaryLoadingMap[q.id]) {
-        fetchQuerySummary(q.id, q.queryText);
+        fetchQuerySummary(q.id, q.queryText, q.filters);
       }
     });
   }, [queries]);
@@ -334,17 +342,32 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
     }
   }, [internalQueries, externalQueries, onQueriesChange]);
 
-  // Listen for custom queries executed elsewhere (e.g. PLYPointCloudQueryEditor) when un-controlled
+  // Listen for custom queries executed elsewhere (e.g. PLYPointCloudSidebar) when un-controlled
   useEffect(() => {
     if (externalQueries) return; // Managed by Container
 
     const handleAddQueryEvent = (e: Event) => {
-      const customEvent = e as CustomEvent<{ queryText: string; name?: string }>;
-      const { queryText, name } = customEvent.detail || {};
-      if (!queryText || !queryText.trim()) return;
+      const customEvent = e as CustomEvent<{
+        queryText?: string;
+        name?: string;
+        pointcloudId?: string;
+        filters?: FilterRule[];
+      }>;
+      const { queryText, name, pointcloudId, filters } = customEvent.detail || {};
 
-      const normNew = normalizeSql(queryText);
-      const existing = queries.find((q) => normalizeSql(q.queryText) === normNew);
+      const extractedMatch = queryText ? queryText.match(/pointcloud_id\s*=\s*['"]([^'"]+)['"]/i) : null;
+      const targetPcId = pointcloudId || (extractedMatch ? extractedMatch[1] : null);
+
+      const existing = queries.find((q) => {
+        if (targetPcId && (q.pointcloudId === targetPcId || q.filters?.some((f) => f.field === "pointcloud_id" && f.value === targetPcId))) {
+          return true;
+        }
+        if (queryText && normalizeSql(q.queryText) === normalizeSql(queryText)) {
+          return true;
+        }
+        return false;
+      });
+
       if (existing) {
         setActiveId(existing.id);
         handleRun(existing);
@@ -353,10 +376,18 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
       }
 
       const now = new Date().toISOString();
+      const defaultFilters: FilterRule[] = filters && filters.length > 0
+        ? filters
+        : targetPcId
+        ? [{ id: `rule-${Date.now()}`, field: "pointcloud_id", operator: "eq", value: targetPcId }]
+        : [];
+
       const newQuery: CustomQuery = {
         id: `query-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         name: name || `Custom Query #${queries.length + 1}`,
-        queryText: queryText,
+        queryText: queryText || buildDefaultQueryText(targetPcId),
+        filters: defaultFilters,
+        pointcloudId: targetPcId,
         createdAt: now,
         updatedAt: now,
       };
@@ -436,8 +467,8 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
     handleFocusQuery(newQuery);
   };
 
-  // Handler for text / title updates
-  const handleUpdateQuery = (id: string, field: "name" | "queryText", value: string) => {
+  // Handler for text / title / filter updates
+  const handleUpdateQuery = (id: string, field: string, value: any) => {
     const updatedTimestamp = new Date().toISOString();
     const updatedList = queries.map((q) =>
       q.id === id ? { ...q, [field]: value, updatedAt: updatedTimestamp } : q

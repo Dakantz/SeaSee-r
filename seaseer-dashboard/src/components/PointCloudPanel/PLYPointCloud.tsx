@@ -244,29 +244,29 @@ function CameraPositionControls() {
         const keys = keysPressed.current;
         if (!keys) return;
 
-        const isShift = keys["ShiftLeft"] || keys["ShiftRight"];
+        const isShift = keys["ShiftLeft"];
         const heightFactor = getHeightFactor(camera.position.y);
         const moveSpeed = (isShift ? 3000 : 800) * heightFactor * delta;
 
         camera.getWorldDirection(_tmpVecForward);
         const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
 
-        if (keys["KeyW"] || keys["ArrowUp"]) {
+        if (keys["KeyW"]) {
             camera.position.addScaledVector(_tmpVecForward, moveSpeed);
         }
-        if (keys["KeyS"] || keys["ArrowDown"]) {
+        if (keys["KeyS"]) {
             camera.position.addScaledVector(_tmpVecForward, -moveSpeed);
         }
-        if (keys["KeyA"] || keys["ArrowLeft"]) {
+        if (keys["KeyA"]) {
             camera.position.addScaledVector(right, -moveSpeed);
         }
-        if (keys["KeyD"] || keys["ArrowRight"]) {
+        if (keys["KeyD"]) {
             camera.position.addScaledVector(right, moveSpeed);
         }
-        if (keys["KeyE"] || keys["Space"]) {
+        if (keys["KeyE"]) {
             camera.position.y += moveSpeed;
         }
-        if (keys["KeyQ"] || keys["ControlLeft"] || keys["ControlRight"]) {
+        if (keys["KeyQ"]) {
             camera.position.y -= moveSpeed;
         }
     });
