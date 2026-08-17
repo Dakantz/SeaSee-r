@@ -16,8 +16,9 @@ export interface QuerySummaryProps {
  */
 const ConnectedMetadataCard: React.FC<{
   meta: ConnectedPointCloudMetadata;
+  cameraHeaders?: QuerySummaryData["connected_camera_headers"];
   defaultExpanded?: boolean;
-}> = ({ meta, defaultExpanded = false }) => {
+}> = ({ meta, cameraHeaders = [], defaultExpanded = false }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(defaultExpanded);
 
   const hasBounds =
@@ -41,12 +42,12 @@ const ConnectedMetadataCard: React.FC<{
   const centerCoords = meta.center
     ? meta.center
     : hasBounds
-    ? [
+      ? [
         ((meta.min_x! + meta.max_x!) / 2).toFixed(2),
         ((meta.min_y! + meta.max_y!) / 2).toFixed(2),
         ((meta.min_z! + meta.max_z!) / 2).toFixed(2),
       ]
-    : null;
+      : null;
 
   const standardKeys = new Set([
     "id",
@@ -83,6 +84,14 @@ const ConnectedMetadataCard: React.FC<{
           <span className="query-summary__connected-badge">
             {(meta.number_of_points ?? 0).toLocaleString()} pts
           </span>
+          {cameraHeaders && cameraHeaders.length > 0 && (
+            <span
+              className="query-summary__connected-badge query-summary__connected-badge--camera"
+              title={`${cameraHeaders.length} Connected Camera Header(s)`}
+            >
+              📷 {cameraHeaders.length}
+            </span>
+          )}
         </div>
         <button
           type="button"
@@ -199,6 +208,26 @@ const ConnectedMetadataCard: React.FC<{
               </div>
             </div>
           )}
+
+          {/* Connected Camera Headers */}
+          {cameraHeaders && cameraHeaders.length > 0 && (
+            <div className="query-summary__camera-headers-section">
+              <span className="query-summary__connected-field-label">
+                Connected Camera Headers ({cameraHeaders.length}):
+              </span>
+              <div className="query-summary__chip-list">
+                {cameraHeaders.map((cam) => (
+                  <span
+                    key={cam.id}
+                    title={`Camera Header ID: ${cam.id} | PointCloud ID: ${cam.pointcloud_id} | Focal: ${cam.focal ?? "N/A"} | Res: ${cam.width ?? "?"}x${cam.height ?? "?"} | Model: ${cam.camera || "N/A"}`}
+                    className="query-summary__chip--camera"
+                  >
+                    📷 {cam.camera || "Camera"} ({cam.width && cam.height ? `${cam.width}x${cam.height}` : cam.id.substring(0, 8)})
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -248,64 +277,11 @@ export const QuerySummary: React.FC<QuerySummaryProps> = ({
         <div className="query-summary__content">
           {/* Point Count Badge */}
           <div className="query-summary__count-row">
-            <span className="query-summary__label">Selected Points:</span>
+            <span className="query-summary__label">Total Points:</span>
             <span className="query-summary__count-badge">
-              ⚡ {(summary.total_points ?? 0).toLocaleString()} pts
+              {(summary.total_points ?? 0).toLocaleString()} pts
             </span>
           </div>
-
-          {/* 3D Bounding Box */}
-          {summary.bounding_box ? (
-            <div className="query-summary__bbox-section">
-              <div className="query-summary__bbox-header">
-                <span className="query-summary__label">Bounding Box (XYZ):</span>
-                <button
-                  type="button"
-                  onClick={() => onFocusQuery(query)}
-                  className="query-summary__focus-btn"
-                  title="Focus camera to center of bounding box"
-                >
-                  🎯 Focus
-                </button>
-              </div>
-              <div className="query-summary__bbox-grid">
-                <div>
-                  <span className="query-summary__bbox-label">Min:</span> [
-                  {summary.bounding_box?.min_x !== null && summary.bounding_box?.min_x !== undefined
-                    ? summary.bounding_box.min_x.toFixed(2)
-                    : "N/A"}
-                  ,{" "}
-                  {summary.bounding_box?.min_y !== null && summary.bounding_box?.min_y !== undefined
-                    ? summary.bounding_box.min_y.toFixed(2)
-                    : "N/A"}
-                  ,{" "}
-                  {summary.bounding_box?.min_z !== null && summary.bounding_box?.min_z !== undefined
-                    ? summary.bounding_box.min_z.toFixed(2)
-                    : "N/A"}
-                  ]
-                </div>
-                <div>
-                  <span className="query-summary__bbox-label">Max:</span> [
-                  {summary.bounding_box?.max_x !== null && summary.bounding_box?.max_x !== undefined
-                    ? summary.bounding_box.max_x.toFixed(2)
-                    : "N/A"}
-                  ,{" "}
-                  {summary.bounding_box?.max_y !== null && summary.bounding_box?.max_y !== undefined
-                    ? summary.bounding_box.max_y.toFixed(2)
-                    : "N/A"}
-                  ,{" "}
-                  {summary.bounding_box?.max_z !== null && summary.bounding_box?.max_z !== undefined
-                    ? summary.bounding_box.max_z.toFixed(2)
-                    : "N/A"}
-                  ]
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="query-summary__message--empty">
-              No 3D bounding box available
-            </div>
-          )}
 
           {/* Connected Point Clouds Metadata Section */}
           {summary.connected_pointclouds && summary.connected_pointclouds.length > 0 ? (
@@ -314,13 +290,19 @@ export const QuerySummary: React.FC<QuerySummaryProps> = ({
                 Connected Metadata ({summary.connected_pointclouds.length}):
               </span>
               <div className="query-summary__connected-list">
-                {summary.connected_pointclouds.map((meta, idx) => (
-                  <ConnectedMetadataCard
-                    key={meta.id || `meta-${idx}`}
-                    meta={meta}
-                    defaultExpanded={summary.connected_pointclouds!.length === 1}
-                  />
-                ))}
+                {summary.connected_pointclouds.map((meta, idx) => {
+                  const matchingCameraHeaders = summary.connected_camera_headers?.filter(
+                    (cam) => cam.pointcloud_id === meta.id
+                  );
+                  return (
+                    <ConnectedMetadataCard
+                      key={meta.id || `meta-${idx}`}
+                      meta={meta}
+                      cameraHeaders={matchingCameraHeaders}
+                      defaultExpanded={false}
+                    />
+                  );
+                })}
               </div>
             </div>
           ) : (
@@ -329,25 +311,38 @@ export const QuerySummary: React.FC<QuerySummaryProps> = ({
             </div>
           )}
 
-          {/* Connected Camera Headers List */}
-          {summary.connected_camera_headers && summary.connected_camera_headers.length > 0 && (
-            <div className="query-summary__connected-section">
-              <span className="query-summary__label">
-                Connected Camera Headers ({summary.connected_camera_headers.length}):
-              </span>
-              <div className="query-summary__chip-list">
-                {summary.connected_camera_headers.map((cam) => (
-                  <span
-                    key={cam.id}
-                    title={`Camera Header ID: ${cam.id} | PointCloud ID: ${cam.pointcloud_id} | Focal: ${cam.focal ?? "N/A"} | Res: ${cam.width ?? "?"}x${cam.height ?? "?"} | Model: ${cam.camera || "N/A"}`}
-                    className="query-summary__chip--camera"
-                  >
-                    📷 {cam.camera || "Camera"} ({cam.width && cam.height ? `${cam.width}x${cam.height}` : cam.id.substring(0, 8)})
-                  </span>
-                ))}
+          {/* Unmatched Connected Camera Headers List (if any exist without a matching metadata card) */}
+          {(() => {
+            const matchedIds = new Set(
+              summary.connected_pointclouds?.flatMap((meta) =>
+                summary.connected_camera_headers
+                  ?.filter((cam) => cam.pointcloud_id === meta.id)
+                  .map((cam) => cam.id)
+              ) || []
+            );
+            const unmatched = summary.connected_camera_headers?.filter(
+              (cam) => !matchedIds.has(cam.id)
+            );
+            if (!unmatched || unmatched.length === 0) return null;
+            return (
+              <div className="query-summary__connected-section">
+                <span className="query-summary__label">
+                  Other Camera Headers ({unmatched.length}):
+                </span>
+                <div className="query-summary__chip-list">
+                  {unmatched.map((cam) => (
+                    <span
+                      key={cam.id}
+                      title={`Camera Header ID: ${cam.id} | PointCloud ID: ${cam.pointcloud_id} | Focal: ${cam.focal ?? "N/A"} | Res: ${cam.width ?? "?"}x${cam.height ?? "?"} | Model: ${cam.camera || "N/A"}`}
+                      className="query-summary__chip--camera"
+                    >
+                      📷 {cam.camera || "Camera"} ({cam.width && cam.height ? `${cam.width}x${cam.height}` : cam.id.substring(0, 8)})
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       ) : (
         <div className="query-summary__message--empty">
