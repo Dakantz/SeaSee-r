@@ -5,8 +5,8 @@ import type { QuerySummaryData, CustomQuery } from "./CustomQueryManager";
 import { fetchPointCloudSummary } from "./utils/pointCloudApi.ts";
 import type { FilterRule } from "./utils/filterUtils.ts";
 
-export type MapProviderChoice = "OpenStreetMaps" | "Bathymetry" | "Emodnet" | "Debug" | "MapTilerBasic" | "MapTilerOutdoor" | "MapTilerSatellite" | "Bing";
-export type HeightProviderChoice = "Bathymetry" | "Emodnet" | "None" | "Debug" | "MapTiler" | "Bing";
+export type MapProviderChoice = "OpenStreetMaps" | "Bathymetry" | "EmodnetWMS" | "EmodnetWCSBilinear" | "EmodnetWCSNearestNeighbour" | "Debug" | "MapTilerBasic" | "MapTilerOutdoor" | "MapTilerSatellite" | "Bing";
+export type HeightProviderChoice = "Bathymetry" | "EmodnetWCSBilinear" | "EmodnetWCSNearestNeighbour" | "None" | "Debug" | "MapTiler" | "Bing";
 
 import { loadProgressivePointCloud, setPointCloudLoading } from "./utils/pointCloudLoader";
 
@@ -139,7 +139,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [showHeightmap, setShowHeightmap] = useState<boolean>(false);
     const [heightmapMode, setHeightmapMode] = useState<"HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR">("HEIGHT");
     const [heightmapMapProvider, setHeightmapMapProvider] = useState<MapProviderChoice>("OpenStreetMaps");
-    const [heightmapHeightProvider, setHeightmapHeightProvider] = useState<HeightProviderChoice>("Emodnet");
+    const [heightmapHeightProvider, setHeightmapHeightProvider] = useState<HeightProviderChoice>("EmodnetWCSBilinear");
     const [identifier, setIdentifier] = useState<string>(DEFAULT_HARDCODED_IDENTIFIER);
     const [lod, setLod] = useState<number>(0);
     const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);

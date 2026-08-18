@@ -241,7 +241,9 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                 >
                                     <option value="OpenStreetMaps" className="pointcloud-sidebar__select-option">OpenStreetMap</option>
                                     <option value="Bathymetry" className="pointcloud-sidebar__select-option">SeaSee Bathymetry</option>
-                                    <option value="Emodnet" className="pointcloud-sidebar__select-option">EMODnet Bathymetry</option>
+                                    <option value="EmodnetWMS" className="pointcloud-sidebar__select-option">EMODnet WMS</option>
+                                    <option value="EmodnetWCSBilinear" className="pointcloud-sidebar__select-option">EMODnet WCS Bilinear</option>
+                                    <option value="EmodnetWCSNearestNeighbour" className="pointcloud-sidebar__select-option">EMODnet WCS Nearest Neighbour</option>
                                     <option value="Debug" className="pointcloud-sidebar__select-option">Debug Grid</option>
                                     <option value="MapTilerBasic" className="pointcloud-sidebar__select-option">Vector Map Tiler Basic</option>
                                     <option value="MapTilerOutdoor" className="pointcloud-sidebar__select-option">Vector Map Tiler Outdoor</option>
@@ -259,7 +261,8 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                     className="pointcloud-sidebar__select"
                                 >
                                     <option value="Bathymetry" className="pointcloud-sidebar__select-option">SeaSeer Bathymetry</option>
-                                    <option value="Emodnet" className="pointcloud-sidebar__select-option">EMODnet Bathymetry</option>
+                                    <option value="EmodnetWCSBilinear" className="pointcloud-sidebar__select-option">EMODnet WCS Bilinear</option>
+                                    <option value="EmodnetWCSNearestNeighbour" className="pointcloud-sidebar__select-option">EMODnet WCS Nearest Neighbour</option>
                                     <option value="None" className="pointcloud-sidebar__select-option">None (Flat Surface)</option>
                                     <option value="Debug" className="pointcloud-sidebar__select-option">Height Debug Grid</option>
                                     <option value="MapTiler" className="pointcloud-sidebar__select-option">Height Map Tiler</option>

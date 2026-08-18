@@ -12,7 +12,7 @@ import { getBoundingBoxCenter, type CustomQuery } from "./CustomQueryManager";
 
 
 // @ts-expect-error - geo-three submodule
-import { MapView, DebugProvider, HeightDebugProvider, OpenStreetMapsProvider, OpenMapTilesProvider, MapTilerProvider, BingMapsProvider, BathymetryProvider, EmodnetProvider, UnitsUtils, MapNodeGeometry, MapHeightNodeShader, MapHeightNode, MapNodeHeightGeometry, MapPlaneNode, CanvasUtils } from "../../../public/geo-three/build/geo-three.module.js";
+import { MapView, DebugProvider, HeightDebugProvider, OpenStreetMapsProvider, OpenMapTilesProvider, MapTilerProvider, BingMapsProvider, BathymetryProvider, EmodnetProvider, EmodnetTileProvider, EmodnetWCSProvider, UnitsUtils, MapNodeGeometry, MapHeightNodeShader, MapHeightNode, MapNodeHeightGeometry, MapPlaneNode, CanvasUtils } from "../../../public/geo-three/build/geo-three.module.js";
 
 // Set skirt depth to 100.0 so the skirt extends down to height -100
 MapHeightNodeShader.geometry = new MapNodeGeometry(1.0, 1.0, MapHeightNodeShader.geometrySize, MapHeightNodeShader.geometrySize, true, 2000.0);
@@ -32,14 +32,38 @@ if (MapHeightNode.prototype.loadHeightGeometry) {
             const image = await this.mapView.heightProvider.fetchTile(this.level, this.x, this.y);
             if (this.disposed) return;
 
-            const canvas = CanvasUtils.createOffscreenCanvas(this.geometrySize + 1, this.geometrySize + 1);
-            const context = canvas.getContext('2d') as CanvasRenderingContext2D;
-            context.imageSmoothingEnabled = false;
-            context.drawImage(image, 0, 0, MapHeightNode.tileSize, MapHeightNode.tileSize, 0, 0, canvas.width, canvas.height);
-            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            // 1. Draw 1:1 onto a 256x256 canvas without downscaling to extract exact uncorrupted RGBA bytes
+            const srcTileSize = MapHeightNode.tileSize; // 256
+            const srcCanvas = CanvasUtils.createOffscreenCanvas(srcTileSize, srcTileSize);
+            const srcContext = srcCanvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
+            srcContext.imageSmoothingEnabled = false;
+            srcContext.drawImage(image, 0, 0, srcTileSize, srcTileSize, 0, 0, srcTileSize, srcTileSize);
+            const srcData = srcContext.getImageData(0, 0, srcTileSize, srcTileSize).data;
 
-            // Use skirtDepth = 100.0 so skirt extends down to height -100
-            this.geometry = new MapNodeHeightGeometry(1, 1, this.geometrySize, this.geometrySize, true, 2000.0, imageData, true);
+            // 2. Downsample to 17x17 via pure nearest-neighbor pixel sampling (prevents 2D canvas color byte interpolation craters)
+            const dstSize = this.geometrySize + 1; // 17
+            const dstCanvas = CanvasUtils.createOffscreenCanvas(dstSize, dstSize);
+            const dstContext = dstCanvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
+            const dstImageData = dstContext.createImageData(dstSize, dstSize);
+            const dstData = dstImageData.data;
+
+            for (let r = 0; r < dstSize; r++) {
+                const srcY = Math.min(srcTileSize - 1, Math.round((r / (dstSize - 1)) * (srcTileSize - 1)));
+                for (let c = 0; c < dstSize; c++) {
+                    const srcX = Math.min(srcTileSize - 1, Math.round((c / (dstSize - 1)) * (srcTileSize - 1)));
+
+                    const srcIdx = (srcY * srcTileSize + srcX) * 4;
+                    const dstIdx = (r * dstSize + c) * 4;
+
+                    dstData[dstIdx + 0] = srcData[srcIdx + 0];
+                    dstData[dstIdx + 1] = srcData[srcIdx + 1];
+                    dstData[dstIdx + 2] = srcData[srcIdx + 2];
+                    dstData[dstIdx + 3] = srcData[srcIdx + 3];
+                }
+            }
+
+            // 3. Build geometry with non-corrupted 17x17 height grid
+            this.geometry = new MapNodeHeightGeometry(1, 1, this.geometrySize, this.geometrySize, true, 2000.0, dstImageData, true);
         } catch (e) {
             if (this.disposed) return;
             this.geometry = MapPlaneNode.baseGeometry;
@@ -292,8 +316,14 @@ function GeoThreeHeightmap() {
                 case "Bathymetry":
                     provider = new BathymetryProvider(`${apiBaseUrl}/bathymetry`);
                     break;
-                case "Emodnet":
-                    provider = new EmodnetProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", "", "image/png", "WCS");
+                case "EmodnetWMS":
+                    provider = new EmodnetTileProvider();
+                    break;
+                case "EmodnetWCSBilinear":
+                    provider = new EmodnetWCSProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", 1.0, true);
+                    break;
+                case "EmodnetWCSNearestNeighbour":
+                    provider = new EmodnetWCSProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", 1.0, false);
                     break;
                 case "Debug":
                     provider = new DebugProvider();
@@ -322,8 +352,11 @@ function GeoThreeHeightmap() {
                 case "Bathymetry":
                     heightProvider = new BathymetryProvider(`${apiBaseUrl}/bathymetry`);
                     break;
-                case "Emodnet":
-                    heightProvider = new EmodnetProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", "", "image/png", "WCS", 1.0);
+                case "EmodnetWCSBilinear":
+                    heightProvider = new EmodnetWCSProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", 1.0, true);
+                    break;
+                case "EmodnetWCSNearestNeighbour":
+                    heightProvider = new EmodnetWCSProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", 1.0, false);
                     break;
                 case "Debug":
                     heightProvider = new HeightDebugProvider(new DebugProvider());
@@ -359,6 +392,28 @@ function GeoThreeHeightmap() {
         if (mapViewRef.current?.lod) {
             try {
                 mapViewRef.current.lod.updateLOD(mapViewRef.current, camera, gl, scene);
+
+                // Enforce THREE.NearestFilter on all terrain/height textures to prevent RGB channel interpolation craters
+                mapViewRef.current.traverse((child: any) => {
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((mat: any) => {
+                            if (mat.map && (mat.map.magFilter !== THREE.NearestFilter || mat.map.minFilter !== THREE.NearestFilter)) {
+                                mat.map.magFilter = THREE.NearestFilter;
+                                mat.map.minFilter = THREE.NearestFilter;
+                                mat.map.needsUpdate = true;
+                            }
+                            if (mat.userData?.heightMap?.value && mat.userData.heightMap.value !== MapHeightNodeShader.defaultHeightTexture) {
+                                const hm = mat.userData.heightMap.value;
+                                if (hm.magFilter !== THREE.NearestFilter || hm.minFilter !== THREE.NearestFilter) {
+                                    hm.magFilter = THREE.NearestFilter;
+                                    hm.minFilter = THREE.NearestFilter;
+                                    hm.needsUpdate = true;
+                                }
+                            }
+                        });
+                    }
+                });
             } catch (e) {
                 // Ignore transient update errors on unmount/re-render
             }
