@@ -64,8 +64,8 @@ export interface PLYPointCloudContextType {
     selectPointcloud: (id: string | null) => void;
     hoveredId: string | null;
     hoverPointcloud: (id: string | null) => void;
-    cameraTarget: { x: number; y: number; z: number; timestamp: number } | null;
-    focusCameraTarget: (target: [number, number, number] | { x: number; y: number; z: number }) => void;
+    cameraTarget: { x: number; y: number; z: number; offset?: [number, number, number] | number; timestamp: number } | null;
+    focusCameraTarget: (target: [number, number, number] | { x: number; y: number; z: number }, offset?: [number, number, number] | number) => void;
     loadedGeometries: Map<string, THREE.BufferGeometry>;
     loadingIds: Set<string>;
     isStreamLoaded: (queryId: string) => boolean;
@@ -109,7 +109,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [ambientLightIntensity, setAmbientLightIntensity] = useState<number>(0.4);
     const [showCameraTrajectories, setShowCameraTrajectories] = useState<boolean>(true);
     const [summaryMap, setSummaryMap] = useState<Record<string, QuerySummaryData>>({});
-    const [cameraTarget, setCameraTarget] = useState<{ x: number; y: number; z: number; timestamp: number } | null>(null);
+    const [cameraTarget, setCameraTarget] = useState<{ x: number; y: number; z: number; offset?: [number, number, number] | number; timestamp: number } | null>(null);
 
     // Custom Queries state persisted to localStorage
     const [queries, setQueries] = useState<CustomQuery[]>(() => {
@@ -312,14 +312,14 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         });
     }, []);
 
-    const focusCameraTarget = useCallback((target: [number, number, number] | { x: number; y: number; z: number }) => {
+    const focusCameraTarget = useCallback((target: [number, number, number] | { x: number; y: number; z: number }, offset?: [number, number, number] | number) => {
         let x: number, y: number, z: number;
         if (Array.isArray(target)) {
             [x, y, z] = target;
         } else {
             ({ x, y, z } = target);
         }
-        setCameraTarget({ x, y, z, timestamp: Date.now() });
+        setCameraTarget({ x, y, z, offset, timestamp: Date.now() });
     }, []);
 
     const fetchCatalog = useCallback(async () => {

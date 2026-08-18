@@ -120,6 +120,31 @@ export const getBoundingBoxCenter = (
   if ("center" in summaryOrBbox && summaryOrBbox.center && Array.isArray(summaryOrBbox.center) && summaryOrBbox.center.length === 3) {
     return [summaryOrBbox.center[0], summaryOrBbox.center[1], summaryOrBbox.center[2]];
   }
+  if ("bounding_box" in summaryOrBbox && summaryOrBbox.bounding_box) {
+    const bbox = summaryOrBbox.bounding_box;
+    if (
+      typeof bbox.min_x === "number" && typeof bbox.max_x === "number" &&
+      typeof bbox.min_y === "number" && typeof bbox.max_y === "number" &&
+      typeof bbox.min_z === "number" && typeof bbox.max_z === "number"
+    ) {
+      return [
+        (bbox.min_x + bbox.max_x) / 2,
+        (bbox.min_y + bbox.max_y) / 2,
+        (bbox.min_z + bbox.max_z) / 2,
+      ];
+    }
+  }
+  if (
+    "min_x" in summaryOrBbox && typeof summaryOrBbox.min_x === "number" && typeof summaryOrBbox.max_x === "number" &&
+    "min_y" in summaryOrBbox && typeof summaryOrBbox.min_y === "number" && typeof summaryOrBbox.max_y === "number" &&
+    "min_z" in summaryOrBbox && typeof summaryOrBbox.min_z === "number" && typeof summaryOrBbox.max_z === "number"
+  ) {
+    return [
+      (summaryOrBbox.min_x + summaryOrBbox.max_x) / 2,
+      (summaryOrBbox.min_y + summaryOrBbox.max_y) / 2,
+      (summaryOrBbox.min_z + summaryOrBbox.max_z) / 2,
+    ];
+  }
   return null;
 };
 
@@ -165,7 +190,7 @@ export interface CustomQueryManagerProps {
   /** Callback triggered whenever the list of queries changes */
   onQueriesChange?: (queries: CustomQuery[]) => void;
   /** Callback triggered to focus the camera on specific 3D coordinates */
-  onFocusCenter?: (center: [number, number, number] | { x: number; y: number; z: number }) => void;
+  onFocusCenter?: (center: [number, number, number] | { x: number; y: number; z: number }, offset?: [number, number, number] | number) => void;
 
   /* Legacy props maintained for component API compatibility */
   hoveredId?: string | null;
@@ -439,7 +464,7 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
     onRunQuery?.(query);
   };
 
-  // Handler to focus camera onto the 3D bounding box center of a query
+  // Handler to focus camera onto the 3D bounding box center of a query, moving camera closer
   const handleFocusQuery = async (query: CustomQuery) => {
     let summary: QuerySummaryData | null = summaryMap[query.id] || null;
     if (!summary || !summary.bounding_box) {
@@ -448,7 +473,25 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
 
     const center = getBoundingBoxCenter(summary);
     if (center) {
-      onFocusCenter?.(center);
+      let offset: [number, number, number] | number = [0, 150, 150];
+      if (summary?.bounding_box) {
+        const bbox = summary.bounding_box;
+        if (
+          typeof bbox.min_x === "number" && typeof bbox.max_x === "number" &&
+          typeof bbox.min_y === "number" && typeof bbox.max_y === "number" &&
+          typeof bbox.min_z === "number" && typeof bbox.max_z === "number"
+        ) {
+          const dx = Math.abs(bbox.max_x - bbox.min_x);
+          const dy = Math.abs(bbox.max_y - bbox.min_y);
+          const dz = Math.abs(bbox.max_z - bbox.min_z);
+          const maxDim = Math.max(dx, dy, dz);
+          if (maxDim > 0) {
+            const dist = Math.max(30, Math.min(maxDim * 1.2, 300));
+            offset = [0, dist, dist];
+          }
+        }
+      }
+      onFocusCenter?.(center, offset);
     } else {
       if (onMoveCamera && selectedPointCloudId) {
         onMoveCamera(selectedPointCloudId);

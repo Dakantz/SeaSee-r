@@ -55,7 +55,7 @@ export const CustomQueryManagerContainer: React.FC = () => {
       onQueriesChange={handleQueriesChange}
       onDeleteQuery={(id) => setQueries?.((prev) => prev.filter((q) => q.id !== id))}
       onHover={hoverPointcloud}
-      onFocusCenter={(center) => focusCameraTarget(center)}
+      onFocusCenter={(center, offset) => focusCameraTarget(center, offset)}
     />
   );
 };

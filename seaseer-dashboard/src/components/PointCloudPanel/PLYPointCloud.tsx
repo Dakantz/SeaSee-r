@@ -381,14 +381,10 @@ function PointCloudCenterMarkers() {
         hoverPointcloud,
         focusCameraTarget,
         startProgressiveStream,
-        isStreamLoading,
-        isStreamLoaded,
     } = usePLYPointCloudContext();
 
     const meshRef = useRef<THREE.InstancedMesh>(null);
     const dummy = useMemo(() => new THREE.Object3D(), []);
-    const centerVec = useMemo(() => new THREE.Vector3(), []);
-    const rotEuler = useMemo(() => new THREE.Euler(-Math.PI / 2, 0, 0), []);
 
     useEffect(() => {
         if (meshRef.current && meshRef.current.geometry) {
@@ -399,18 +395,16 @@ function PointCloudCenterMarkers() {
         }
     }, [queries]);
 
-    useFrame(({ camera }) => {
+    useFrame(() => {
         if (!meshRef.current || queries.length === 0) return;
 
         queries.forEach((query, index) => {
             const [cx, cy, cz] = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, 0, TARGET_Z];
-            centerVec.set(cx, cy, cz).applyEuler(rotEuler);
-            const dist = camera.position.distanceTo(centerVec);
 
             const isHovered = query.id === hoveredId;
 
-            const baseFactor = isHovered ? 0.02 : 0.012;
-            const scale = Math.max(0.01, dist * baseFactor);
+            // Fixed size in 3D world space
+            const scale = isHovered ? 1.5 : 1.0;
 
             dummy.position.set(cx, cy, cz);
             dummy.scale.set(scale, scale, scale);
@@ -488,8 +482,16 @@ function CameraFocusController() {
         targetCenter: THREE.Vector3;
     } | null>(null);
 
-    const startFocusAnimation = useCallback((targetCenter: THREE.Vector3) => {
-        const targetCamPos = targetCenter.clone().add(new THREE.Vector3(0, 1500, 1500));
+    const startFocusAnimation = useCallback((targetCenter: THREE.Vector3, customOffset?: [number, number, number] | number) => {
+        let offsetVec = new THREE.Vector3(0, 150, 150);
+        if (customOffset !== undefined) {
+            if (Array.isArray(customOffset)) {
+                offsetVec = new THREE.Vector3(...customOffset);
+            } else if (typeof customOffset === "number") {
+                offsetVec = new THREE.Vector3(0, customOffset, customOffset);
+            }
+        }
+        const targetCamPos = targetCenter.clone().add(offsetVec);
 
         animState.current = {
             startTime: performance.now() / 1000,
@@ -502,12 +504,12 @@ function CameraFocusController() {
 
     useEffect(() => {
         if (!cameraTarget) return;
-        const { x, y, z } = cameraTarget;
+        const { x, y, z, offset } = cameraTarget;
         if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
             const targetCenter = new THREE.Vector3(x, y, z).applyEuler(
                 new THREE.Euler(-Math.PI / 2, 0, 0)
             );
-            startFocusAnimation(targetCenter);
+            startFocusAnimation(targetCenter, offset);
         }
     }, [cameraTarget, startFocusAnimation]);
 
