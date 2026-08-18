@@ -2,7 +2,19 @@ export type FilterOperator = "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in" | 
 
 export interface FilterRule {
   id: string;
-  field: "pointcloud_id" | "number_of_points" | "video_start_at" | string;
+  field:
+    | "pointcloud_id"
+    | "number_of_points"
+    | "orig_filename"
+    | "video_start_at"
+    | "video_stop_at"
+    | "min_x"
+    | "max_x"
+    | "min_y"
+    | "max_y"
+    | "min_z"
+    | "max_z"
+    | string;
   operator: FilterOperator;
   value: string | number;
 }

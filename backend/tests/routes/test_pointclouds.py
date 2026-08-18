@@ -358,6 +358,52 @@ def test_query_builder_parameter_parsing():
     assert len(bind) == 3
 
 
+def test_query_builder_spatial_filtering():
+    from app.services.pointcloud.query_builder import PointCloudQueryBuilder, parse_filter_key
+    from app.schemas.filter import FilterCriterion
+
+    # Single spatial filter min_x > 0
+    sql, bind, _ = PointCloudQueryBuilder.build_binary_stream_query(
+        filters=[
+            FilterCriterion(field="min_x", operator="gt", value=0.0)
+        ],
+        lod=0
+    )
+
+    assert "PC_PatchMax(p.patch, 'X') > :" in sql
+    assert ") AS exploded\nWHERE PC_Get(pt, 'X') > :" in sql
+    assert bind["p_0"] == 0.0
+
+    # Multiple spatial filters: min_x, max_x, min_y, max_y, min_z, max_z
+    sql_multi, bind_multi, _ = PointCloudQueryBuilder.build_binary_stream_query(
+        filters=[
+            FilterCriterion(field="min_x", operator="gte", value=-10.0),
+            FilterCriterion(field="max_x", operator="lte", value=10.0),
+            FilterCriterion(field="min_y", operator="gt", value=-5.0),
+            FilterCriterion(field="max_y", operator="lt", value=5.0),
+            FilterCriterion(field="min_z", operator="gte", value=0.0),
+            FilterCriterion(field="max_z", operator="lte", value=20.0),
+        ],
+        lod=1
+    )
+
+    assert "PC_PatchMax(p.patch, 'X') >= :" in sql_multi
+    assert "PC_PatchMin(p.patch, 'X') <= :" in sql_multi
+    assert "PC_PatchMax(p.patch, 'Y') > :" in sql_multi
+    assert "PC_PatchMin(p.patch, 'Y') < :" in sql_multi
+    assert "PC_PatchMax(p.patch, 'Z') >= :" in sql_multi
+    assert "PC_PatchMin(p.patch, 'Z') <= :" in sql_multi
+
+    assert "PC_Get(pt, 'X') >= :" in sql_multi
+    assert "PC_Get(pt, 'X') <= :" in sql_multi
+    assert "PC_Get(pt, 'Y') > :" in sql_multi
+    assert "PC_Get(pt, 'Y') < :" in sql_multi
+    assert "PC_Get(pt, 'Z') >= :" in sql_multi
+    assert "PC_Get(pt, 'Z') <= :" in sql_multi
+    assert len(bind_multi) == 6
+
+
+
 def test_endpoint_stream_binary_invalid_field_400():
     res = client.get("/pointclouds/stream-binary?lod=0&unapproved_field=123")
     assert res.status_code == 400

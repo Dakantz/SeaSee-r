@@ -1145,12 +1145,21 @@
     padding: 4px 6px;
     font-size: 11px;
     outline: none;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
 
     &:focus-visible {
         outline: none;
         border-color: var(--color-accent-text, #38bdf8);
         box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+    }
+
+    &:disabled,
+    &.filter-builder__select--disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        background: rgba(15, 23, 42, 0.25);
+        color: var(--color-text-muted, #64748b);
+        border-color: rgba(255, 255, 255, 0.08);
     }
 
     &.filter-builder__select--operator {

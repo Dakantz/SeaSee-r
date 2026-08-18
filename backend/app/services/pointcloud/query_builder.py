@@ -14,14 +14,23 @@ FILTER_FIELD_MAP = {
     "number_of_points": {"column": "pm.number_of_points", "type": "int"},
     "created_at": {"column": "pm.created_at", "type": "datetime"},
     "orig_filename": {"column": "pm.orig_filename", "type": "string"},
-    "min_x": {"column": "pm.min_x", "type": "float"},
-    "max_x": {"column": "pm.max_x", "type": "float"},
-    "min_y": {"column": "pm.min_y", "type": "float"},
-    "max_y": {"column": "pm.max_y", "type": "float"},
-    "min_z": {"column": "pm.min_z", "type": "float"},
-    "max_z": {"column": "pm.max_z", "type": "float"},
+    "min_x": {"type": "float", "is_spatial": True},
+    "max_x": {"type": "float", "is_spatial": True},
+    "min_y": {"type": "float", "is_spatial": True},
+    "max_y": {"type": "float", "is_spatial": True},
+    "min_z": {"type": "float", "is_spatial": True},
+    "max_z": {"type": "float", "is_spatial": True},
     "video_start_at": {"column": "vm.video_start_at", "type": "datetime"},
     "video_stop_at": {"column": "vm.video_stop_at", "type": "datetime"},
+}
+
+SPATIAL_FILTER_MAP = {
+    "min_x": {"dim": "X", "patch_func": "PC_PatchMax", "bound_type": "min"},
+    "max_x": {"dim": "X", "patch_func": "PC_PatchMin", "bound_type": "max"},
+    "min_y": {"dim": "Y", "patch_func": "PC_PatchMax", "bound_type": "min"},
+    "max_y": {"dim": "Y", "patch_func": "PC_PatchMin", "bound_type": "max"},
+    "min_z": {"dim": "Z", "patch_func": "PC_PatchMax", "bound_type": "min"},
+    "max_z": {"dim": "Z", "patch_func": "PC_PatchMin", "bound_type": "max"},
 }
 
 # Comparison operators matrix
@@ -93,15 +102,16 @@ class PointCloudQueryBuilder:
         cls,
         filters: Optional[List[FilterCriterion]] = None,
         lod: int = 0
-    ) -> Tuple[str, str, Dict[str, Any], bool, List[str]]:
+    ) -> Tuple[str, str, str, Dict[str, Any], bool, List[str]]:
         """
-        Builds where clauses, bind parameters, join requirements, and expanding parameters.
+        Builds patch where clauses, point where clauses, bind parameters, join requirements, and expanding parameters.
 
         Returns:
-            (table_name, patch_where_sql, bind_params, requires_video_join, expanding_params)
+            (table_name, patch_where_sql, point_where_sql, bind_params, requires_video_join, expanding_params)
         """
         table_name = f"pointcloud_patches_lod{lod}"
-        where_clauses: List[str] = []
+        patch_where_clauses: List[str] = []
+        point_where_clauses: List[str] = []
         bind_params: Dict[str, Any] = {}
         expanding_params: List[str] = []
         requires_video_join = False
@@ -118,35 +128,59 @@ class PointCloudQueryBuilder:
                 continue
 
             field_spec = FILTER_FIELD_MAP[field_name]
-            column_name = field_spec["column"]
-            val_type = field_spec["type"]
-
-            if column_name.startswith("vm."):
-                requires_video_join = True
+            val_type = field_spec.get("type", "string")
 
             bind_name = f"p_{param_counter}"
             param_counter += 1
 
             typed_val = cast_value(raw_val, val_type)
 
-            if op_key == "in":
-                val_list = typed_val if isinstance(typed_val, (list, tuple)) else [typed_val]
-                if not val_list:
-                    continue
-                where_clauses.append(f"{column_name} IN :{bind_name}")
-                bind_params[bind_name] = tuple(val_list)
-                expanding_params.append(bind_name)
-            elif op_key == "like":
-                where_clauses.append(f"{column_name} LIKE :{bind_name}")
-                bind_params[bind_name] = str(typed_val)
-            else:
-                sql_operator = OPERATORS.get(op_key, "=")
-                where_clauses.append(f"{column_name} {sql_operator} :{bind_name}")
+            if field_name in SPATIAL_FILTER_MAP:
+                spatial_info = SPATIAL_FILTER_MAP[field_name]
+                dim = spatial_info["dim"]
+                patch_func = spatial_info["patch_func"]
+                bound_type = spatial_info["bound_type"]
+
+                if op_key == "gt":
+                    sql_op = ">"
+                elif op_key == "gte":
+                    sql_op = ">="
+                elif op_key == "lt":
+                    sql_op = "<"
+                elif op_key == "lte":
+                    sql_op = "<="
+                elif op_key == "ne":
+                    sql_op = "!="
+                else:  # "eq" or unspecified
+                    sql_op = ">=" if bound_type == "min" else "<="
+
+                patch_where_clauses.append(f"{patch_func}(p.patch, '{dim}') {sql_op} :{bind_name}")
+                point_where_clauses.append(f"PC_Get(pt, '{dim}') {sql_op} :{bind_name}")
                 bind_params[bind_name] = typed_val
+            else:
+                column_name = field_spec["column"]
+                if column_name.startswith("vm."):
+                    requires_video_join = True
 
-        combined_patch_where = " AND ".join(where_clauses) if where_clauses else "1=1"
+                if op_key == "in":
+                    val_list = typed_val if isinstance(typed_val, (list, tuple)) else [typed_val]
+                    if not val_list:
+                        continue
+                    patch_where_clauses.append(f"{column_name} IN :{bind_name}")
+                    bind_params[bind_name] = tuple(val_list)
+                    expanding_params.append(bind_name)
+                elif op_key == "like":
+                    patch_where_clauses.append(f"{column_name} LIKE :{bind_name}")
+                    bind_params[bind_name] = str(typed_val)
+                else:
+                    sql_operator = OPERATORS.get(op_key, "=")
+                    patch_where_clauses.append(f"{column_name} {sql_operator} :{bind_name}")
+                    bind_params[bind_name] = typed_val
 
-        return table_name, combined_patch_where, bind_params, requires_video_join, expanding_params
+        combined_patch_where = " AND ".join(patch_where_clauses) if patch_where_clauses else "1=1"
+        combined_point_where = " AND ".join(point_where_clauses) if point_where_clauses else ""
+
+        return table_name, combined_patch_where, combined_point_where, bind_params, requires_video_join, expanding_params
 
     @classmethod
     def build_binary_stream_query(
@@ -157,12 +191,13 @@ class PointCloudQueryBuilder:
         """
         Constructs the SQL string, bind parameters, and expanding parameter list for binary point streaming (/stream-binary).
         """
-        table_name, patch_where_sql, bind_params, requires_video_join, expanding_params = cls.build_query_components(
+        table_name, patch_where_sql, point_where_sql, bind_params, requires_video_join, expanding_params = cls.build_query_components(
             filters=filters,
             lod=lod
         )
 
         video_join_clause = "LEFT JOIN video_metadata vm ON pm.video_metadata_id = vm.id" if requires_video_join else ""
+        point_where_clause = f"\nWHERE {point_where_sql}" if point_where_sql else ""
 
         sql = f"""
             SELECT 
@@ -178,8 +213,9 @@ class PointCloudQueryBuilder:
                 JOIN pointcloud_metadata pm ON p.pointcloud_id = pm.id
                 {video_join_clause}
                 WHERE {patch_where_sql}
-            ) AS exploded;
+            ) AS exploded{point_where_clause};
         """
+        logger.info(f"Binary stream query: {sql}")
         return sql, bind_params, expanding_params
 
     @classmethod
@@ -192,7 +228,7 @@ class PointCloudQueryBuilder:
         Constructs SQL strings for summary metrics and distinct pointcloud FK IDs (/stream-summary).
         Returns (summary_sql, distinct_ids_sql, bind_params, expanding_params).
         """
-        table_name, patch_where_sql, bind_params, requires_video_join, expanding_params = cls.build_query_components(
+        table_name, patch_where_sql, point_where_sql, bind_params, requires_video_join, expanding_params = cls.build_query_components(
             filters=filters,
             lod=lod
         )
@@ -221,5 +257,7 @@ class PointCloudQueryBuilder:
             {video_join_clause}
             WHERE {patch_where_sql};
         """
-
+        logger.info(f"Summary query: {summary_sql}")
+        logger.info(f"Distinct IDs query: {distinct_ids_sql}")
         return summary_sql, distinct_ids_sql, bind_params, expanding_params
+
