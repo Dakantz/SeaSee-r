@@ -87,6 +87,49 @@ export const usePLYPointCloudContext = () => {
     }
     return context;
 };
+/**
+ * Helper function to check if an active key (in loadedGeometries or loadingIds)
+ * matches a target queryId or pointcloudId.
+ */
+const isKeyMatch = (
+    activeKey: string,
+    targetId: string,
+    queries: CustomQuery[],
+    summaryMap: Record<string, QuerySummaryData>
+): boolean => {
+    if (!activeKey || !targetId) return false;
+    if (activeKey === targetId) return true;
+
+    // Check if activeKey is a query ID that targets targetId (as a pointcloud_id)
+    const activeQuery = queries.find((q) => q.id === activeKey);
+    if (activeQuery) {
+        const pcIdRule = activeQuery.filters?.find(
+            (f) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator)
+        )?.value;
+        if (pcIdRule && String(pcIdRule) === targetId) return true;
+
+        const summary = summaryMap[activeQuery.id];
+        if (summary?.connected_pointclouds?.some((pc) => pc.id === targetId)) {
+            return true;
+        }
+    }
+
+    // Check if targetId is a query ID that targets activeKey (as a pointcloud_id)
+    const targetQuery = queries.find((q) => q.id === targetId);
+    if (targetQuery) {
+        const pcIdRule = targetQuery.filters?.find(
+            (f) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator)
+        )?.value;
+        if (pcIdRule && String(pcIdRule) === activeKey) return true;
+
+        const summary = summaryMap[targetQuery.id];
+        if (summary?.connected_pointclouds?.some((pc) => pc.id === activeKey)) {
+            return true;
+        }
+    }
+
+    return false;
+};
 
 export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [mode, setMode] = useState<"binary" | "plyFile" | "plyUrl">("binary");
@@ -149,35 +192,23 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         if (!queryId) return false;
         if (loadedGeometries.has(queryId)) return true;
         for (const loadedKey of loadedGeometries.keys()) {
-            if (loadedKey === queryId) return true;
-            const matchingQuery = queries.find((q) => q.id === loadedKey || q.id === queryId);
-            if (matchingQuery) {
-                const pcIdFilter = matchingQuery.filters?.find((f) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator))?.value;
-                const pcId = pcIdFilter ? String(pcIdFilter) : null;
-                if (pcId && (pcId === queryId || matchingQuery.id === queryId)) {
-                    return true;
-                }
+            if (isKeyMatch(loadedKey, queryId, queries, summaryMap)) {
+                return true;
             }
         }
         return false;
-    }, [loadedGeometries, queries]);
+    }, [loadedGeometries, queries, summaryMap]);
 
     const isStreamLoading = useCallback((queryId: string): boolean => {
         if (!queryId) return false;
         if (loadingIds.has(queryId)) return true;
         for (const loadingKey of loadingIds) {
-            if (loadingKey === queryId) return true;
-            const matchingQuery = queries.find((q) => q.id === loadingKey || q.id === queryId);
-            if (matchingQuery) {
-                const pcIdFilter = matchingQuery.filters?.find((f) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator))?.value;
-                const pcId = pcIdFilter ? String(pcIdFilter) : null;
-                if (pcId && (pcId === queryId || matchingQuery.id === queryId)) {
-                    return true;
-                }
+            if (isKeyMatch(loadingKey, queryId, queries, summaryMap)) {
+                return true;
             }
         }
         return false;
-    }, [loadingIds, queries]);
+    }, [loadingIds, queries, summaryMap]);
 
     const fetchQuerySummary = useCallback(async (queryId: string, filters?: FilterRule[], lod = 0) => {
         try {
