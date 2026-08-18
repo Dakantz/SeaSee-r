@@ -14,6 +14,8 @@ class PgPointCloudIngestStage(BaseIngestionStage):
         file_id = context.get("file_id")
         connection_str = format_libpq_connection_string(settings.database_url)
         
-        await ingest_pgpointcloud(file_path, file_id, connection_str, lod=0)
+        offset_x = float(context.get("offset_x", 0.0))
+        offset_y = float(context.get("offset_y", 0.0))
+        await ingest_pgpointcloud(file_path, file_id, connection_str, lod=0, offset_x=offset_x, offset_y=offset_y)
         context["base_ingested"] = True
         return context

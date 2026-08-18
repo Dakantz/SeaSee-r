@@ -15,10 +15,13 @@ class LODGenerationStage(BaseIngestionStage):
         connection_str = format_libpq_connection_string(settings.database_url)
         lods = context.get("lods", list(range(1, 11)))
 
+        offset_x = float(context.get("offset_x", 0.0))
+        offset_y = float(context.get("offset_y", 0.0))
+
         for lod in lods:
             logger.info(f"Generating LOD {lod} for {file_id}")
             step = 2 ** lod
-            await ingest_pgpointcloud(file_path, file_id, connection_str, lod=lod, step=step)
+            await ingest_pgpointcloud(file_path, file_id, connection_str, lod=lod, step=step, offset_x=offset_x, offset_y=offset_y)
             
         context["lods_generated"] = lods
         return context

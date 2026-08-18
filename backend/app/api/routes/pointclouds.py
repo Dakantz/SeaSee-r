@@ -71,8 +71,8 @@ async def get_pointcloud_stream_summary(
     storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
 ):
     return await storage_service.get_pointcloud_stream_summary(
-        filters=filters,
-        lod=lod
+        lod=lod,
+        filters=filters
     )
 
 
@@ -221,11 +221,17 @@ async def update_transform(
 @router.post("/ingest-opensfm/init")
 async def ingest_opensfm_init(
     folder_name: Optional[str] = None,
+    multiply_x: int = Query(1, ge=1),
+    multiply_y: int = Query(1, ge=1),
+    offset_step_x: Optional[float] = None,
+    offset_step_y: Optional[float] = None,
     db: AsyncSession = Depends(get_db_session)
 ):
     """
     Initialize new point cloud ingestion from OpenSfM output directories.
+    Supports multiplying ingestion in a multiply_x x multiply_y grid with global position offsets.
     """
+
     ingestion_dir = settings.opensfm_ingestion_dir
     if not os.path.exists(ingestion_dir) or not os.path.isdir(ingestion_dir):
         raise HTTPException(status_code=404, detail="OpenSfM ingestion directory not found.")
@@ -243,36 +249,69 @@ async def ingest_opensfm_init(
         if os.path.isdir(folder_path):
             fused_laz_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz")
             if os.path.isfile(fused_laz_path):
-                file_uuid_str = str(uuid.uuid4())
-                
-                job_record = Job(
-                    name=f"Ingest OpenSfM {f_name}",
-                    task_type="opensfm_ingest",
-                    payload={
-                        "filename": f_name, # orig_filename will be the folder name
-                        "safe_filename": f"{file_uuid_str}.laz",
-                        "total_bytes": os.path.getsize(fused_laz_path),
-                        "file_id": file_uuid_str,
-                        "folder_path": folder_path
-                    },
-                    status="PENDING",
-                    progress=0.0
-                )
-                db.add(job_record)
-                await db.commit()
-                await db.refresh(job_record)
-                
-                q.enqueue(
-                    "app.services.worker.tasks.run_background_job",
-                    str(job_record.id),
-                    job_id=str(job_record.id)
-                )
-                
-                jobs_created.append({
-                    "folder": f_name,
-                    "job_id": str(job_record.id),
-                    "file_id": file_uuid_str
-                })
+                # Determine grid offset step sizes
+                step_x = offset_step_x
+                step_y = offset_step_y
+                if step_x is None or step_y is None:
+                    try:
+                        from app.services.pointcloud.pdal import get_pointcloud_stats
+                        bbox, _ = await get_pointcloud_stats(fused_laz_path)
+                        width_x = abs(bbox.get("max_x", 0.0) - bbox.get("min_x", 0.0))
+                        height_y = abs(bbox.get("max_y", 0.0) - bbox.get("min_y", 0.0))
+                        if step_x is None:
+                            step_x = max(width_x * 1.1, 10.0) if width_x > 0 else 10.0
+                        if step_y is None:
+                            step_y = max(height_y * 1.1, 10.0) if height_y > 0 else 10.0
+                    except Exception:
+                        if step_x is None:
+                            step_x = 10.0
+                        if step_y is None:
+                            step_y = 10.0
+
+                for ix in range(multiply_x):
+                    for iy in range(multiply_y):
+                        grid_offset_x = ix * step_x
+                        grid_offset_y = iy * step_y
+
+                        file_uuid_str = str(uuid.uuid4())
+                        name_suffix = f"{f_name}_grid_{ix}_{iy}" if (multiply_x > 1 or multiply_y > 1) else f_name
+
+                        job_record = Job(
+                            name=f"Ingest OpenSfM {name_suffix}",
+                            task_type="opensfm_ingest",
+                            payload={
+                                "filename": name_suffix,
+                                "safe_filename": f"{file_uuid_str}.laz",
+                                "total_bytes": os.path.getsize(fused_laz_path),
+                                "file_id": file_uuid_str,
+                                "folder_path": folder_path,
+                                "offset_x": grid_offset_x,
+                                "offset_y": grid_offset_y,
+                                "grid_x": ix,
+                                "grid_y": iy,
+                            },
+                            status="PENDING",
+                            progress=0.0
+                        )
+                        db.add(job_record)
+                        await db.commit()
+                        await db.refresh(job_record)
+                        
+                        q.enqueue(
+                            "app.services.worker.tasks.run_background_job",
+                            str(job_record.id),
+                            job_id=str(job_record.id)
+                        )
+                        
+                        jobs_created.append({
+                            "folder": f_name,
+                            "job_id": str(job_record.id),
+                            "file_id": file_uuid_str,
+                            "grid_x": ix,
+                            "grid_y": iy,
+                            "offset_x": grid_offset_x,
+                            "offset_y": grid_offset_y,
+                        })
 
     return {"message": f"Started {len(jobs_created)} ingestion jobs", "jobs": jobs_created}
 

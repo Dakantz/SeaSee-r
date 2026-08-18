@@ -3,7 +3,7 @@ import os
 import re
 import subprocess
 import uuid
-from typing import List, Optional, Union, Dict, Any
+from typing import List, Optional
 from urllib.parse import unquote
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
@@ -26,19 +26,17 @@ class DatabasePointCloudStorageService:
     async def stream_pointcloud_binary(
         self,
         lod: int,
-        filters: Optional[Union[List[FilterCriterion], Dict[str, Any]]] = None,
-        filter_params: Optional[dict] = None
+        filters: Optional[List[FilterCriterion]] = None
     ) -> StreamingResponse:
         """
         Streams point cloud data directly from database as raw binary buffer (Float32 XYZ, Uint8 RGB).
         Supports parameter filters.
         """
-        effective_filters = filters if filters is not None else filter_params
         filename = f"pointcloud_lod{lod}.bin"
 
         return StreamingResponse(
             self.binary_exporter.export_stream(
-                filters=effective_filters,
+                filters=filters,
                 lod=lod
             ),
             media_type="application/octet-stream",
@@ -47,17 +45,15 @@ class DatabasePointCloudStorageService:
 
     async def get_pointcloud_stream_summary(
         self,
-        filters: Optional[Union[List[FilterCriterion], Dict[str, Any]]] = None,
-        filter_params: Optional[dict] = None,
-        lod: int = 0
+        lod: int,
+        filters: Optional[List[FilterCriterion]] = None
     ) -> dict:
         """
         Returns summary (point count, bounding box, and connected pointcloud metadata) for the parameter selection.
         """
-        effective_filters = filters if filters is not None else filter_params
         try:
             return await self.repository.get_summary_info(
-                filters=effective_filters,
+                filters=filters,
                 lod=lod
             )
 

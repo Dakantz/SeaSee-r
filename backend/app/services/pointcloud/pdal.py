@@ -450,7 +450,9 @@ async def ingest_pgpointcloud(
     overwrite: bool = True,
     pcid: Optional[int] = None,
     target_dimensions: Optional[list] = None,
-    step: int = 1
+    step: int = 1,
+    offset_x: float = 0.0,
+    offset_y: float = 0.0
 ) -> Optional[int]:
     """
     Executes a PDAL pipeline to chip and ingest points into PostgreSQL pgPointcloud database.
@@ -525,6 +527,12 @@ async def ingest_pgpointcloud(
             "out_srs": "EPSG:3857"
         })
 
+    if offset_x != 0.0 or offset_y != 0.0:
+        pipeline_stages.append({
+            "type": "filters.transformation",
+            "matrix": f"1 0 0 {offset_x} 0 1 0 {offset_y} 0 0 1 0 0 0 0 1"
+        })
+
     if step > 1:
         pipeline_stages.append({
             "type": "filters.decimation",
@@ -562,6 +570,7 @@ async def ingest_pgpointcloud(
 
     found_pcid = None
     if pointcloud_id:
+        dest_table = f"pointcloud_patches_lod{lod}"
         async with async_session() as session:
             try:
                 res = await session.execute(text(f"SELECT PC_PCId(patch) FROM {target_table} LIMIT 1"))
@@ -569,7 +578,6 @@ async def ingest_pgpointcloud(
                 if row and row[0] is not None:
                     found_pcid = int(row[0])
 
-                dest_table = f"pointcloud_patches_lod{lod}"
                 await session.execute(text(f"""
                     CREATE TABLE IF NOT EXISTS {dest_table} (
                         id BIGSERIAL PRIMARY KEY,

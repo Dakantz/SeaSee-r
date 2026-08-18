@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import List, Optional, AsyncGenerator, Tuple, Any, Dict, Union
+from typing import List, Optional, AsyncGenerator, Tuple, Any, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select, bindparam
 from app.models.pointcloud import PointCloudMetadata
@@ -79,21 +79,18 @@ class PointCloudRepository:
 
     async def get_summary_point_count(
         self,
-        filters: Optional[Union[List[FilterCriterion], Dict[str, Any]]] = None,
-        filter_params: Optional[Dict[str, Any]] = None,
+        filters: Optional[List[FilterCriterion]] = None,
         lod: int = 0
     ) -> int:
         """
         Executes summary query to efficiently count selected points using parameter filters.
         """
-        effective_filters = filters if filters is not None else filter_params
-        info = await self.get_summary_info(filters=effective_filters, lod=lod)
+        info = await self.get_summary_info(filters=filters, lod=lod)
         return info["total_points"]
 
     async def get_summary_info(
         self,
-        filters: Optional[Union[List[FilterCriterion], Dict[str, Any]]] = None,
-        filter_params: Optional[Dict[str, Any]] = None,
+        filters: Optional[List[FilterCriterion]] = None,
         lod: int = 0
     ) -> dict:
         """
@@ -105,10 +102,8 @@ class PointCloudRepository:
         """
         from app.services.pointcloud.query_builder import PointCloudQueryBuilder
 
-        effective_filters = filters if filters is not None else filter_params
-
         summary_sql, distinct_ids_sql, bind_params, expanding_params = PointCloudQueryBuilder.build_summary_query(
-            filters=effective_filters,
+            filters=filters,
             lod=lod
         )
 
@@ -176,8 +171,7 @@ class PointCloudRepository:
 
     async def stream_points(
         self,
-        filters: Optional[Union[List[FilterCriterion], Dict[str, Any]]] = None,
-        filter_params: Optional[Dict[str, Any]] = None,
+        filters: Optional[List[FilterCriterion]] = None,
         lod: int = 0
     ) -> AsyncGenerator[Tuple[float, float, float, int, int, int], None]:
         """
@@ -188,10 +182,8 @@ class PointCloudRepository:
         from app.services.pointcloud.query_builder import PointCloudQueryBuilder
         import app.services.pointcloud.database as db_mod
 
-        effective_filters = filters if filters is not None else filter_params
-
         sql, bind_params, expanding_params = PointCloudQueryBuilder.build_binary_stream_query(
-            filters=effective_filters,
+            filters=filters,
             lod=lod
         )
 

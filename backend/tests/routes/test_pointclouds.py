@@ -78,12 +78,13 @@ class TestPointCloudServices(TestCase):
         mock_db = MagicMock()
         db_service = DatabasePointCloudStorageService(db_session=mock_db)
         # Verify call succeeds with empty filter params
-        response = asyncio.run(db_service.stream_pointcloud_binary(lod=0, filter_params={}))
+        response = asyncio.run(db_service.stream_pointcloud_binary(lod=0, filters=[]))
         self.assertEqual(response.media_type, "application/octet-stream")
 
     def test_database_service_stream_binary_success(self):
         import struct
         from unittest.mock import patch
+        from app.schemas.filter import FilterCriterion
 
         mock_meta_result = MagicMock()
         mock_meta_result.first.return_value = ["a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"]
@@ -109,7 +110,7 @@ class TestPointCloudServices(TestCase):
 
         with patch("app.services.pointcloud.database.async_session", return_value=AsyncSessionContextManager()):
             db_service = DatabasePointCloudStorageService(db_session=mock_db)
-            response = asyncio.run(db_service.stream_pointcloud_binary(lod=1, filter_params={"pointcloud_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"}))
+            response = asyncio.run(db_service.stream_pointcloud_binary(lod=1, filters=[FilterCriterion(field="pointcloud_id", operator="eq", value="a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")]))
             
             self.assertEqual(response.media_type, "application/octet-stream")
 
@@ -332,6 +333,7 @@ def test_endpoint_stream_summary_success():
 
 def test_query_builder_parameter_parsing():
     from app.services.pointcloud.query_builder import PointCloudQueryBuilder, parse_filter_key
+    from app.schemas.filter import FilterCriterion
 
     field, op = parse_filter_key("number_of_points__gte")
     assert field == "number_of_points"
@@ -342,11 +344,11 @@ def test_query_builder_parameter_parsing():
     assert op2 == "lt"
 
     sql, bind, _ = PointCloudQueryBuilder.build_binary_stream_query(
-        filters={
-            "pointcloud_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
-            "number_of_points_gte": 100,
-            "video_start_at_gte": "2026-01-01T00:00:00Z"
-        },
+        filters=[
+            FilterCriterion(field="pointcloud_id", operator="eq", value="a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"),
+            FilterCriterion(field="number_of_points", operator="gte", value=100),
+            FilterCriterion(field="video_start_at", operator="gte", value="2026-01-01T00:00:00Z")
+        ],
         lod=2
     )
 
@@ -394,6 +396,25 @@ def test_ingest_opensfm_init_laz_file():
             assert "jobs" in data
             assert len(data["jobs"]) == 1
             assert data["jobs"][0]["folder"] == "test_folder"
+
+            # Test grid multiplication multiply_X=10, multiply_Y=10 (100 jobs in 10x10 grid)
+            response_grid = client.post("/pointclouds/ingest-opensfm/init?folder_name=test_folder&multiply_x=10&multiply_y=10&offset_step_x=15.0&offset_step_y=20.0")
+            assert response_grid.status_code == 200
+            grid_data = response_grid.json()
+            assert "jobs" in grid_data
+            assert len(grid_data["jobs"]) == 100
+            # Verify grid coordinates and offsets
+            job_0_0 = grid_data["jobs"][0]
+            assert job_0_0["grid_x"] == 0
+            assert job_0_0["grid_y"] == 0
+            assert job_0_0["offset_x"] == 0.0
+            assert job_0_0["offset_y"] == 0.0
+
+            job_9_9 = grid_data["jobs"][-1]
+            assert job_9_9["grid_x"] == 9
+            assert job_9_9["grid_y"] == 9
+            assert job_9_9["offset_x"] == 9 * 15.0
+            assert job_9_9["offset_y"] == 9 * 20.0
         finally:
             if os.path.exists(laz_file):
                 os.remove(laz_file)

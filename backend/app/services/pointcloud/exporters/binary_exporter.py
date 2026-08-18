@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-from typing import AsyncGenerator, Optional, List, Union, Dict, Any
+from typing import AsyncGenerator, Optional, List
 from app.repositories.pointcloud_repository import PointCloudRepository
 from app.services.pointcloud.exporters.base import BasePointCloudExporter
 from app.schemas.filter import FilterCriterion
@@ -28,17 +28,15 @@ class BinaryStreamExporter(BasePointCloudExporter):
 
     async def export_stream(
         self,
-        filters: Optional[Union[List[FilterCriterion], Dict[str, Any]]] = None,
-        filter_params: Optional[dict] = None,
+        filters: Optional[List[FilterCriterion]] = None,
         lod: int = 0
     ) -> AsyncGenerator[bytes, None]:
-        effective_filters = filters if filters is not None else filter_params
         try:
             batch_capacity = self.chunk_size // 16
             points_batch = []
 
             async for x, y, z, r, g, b in self.repository.stream_points(
-                filters=effective_filters,
+                filters=filters,
                 lod=lod
             ):
 

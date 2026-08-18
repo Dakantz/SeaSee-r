@@ -1,6 +1,6 @@
 import uuid
 import datetime
-from typing import Dict, Any, Tuple, List, Optional, Union
+from typing import Dict, Any, Tuple, List, Optional
 import logging
 
 from app.schemas.filter import FilterCriterion
@@ -83,31 +83,6 @@ def cast_value(val: Any, val_type: str) -> Any:
     return val
 
 
-def normalize_filters(
-    filters: Optional[Union[List[FilterCriterion], Dict[str, Any]]] = None
-) -> List[FilterCriterion]:
-    """
-    Ensures input filters are converted to a list of FilterCriterion dataclasses.
-    Supports both List[FilterCriterion] and legacy Dict[str, Any].
-    """
-    if filters is None:
-        return []
-
-    if isinstance(filters, list):
-        return filters
-
-    if isinstance(filters, dict):
-        result = []
-        for raw_key, raw_val in filters.items():
-            if raw_val is None or raw_key in ("lod", "predefined_query"):
-                continue
-            field_name, op_key = parse_filter_key(raw_key)
-            result.append(FilterCriterion(field=field_name, operator=op_key, value=raw_val))
-        return result
-
-    return []
-
-
 class PointCloudQueryBuilder:
     """
     Constructs parameterized SQL queries and bind parameter dictionaries for pointcloud streaming & summary.
@@ -116,7 +91,7 @@ class PointCloudQueryBuilder:
     @classmethod
     def build_query_components(
         cls,
-        filters: Optional[Union[List[FilterCriterion], Dict[str, Any]]] = None,
+        filters: Optional[List[FilterCriterion]] = None,
         lod: int = 0
     ) -> Tuple[str, str, Dict[str, Any], bool, List[str]]:
         """
@@ -131,7 +106,7 @@ class PointCloudQueryBuilder:
         expanding_params: List[str] = []
         requires_video_join = False
 
-        criterion_list = normalize_filters(filters)
+        criterion_list = filters or []
 
         param_counter = 0
         for criterion in criterion_list:
@@ -176,7 +151,7 @@ class PointCloudQueryBuilder:
     @classmethod
     def build_binary_stream_query(
         cls,
-        filters: Optional[Union[List[FilterCriterion], Dict[str, Any]]] = None,
+        filters: Optional[List[FilterCriterion]] = None,
         lod: int = 0
     ) -> Tuple[str, Dict[str, Any], List[str]]:
         """
@@ -210,7 +185,7 @@ class PointCloudQueryBuilder:
     @classmethod
     def build_summary_query(
         cls,
-        filters: Optional[Union[List[FilterCriterion], Dict[str, Any]]] = None,
+        filters: Optional[List[FilterCriterion]] = None,
         lod: int = 0
     ) -> Tuple[str, str, Dict[str, Any], List[str]]:
         """

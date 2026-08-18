@@ -77,11 +77,14 @@ async def upsert_pointcloud_metadata(
     video_metadata_id: Optional[str] = None,
     is_append: bool = False,
     override_filename: Optional[str] = None,
-    override_safe_filename: Optional[str] = None
+    override_safe_filename: Optional[str] = None,
+    offset_x: float = 0.0,
+    offset_y: float = 0.0
 ) -> PointCloudMetadata:
     """
     Inserts a new PointCloudMetadata record or updates an existing record for append ops,
     merging bounding box bounds, updating center point geometry, and accumulating point counts.
+    Supports global position translation via offset_x and offset_y.
     """
     import os
     target_uuid = uuid.UUID(file_id)
@@ -111,13 +114,13 @@ async def upsert_pointcloud_metadata(
         if video_uuid:
             existing_record.video_metadata_id = video_uuid
         if bbox.get("min_x") is not None:
-            existing_record.min_x = min(existing_record.min_x, bbox["min_x"]) if existing_record.min_x is not None else bbox["min_x"]
+            existing_record.min_x = min(existing_record.min_x, bbox["min_x"] + offset_x) if existing_record.min_x is not None else (bbox["min_x"] + offset_x)
         if bbox.get("max_x") is not None:
-            existing_record.max_x = max(existing_record.max_x, bbox["max_x"]) if existing_record.max_x is not None else bbox["max_x"]
+            existing_record.max_x = max(existing_record.max_x, bbox["max_x"] + offset_x) if existing_record.max_x is not None else (bbox["max_x"] + offset_x)
         if bbox.get("min_y") is not None:
-            existing_record.min_y = min(existing_record.min_y, bbox["min_y"]) if existing_record.min_y is not None else bbox["min_y"]
+            existing_record.min_y = min(existing_record.min_y, bbox["min_y"] + offset_y) if existing_record.min_y is not None else (bbox["min_y"] + offset_y)
         if bbox.get("max_y") is not None:
-            existing_record.max_y = max(existing_record.max_y, bbox["max_y"]) if existing_record.max_y is not None else bbox["max_y"]
+            existing_record.max_y = max(existing_record.max_y, bbox["max_y"] + offset_y) if existing_record.max_y is not None else (bbox["max_y"] + offset_y)
         if bbox.get("min_z") is not None:
             existing_record.min_z = min(existing_record.min_z, bbox["min_z"]) if existing_record.min_z is not None else bbox["min_z"]
         if bbox.get("max_z") is not None:
@@ -131,13 +134,14 @@ async def upsert_pointcloud_metadata(
         await session.commit()
         return existing_record
 
-    min_x = bbox.get("min_x")
-    min_y = bbox.get("min_y")
+    min_x = (bbox.get("min_x") + offset_x) if bbox.get("min_x") is not None else None
+    min_y = (bbox.get("min_y") + offset_y) if bbox.get("min_y") is not None else None
     min_z = bbox.get("min_z")
-    max_x = bbox.get("max_x")
-    max_y = bbox.get("max_y")
+    max_x = (bbox.get("max_x") + offset_x) if bbox.get("max_x") is not None else None
+    max_y = (bbox.get("max_y") + offset_y) if bbox.get("max_y") is not None else None
     max_z = bbox.get("max_z")
     center_wkt = _compute_center_wkt(min_x, max_x, min_y, max_y, min_z, max_z)
+    transform_matrix = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
 
     if existing_record:
         existing_record.job_id = uuid.UUID(job_id) if job_id else None
@@ -154,6 +158,7 @@ async def upsert_pointcloud_metadata(
         existing_record.max_z = max_z
         existing_record.center = center_wkt
         existing_record.pcid = pcid
+        existing_record.transform_matrix = transform_matrix
         await session.commit()
         return existing_record
 
@@ -171,7 +176,8 @@ async def upsert_pointcloud_metadata(
         max_y=max_y,
         max_z=max_z,
         center=center_wkt,
-        pcid=pcid
+        pcid=pcid,
+        transform_matrix=transform_matrix
     )
     session.add(metadata_record)
     await session.commit()

@@ -23,7 +23,9 @@ class OpenSfMTaskHandler(BaseTaskHandler):
         file_id: str,
         job_id: Optional[str] = None,
         folder_path: Optional[str] = None,
-        is_append: bool = False
+        is_append: bool = False,
+        offset_x: float = 0.0,
+        offset_y: float = 0.0
     ) -> Dict[str, Any]:
         """Async implementation for OpenSfM pointcloud and camera trajectory processing."""
         # 1. Ingest fused.laz point cloud using PointCloudUploadTaskHandler
@@ -33,7 +35,9 @@ class OpenSfMTaskHandler(BaseTaskHandler):
             file_id=file_id,
             job_id=job_id,
             mark_completed=False,
-            is_append=is_append
+            is_append=is_append,
+            offset_x=offset_x,
+            offset_y=offset_y
         )
 
         # 2. Process camera trajectory and save CameraHeader and CameraFrames
@@ -111,7 +115,7 @@ class OpenSfMTaskHandler(BaseTaskHandler):
                 for f in frames_list:
                     pos = f.get("position", [0.0, 0.0, 0.0])
                     rot = f.get("direction", [0.0, 0.0, 0.0])
-                    pos_wkt = WKTElement(f"POINT Z ({pos[0]} {pos[1]} {pos[2]})", srid=settings.backend_srid)
+                    pos_wkt = WKTElement(f"POINT Z ({pos[0] + offset_x} {pos[1] + offset_y} {pos[2]})", srid=settings.backend_srid)
                     dir_wkt = WKTElement(f"POINT Z ({rot[0]} {rot[1]} {rot[2]})", srid=settings.backend_srid)
 
                     frame = CameraFrame(
@@ -136,11 +140,15 @@ class OpenSfMTaskHandler(BaseTaskHandler):
         is_append = payload.get("is_append", False) or (task_type == "opensfm_append")
         file_id = (payload.get("existing_id") or payload.get("file_id")) if is_append else (payload.get("file_id") or job_id)
         fused_laz_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz") if folder_path else payload.get("file_path")
+        offset_x = float(payload.get("offset_x", 0.0))
+        offset_y = float(payload.get("offset_y", 0.0))
 
         return await self.process_opensfm(
             file_path=fused_laz_path,
             file_id=file_id,
             job_id=job_id,
             folder_path=folder_path,
-            is_append=is_append
+            is_append=is_append,
+            offset_x=offset_x,
+            offset_y=offset_y
         )
