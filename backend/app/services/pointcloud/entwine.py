@@ -9,7 +9,8 @@ async def build_ept(
     scale: str = "0.001",
     progress_callback: Optional[Callable[[float], Awaitable[None]]] = None,
     min_progress_delta: float = 1.0,
-    min_time_interval: float = 0.5
+    min_time_interval: float = 0.5,
+    deep: bool = True
 ) -> None:
     """
     Executes 'entwine build' to convert a point cloud (.las, .laz, .ply, .csv) into EPT format.
@@ -17,8 +18,12 @@ async def build_ept(
     """
     os.makedirs(output_dir, exist_ok=True)
     
+    cmd = ['entwine', 'build', '-i', file_path, '-o', output_dir, '--scale', scale, '--progress', '1']
+    if deep:
+        cmd.append('--deep')
+
     process = await asyncio.create_subprocess_exec(
-        'entwine', 'build', '-i', file_path, '-o', output_dir, '--scale', scale, '--progress', '1',
+        *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )

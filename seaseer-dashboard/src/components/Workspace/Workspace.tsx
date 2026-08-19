@@ -11,25 +11,43 @@ import TelemetryPanel from "../TelemetoryPanel/TrajectoryPanel";
 import { JobSystemOverview } from "../JobSystemOverview";
 import { PLYPointCloudProvider } from "../PointCloudPanel/PLYPointCloudContext";
 import PLYPointCloudSidebar from "../PointCloudPanel/PLYPointCloudSidebar";
+import CustomQueryManagerContainer from "../PointCloudPanel/CustomQueryManagerContainer";
 
 import "./Workspace.css";
 
 export default function Workspace() {
+    const [isQueriesOpen, setIsQueriesOpen] = useState<boolean>(true);
     const [isJobsOpen, setIsJobsOpen] = useState<boolean>(true);
 
     return (
         <PLYPointCloudProvider>
             <div className="workspace-container">
                 <Group orientation="horizontal" className="workspace">
-                    {/* Left Panel: Camera Stream */}
-                    {/*<Panel defaultSize="35%" minSize="20%">*/}
-                    {/*    <CameraPanel />*/}
-                    {/*</Panel>*/}
-
-                    <Separator className="resize-handle vertical" />
+                    {/* Left Collapsible Panel: Custom Queries */}
+                    {isQueriesOpen && (
+                        <>
+                            <Panel defaultSize="25%" minSize="15%" maxSize="35%" className="left-sidebar-panel">
+                                <div className="left-sidebar-header">
+                                    <span className="left-sidebar-title">Custom Queries</span>
+                                    <button
+                                        type="button"
+                                        className="left-sidebar-toggle-btn"
+                                        onClick={() => setIsQueriesOpen(false)}
+                                        title="Collapse Left Sidebar"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                                <div className="left-sidebar-content">
+                                    <CustomQueryManagerContainer />
+                                </div>
+                            </Panel>
+                            <Separator className="resize-handle vertical" />
+                        </>
+                    )}
 
                     {/* Center Panel: PointCloud + Telemetry */}
-                    <Panel defaultSize="40%" minSize="20%">
+                    <Panel defaultSize="50%" minSize="20%">
                         <div className="right-panel">
                             <div className="pointcloud-container">
                                 <PointCloudPanel />
@@ -41,7 +59,7 @@ export default function Workspace() {
                         </div>
                     </Panel>
 
-                    {/* Right Collapsible Sidebar Widget: Point Cloud Controls & Job System Overview */}
+                    {/* Right Collapsible Sidebar Widget: DebugControls & Job System Overview */}
                     {isJobsOpen && (
                         <>
                             <Separator className="resize-handle vertical" />
@@ -58,6 +76,7 @@ export default function Workspace() {
                                     </button>
                                 </div>
                                 <div className="jobs-sidebar-content">
+                                    {/* DebugControls Panel */}
                                     <PLYPointCloudSidebar />
 
                                     <hr className="jobs-sidebar-divider" />
@@ -72,7 +91,18 @@ export default function Workspace() {
                     )}
                 </Group>
 
-                {/* Re-open toggle button when sidebar widget is collapsed */}
+                {/* Re-open toggle buttons when sidebar widgets are collapsed */}
+                {!isQueriesOpen && (
+                    <button
+                        type="button"
+                        className="left-sidebar-reopen-btn"
+                        onClick={() => setIsQueriesOpen(true)}
+                        title="Expand Custom Queries"
+                    >
+                        Custom Queries
+                    </button>
+                )}
+
                 {!isJobsOpen && (
                     <button
                         type="button"

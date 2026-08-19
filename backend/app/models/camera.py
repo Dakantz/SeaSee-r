@@ -11,7 +11,7 @@ class CameraHeader(Base):
     __tablename__ = "camera_headers"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    pointcloud_id = Column(UUID(as_uuid=True), ForeignKey("pointclouds.id", ondelete="CASCADE"), nullable=False)
+    pointcloud_id = Column(UUID(as_uuid=True), ForeignKey("pointcloud_metadata.id", ondelete="CASCADE"), nullable=False)
     focal = Column(Float, nullable=True)
     width = Column(Integer, nullable=True)
     height = Column(Integer, nullable=True)

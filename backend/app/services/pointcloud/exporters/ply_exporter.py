@@ -3,6 +3,7 @@ import struct
 from typing import AsyncGenerator
 from app.repositories.pointcloud_repository import PointCloudRepository
 from app.services.pointcloud.exporters.base import BasePointCloudExporter
+from app.schemas.filter import FilterCriterion
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,8 @@ class PLYStreamExporter(BasePointCloudExporter):
 
             buffer = bytearray(header)
 
-            async for x, y, z, r, g, b in self.repository.stream_points(pointcloud_id, lod=lod):
+            filters = [FilterCriterion(field="pointcloud_id", operator="eq", value=pointcloud_id)]
+            async for x, y, z, r, g, b in self.repository.stream_points(filters=filters, lod=lod):
                 r_u8 = min(255, max(0, r >> 8 if r > 255 else r))
                 g_u8 = min(255, max(0, g >> 8 if g > 255 else g))
                 b_u8 = min(255, max(0, b >> 8 if b > 255 else b))

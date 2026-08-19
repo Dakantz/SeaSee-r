@@ -4,19 +4,26 @@ from redis import Redis
 from rq import Queue
 
 from typing import List, Union, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
-from app.schemas.pointcloud import PointCloudMetadataResponse, CameraHeaderResponse, CameraFrameResponse
+
+from app.schemas.pointcloud import (
+    PointCloudMetadataResponse,
+    CameraHeaderResponse,
+    CameraFrameResponse,
+    PointCloudStreamSummaryResponse
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, conlist
 
 from app.services.pointcloud import DatabasePointCloudStorageService
-from app.api.dependencies.pointcloud import get_pointcloud_service
+from app.api.dependencies.pointcloud import get_pointcloud_service, pointcloud_filter_parser
+from app.schemas.filter import FilterCriterion
 from app.core.config import settings
 from app.core.database import get_db_session
 from app.models.job import Job
-from app.models.pointcloud import PointCloud
+from app.models.pointcloud import PointCloudMetadata
 from app.models.camera import CameraHeader, CameraFrame
 
 class TransformUpdate(BaseModel):
@@ -39,14 +46,37 @@ async def list_pointclouds(
 
 """
 Stream point cloud data directly from database as raw binary buffer (Float32 XYZ, Uint8 RGB).
+Supports flexible field filtering with comparison operators using field__operator=value syntax.
 """
-@router.get("/{identifier}/stream-binary")
+@router.get("/stream-binary")
 async def stream_pointcloud_binary(
-    identifier: str,
-    lod: int = 0,
+    lod: int = Query(..., ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
+    filters: List[FilterCriterion] = Depends(pointcloud_filter_parser),
     storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
 ):
-    return await storage_service.stream_pointcloud_binary(identifier, lod=lod)
+    return await storage_service.stream_pointcloud_binary(
+        lod=lod,
+        filters=filters
+    )
+
+
+"""
+Retrieve point cloud selection summary (point count, bounding box, and connected metadata).
+Supports flexible field filtering with comparison operators using field__operator=value syntax.
+"""
+@router.get("/stream-summary", response_model=PointCloudStreamSummaryResponse)
+async def get_pointcloud_stream_summary(
+    lod: int = Query(default=0, ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
+    filters: List[FilterCriterion] = Depends(pointcloud_filter_parser),
+    storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
+):
+    return await storage_service.get_pointcloud_stream_summary(
+        lod=lod,
+        filters=filters
+    )
+
+
+
 
 
 """
@@ -55,7 +85,7 @@ Retrieve a .ply point cloud file from database storage.
 @router.get("/{filename_or_id}")
 async def get_pointcloud(
     filename_or_id: str,
-    lod: int = 0,
+    lod: int = Query(0, ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
     storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
 ):
     return await storage_service.get_pointcloud(filename_or_id, lod=lod)
@@ -113,49 +143,6 @@ async def get_camera_headers(
     headers = result.scalars().all()
     
     return list(headers)
-
-@router.get("/camera-headers/{header_id}/frames", response_model=List[CameraFrameResponse])
-async def get_camera_frames(
-    header_id: str,
-    db: AsyncSession = Depends(get_db_session)
-):
-    import json
-    from geoalchemy2.functions import ST_AsGeoJSON
-
-    try:
-        h_uuid = uuid.UUID(header_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid UUID format")
-        
-    query = select(
-        CameraFrame.id,
-        CameraFrame.camera_header_id,
-        CameraFrame.timestamp,
-        ST_AsGeoJSON(CameraFrame.position).label("pos_geojson"),
-        ST_AsGeoJSON(CameraFrame.direction).label("dir_geojson"),
-        CameraFrame.relative_time,
-        CameraFrame.filename
-    ).where(CameraFrame.camera_header_id == h_uuid).order_by(CameraFrame.timestamp.asc())
-    
-    result = await db.execute(query)
-    rows = result.all()
-    
-    frames = []
-    for r in rows:
-        pos_coords = json.loads(r.pos_geojson)["coordinates"] if r.pos_geojson else None
-        dir_coords = json.loads(r.dir_geojson)["coordinates"] if r.dir_geojson else None
-        
-        frames.append(CameraFrameResponse(
-            id=r.id,
-            camera_header_id=r.camera_header_id,
-            timestamp=r.timestamp,
-            position=pos_coords,
-            direction=dir_coords,
-            relative_time=r.relative_time,
-            filename=r.filename
-        ))
-        
-    return frames
 
 @router.get("/{identifier}/camera-routes", response_model=List[CameraFrameResponse])
 async def get_camera_routes(
@@ -218,7 +205,7 @@ async def update_transform(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid UUID format")
         
-    query = select(PointCloud).where(PointCloud.id == pc_uuid)
+    query = select(PointCloudMetadata).where(PointCloudMetadata.id == pc_uuid)
     result = await db.execute(query)
     pointcloud = result.scalar_one_or_none()
     
@@ -234,11 +221,17 @@ async def update_transform(
 @router.post("/ingest-opensfm/init")
 async def ingest_opensfm_init(
     folder_name: Optional[str] = None,
+    multiply_x: int = Query(1, ge=1),
+    multiply_y: int = Query(1, ge=1),
+    offset_step_x: Optional[float] = None,
+    offset_step_y: Optional[float] = None,
     db: AsyncSession = Depends(get_db_session)
 ):
     """
     Initialize new point cloud ingestion from OpenSfM output directories.
+    Supports multiplying ingestion in a multiply_x x multiply_y grid with global position offsets.
     """
+
     ingestion_dir = settings.opensfm_ingestion_dir
     if not os.path.exists(ingestion_dir) or not os.path.isdir(ingestion_dir):
         raise HTTPException(status_code=404, detail="OpenSfM ingestion directory not found.")
@@ -254,38 +247,71 @@ async def ingest_opensfm_init(
             
         folder_path = os.path.join(ingestion_dir, f_name)
         if os.path.isdir(folder_path):
-            fused_ply_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.ply")
-            if os.path.isfile(fused_ply_path):
-                file_uuid_str = str(uuid.uuid4())
-                
-                job_record = Job(
-                    name=f"Ingest OpenSfM {f_name}",
-                    payload={
-                        "task_type": "opensfm_ingest",
-                        "filename": f_name, # orig_filename will be the folder name
-                        "safe_filename": f"{file_uuid_str}.ply",
-                        "total_bytes": os.path.getsize(fused_ply_path),
-                        "file_id": file_uuid_str,
-                        "folder_path": folder_path
-                    },
-                    status="PENDING",
-                    progress=0.0
-                )
-                db.add(job_record)
-                await db.commit()
-                await db.refresh(job_record)
-                
-                q.enqueue(
-                    "app.services.worker.tasks.run_background_job",
-                    str(job_record.id),
-                    job_id=str(job_record.id)
-                )
-                
-                jobs_created.append({
-                    "folder": f_name,
-                    "job_id": str(job_record.id),
-                    "file_id": file_uuid_str
-                })
+            fused_laz_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz")
+            if os.path.isfile(fused_laz_path):
+                # Determine grid offset step sizes
+                step_x = offset_step_x
+                step_y = offset_step_y
+                if step_x is None or step_y is None:
+                    try:
+                        from app.services.pointcloud.pdal import get_pointcloud_stats
+                        bbox, _ = await get_pointcloud_stats(fused_laz_path)
+                        width_x = abs(bbox.get("max_x", 0.0) - bbox.get("min_x", 0.0))
+                        height_y = abs(bbox.get("max_y", 0.0) - bbox.get("min_y", 0.0))
+                        if step_x is None:
+                            step_x = max(width_x * 1.1, 10.0) if width_x > 0 else 10.0
+                        if step_y is None:
+                            step_y = max(height_y * 1.1, 10.0) if height_y > 0 else 10.0
+                    except Exception:
+                        if step_x is None:
+                            step_x = 10.0
+                        if step_y is None:
+                            step_y = 10.0
+
+                for ix in range(multiply_x):
+                    for iy in range(multiply_y):
+                        grid_offset_x = ix * step_x
+                        grid_offset_y = iy * step_y
+
+                        file_uuid_str = str(uuid.uuid4())
+                        name_suffix = f"{f_name}_grid_{ix}_{iy}" if (multiply_x > 1 or multiply_y > 1) else f_name
+
+                        job_record = Job(
+                            name=f"Ingest OpenSfM {name_suffix}",
+                            task_type="opensfm_ingest",
+                            payload={
+                                "filename": name_suffix,
+                                "safe_filename": f"{file_uuid_str}.laz",
+                                "total_bytes": os.path.getsize(fused_laz_path),
+                                "file_id": file_uuid_str,
+                                "folder_path": folder_path,
+                                "offset_x": grid_offset_x,
+                                "offset_y": grid_offset_y,
+                                "grid_x": ix,
+                                "grid_y": iy,
+                            },
+                            status="PENDING",
+                            progress=0.0
+                        )
+                        db.add(job_record)
+                        await db.commit()
+                        await db.refresh(job_record)
+                        
+                        q.enqueue(
+                            "app.services.worker.tasks.run_background_job",
+                            str(job_record.id),
+                            job_id=str(job_record.id)
+                        )
+                        
+                        jobs_created.append({
+                            "folder": f_name,
+                            "job_id": str(job_record.id),
+                            "file_id": file_uuid_str,
+                            "grid_x": ix,
+                            "grid_y": iy,
+                            "offset_x": grid_offset_x,
+                            "offset_y": grid_offset_y,
+                        })
 
     return {"message": f"Started {len(jobs_created)} ingestion jobs", "jobs": jobs_created}
 
@@ -305,7 +331,7 @@ async def ingest_opensfm_append(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid UUID format for existing point cloud.")
 
-    query = select(PointCloud).where(PointCloud.id == pc_uuid)
+    query = select(PointCloudMetadata).where(PointCloudMetadata.id == pc_uuid)
     result = await db.execute(query)
     existing_pc = result.scalar_one_or_none()
 
@@ -344,10 +370,10 @@ async def ingest_opensfm_append(
             
         folder_path = os.path.join(ingestion_dir, f_name)
         if os.path.isdir(folder_path):
-            fused_ply_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.ply")
-            if os.path.isfile(fused_ply_path):
+            fused_laz_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz")
+            if os.path.isfile(fused_laz_path):
                 try:
-                    cand_bbox, cand_points, cand_srs = await get_pointcloud_srs_and_stats(fused_ply_path)
+                    cand_bbox, cand_points, cand_srs = await get_pointcloud_srs_and_stats(fused_laz_path)
                 except Exception as e:
                     skipped_folders.append({"folder": f_name, "reason": f"Failed to parse PDAL stats: {str(e)}"})
                     continue
@@ -365,14 +391,14 @@ async def ingest_opensfm_append(
 
                 job_record = Job(
                     name=f"Append OpenSfM {f_name} to {existing_id}",
+                    task_type="opensfm_append",
                     payload={
-                        "task_type": "opensfm_append",
                         "filename": f_name,
                         "folder_path": folder_path,
                         "existing_id": str(existing_pc.id),
                         "file_id": str(existing_pc.id),
                         "is_append": True,
-                        "total_bytes": os.path.getsize(fused_ply_path)
+                        "total_bytes": os.path.getsize(fused_laz_path)
                     },
                     status="PENDING",
                     progress=0.0
@@ -457,8 +483,8 @@ async def ingest_emodnet_init(
 
             job_record = Job(
                 name=f"Ingest EMODnet {f_name}",
+                task_type="emodnet_ingest",
                 payload={
-                    "task_type": "emodnet_ingest",
                     "filename": f_name,
                     "file_id": file_uuid_str,
                     "geotiff_path": geotiff_path,
@@ -508,7 +534,7 @@ async def ingest_emodnet_append(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid UUID format for existing point cloud.")
 
-    query = select(PointCloud).where(PointCloud.id == pc_uuid)
+    query = select(PointCloudMetadata).where(PointCloudMetadata.id == pc_uuid)
     result = await db.execute(query)
     existing_pc = result.scalar_one_or_none()
 
@@ -579,8 +605,8 @@ async def ingest_emodnet_append(
 
             job_record = Job(
                 name=f"Append EMODnet {f_name} to {existing_id}",
+                task_type="emodnet_append",
                 payload={
-                    "task_type": "emodnet_append",
                     "filename": f_name,
                     "geotiff_path": geotiff_path,
                     "folder_path": item_path if os.path.isdir(item_path) else os.path.dirname(item_path),

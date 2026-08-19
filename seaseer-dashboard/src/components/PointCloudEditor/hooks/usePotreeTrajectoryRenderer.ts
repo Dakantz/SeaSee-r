@@ -12,6 +12,9 @@ export interface UsePotreeTrajectoryRendererProps {
     position?: [number, number, number];
     rotation?: [number, number, number];
     scale?: [number, number, number];
+    showDirections?: boolean;
+    directionLength?: number;
+    directionColor?: THREE.ColorRepresentation;
 }
 
 /**
@@ -27,6 +30,9 @@ export function usePotreeTrajectoryRenderer({
     position = [0, 0, 0],
     rotation = [0, 0, 0],
     scale = [1, 1, 1],
+    showDirections = true,
+    directionLength = 3.0,
+    directionColor = 0xffaa00,
 }: UsePotreeTrajectoryRendererProps) {
     const { viewer } = useViewerContext();
 
@@ -83,6 +89,59 @@ export function usePotreeTrajectoryRenderer({
                     });
                     const line = new THREE.Line(geometry, material);
                     group.add(line);
+                }
+
+                if (showDirections) {
+                    const dirLinePositions: number[] = [];
+
+                    for (let i = 0; i < samples.length; i++) {
+                        const s = samples[i];
+                        let dirVec = new THREE.Vector3();
+
+                        if (s.direction && Array.isArray(s.direction) && s.direction.length === 3) {
+                            dirVec.set(s.direction[0], s.direction[1], s.direction[2]);
+                        }
+
+                        if (dirVec.lengthSq() < 1e-6) {
+                            if (i < samples.length - 1) {
+                                const next = samples[i + 1];
+                                dirVec.set(next.x - s.x, next.y - s.y, next.z - s.z);
+                            } else if (i > 0) {
+                                const prev = samples[i - 1];
+                                dirVec.set(s.x - prev.x, s.y - prev.y, s.z - prev.z);
+                            }
+                        }
+
+                        if (dirVec.lengthSq() < 1e-6) {
+                            dirVec.set(0, 0, 1);
+                        } else {
+                            dirVec.normalize();
+                        }
+
+                        const startX = s.x;
+                        const startY = s.y;
+                        const startZ = s.z;
+
+                        const endX = startX + dirVec.x * directionLength;
+                        const endY = startY + dirVec.y * directionLength;
+                        const endZ = startZ + dirVec.z * directionLength;
+
+                        dirLinePositions.push(startX, startY, startZ, endX, endY, endZ);
+                    }
+
+                    const dirGeom = new THREE.BufferGeometry();
+                    dirGeom.setAttribute(
+                        'position',
+                        new THREE.Float32BufferAttribute(dirLinePositions, 3)
+                    );
+                    const dirMat = new THREE.LineBasicMaterial({
+                        color: directionColor,
+                        transparent: opacity < 1,
+                        opacity,
+                    });
+                    const dirLines = new THREE.LineSegments(dirGeom, dirMat);
+
+                    group.add(dirLines);
                 }
 
                 threeScene.add(group);

@@ -56,7 +56,8 @@ async def _run_background_job_async(job_id_str: str) -> Dict[str, Any]:
             return {"status": "error", "message": f"Job {job_id_str} not found"}
 
         payload = job_record.payload or {}
+        task_type = job_record.task_type or ""
         name = job_record.name or ""
 
-    return await task_registry.dispatch(job_id_str, payload, name=name)
+    return await task_registry.dispatch(job_id_str, task_type=task_type, payload=payload, name=name)
 

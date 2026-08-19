@@ -36,7 +36,7 @@ class EMODnetGeoTIFFTaskHandler(BaseTaskHandler):
         1. Converts GeoTIFF to EPSG:3857 EPT format using PDAL Docker pipeline.
         2. Extracts bounding box & point count via PDAL stats.
         3. Ingests points into pgPointcloud table.
-        4. Writes or updates metadata record in pointclouds table.
+        4. Writes or updates metadata record in pointcloud_metadata table.
         """
         if job_id:
             await self.update_job_status(job_id, "RUNNING", 10.0)
@@ -106,9 +106,9 @@ class EMODnetGeoTIFFTaskHandler(BaseTaskHandler):
                 await self.update_job_status(job_id, "FAILED", 0.0, error_msg)
             raise e
 
-    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "") -> Dict[str, Any]:
+    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:
         geotiff_path = payload.get("geotiff_path")
-        is_append = payload.get("is_append", False) or (payload.get("task_type") == "emodnet_append")
+        is_append = payload.get("is_append", False) or (task_type == "emodnet_append")
         file_id = (payload.get("existing_id") or payload.get("file_id")) if is_append else (payload.get("file_id") or job_id)
 
         if not geotiff_path or not os.path.exists(geotiff_path):
@@ -127,7 +127,7 @@ class EMODnetGeoTIFFTaskHandler(BaseTaskHandler):
 class EMODnetCSVTaskHandler(BaseTaskHandler):
     task_types = ["emodnet_csv_ingest", "emodnet_csv_process"]
 
-    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "") -> Dict[str, Any]:
+    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:
         file_path = payload.get("file_path")
         file_id = payload.get("file_id") or job_id
         output_dir = os.path.join(settings.ept_dir, file_id)
@@ -140,7 +140,7 @@ class EMODnetCSVTaskHandler(BaseTaskHandler):
         try:
             await self.update_job_status(job_id, "RUNNING", 10.0)
 
-            is_append = payload.get("is_append", False) or (payload.get("task_type") == "emodnet_csv_append")
+            is_append = payload.get("is_append", False) or (task_type == "emodnet_csv_append")
 
             # Process EMODnet CSV using PDAL pipeline (reproject to EPSG:3857), ingest into pgPointcloud DB, & build EPT
             bbox, number_of_points, pcid = await process_emodnet_csv(

@@ -17,6 +17,7 @@ class Job(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False)
+    task_type = Column(String(100), nullable=True)
     status = Column(SQLEnum(JobStatus), nullable=False, default=JobStatus.PENDING)
     progress = Column(Float, nullable=False, default=0.0)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)

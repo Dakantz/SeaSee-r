@@ -27,7 +27,9 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         file_path: str,
         file_id: str,
         job_id: Optional[str] = None,
-        is_append: bool = False
+        is_append: bool = False,
+        offset_x: float = 0.0,
+        offset_y: float = 0.0
     ) -> None:
         """Database Ingestion via PDAL & Metadata insertion/update."""
         logger.info(f"Ingesting pointcloud {file_id} (is_append={is_append}) to database...")
@@ -52,8 +54,8 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         logger.info(f"Source file dimensions: {source_dims}")
         logger.info(f"Target schema dimensions: {target_dims}")
 
-        # Execute PDAL pgPointcloud ingestion for LOD levels 0..3
-        for lod in range(4):
+        # Execute PDAL pgPointcloud ingestion for LOD levels 0..10
+        for lod in range(11):
             step = 2 ** lod
             ingested_pcid = await ingest_pgpointcloud(
                 file_path=file_path,
@@ -65,7 +67,9 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
                 overwrite=not is_append,
                 pcid=pcid,
                 target_dimensions=target_dims,
-                step=step
+                step=step,
+                offset_x=offset_x,
+                offset_y=offset_y
             )
             if lod == 0 and pcid is None and ingested_pcid is not None:
                 pcid = ingested_pcid
@@ -83,7 +87,9 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
                 number_of_points=number_of_points,
                 pcid=pcid,
                 job_id=job_id,
-                is_append=is_append
+                is_append=is_append,
+                offset_x=offset_x,
+                offset_y=offset_y
             )
 
         logger.info(f"Successfully ingested pointcloud {file_id} metadata and data to database.")
@@ -94,7 +100,9 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         file_id: str,
         job_id: Optional[str] = None,
         mark_completed: bool = True,
-        is_append: bool = False
+        is_append: bool = False,
+        offset_x: float = 0.0,
+        offset_y: float = 0.0
     ) -> Dict[str, Any]:
         """Core pipeline to convert to EPT and ingest to database."""
         if job_id:
@@ -130,7 +138,9 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
                 file_path=file_path,
                 file_id=file_id,
                 job_id=job_id,
-                is_append=is_append
+                is_append=is_append,
+                offset_x=offset_x,
+                offset_y=offset_y
             )
 
             if job_id and mark_completed:
@@ -145,7 +155,7 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
                 await self.update_job_status(job_id, "FAILED", 0.0, error_msg)
             raise e
 
-    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "") -> Dict[str, Any]:
+    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:
         file_id = payload.get("file_id")
         safe_filename = payload.get("safe_filename")
         file_path = payload.get("file_path")

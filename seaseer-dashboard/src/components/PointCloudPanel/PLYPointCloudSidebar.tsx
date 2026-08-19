@@ -3,8 +3,6 @@ import type { PointCloudMetadataResponse } from "../../client";
 import { usePLYPointCloudContext, type MapProviderChoice, type HeightProviderChoice } from "./PLYPointCloudContext";
 
 export interface PLYPointCloudSidebarProps {
-    mode?: "binary" | "plyFile" | "plyUrl";
-    setMode?: (mode: "binary" | "plyFile" | "plyUrl") => void;
     renderMode?: "points" | "mesh";
     setRenderMode?: (mode: "points" | "mesh") => void;
     wireframe?: boolean;
@@ -19,18 +17,10 @@ export interface PLYPointCloudSidebarProps {
     setHeightmapMapProvider?: (provider: MapProviderChoice) => void;
     heightmapHeightProvider?: HeightProviderChoice;
     setHeightmapHeightProvider?: (provider: HeightProviderChoice) => void;
-    heightmapProvider?: MapProviderChoice;
-    setHeightmapProvider?: (provider: MapProviderChoice) => void;
-    identifier?: string;
-    setIdentifier?: (id: string) => void;
-    plyUrl?: string;
-    setPlyUrl?: (url: string) => void;
     lod?: number;
-    setLod?: (lod: number) => void;
     isLoading?: boolean;
     error?: string | null;
     pointCount?: number | null;
-    selectedFileName?: string | null;
     keyLightIntensity?: number;
     setKeyLightIntensity?: (val: number) => void;
     fillLightIntensity?: number;
@@ -39,9 +29,6 @@ export interface PLYPointCloudSidebarProps {
     setHemisphereLightIntensity?: (val: number) => void;
     ambientLightIntensity?: number;
     setAmbientLightIntensity?: (val: number) => void;
-    onLoadBinary?: (id: string, lod: number) => void;
-    onLoadPlyUrl?: (url: string) => void;
-    onLoadPlyFile?: (file: File) => void;
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -54,8 +41,6 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
         // Fallback to props if context provider is not present
     }
 
-    const mode = props.mode ?? contextState?.mode ?? "binary";
-    const setMode = props.setMode ?? contextState?.setMode ?? (() => {});
     const renderMode = props.renderMode ?? contextState?.renderMode ?? "points";
     const setRenderMode = props.setRenderMode ?? contextState?.setRenderMode ?? (() => {});
     const wireframe = props.wireframe ?? contextState?.wireframe ?? true;
@@ -66,20 +51,13 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const setShowHeightmap = props.setShowHeightmap ?? contextState?.setShowHeightmap ?? (() => {});
     const heightmapMode = props.heightmapMode ?? contextState?.heightmapMode ?? "HEIGHT";
     const setHeightmapMode = props.setHeightmapMode ?? contextState?.setHeightmapMode ?? (() => {});
-    const heightmapMapProvider = props.heightmapMapProvider ?? contextState?.heightmapMapProvider ?? props.heightmapProvider ?? contextState?.heightmapProvider ?? "OpenStreetMaps";
-    const setHeightmapMapProvider = props.setHeightmapMapProvider ?? contextState?.setHeightmapMapProvider ?? props.setHeightmapProvider ?? contextState?.setHeightmapProvider ?? (() => {});
+    const heightmapMapProvider = props.heightmapMapProvider ?? contextState?.heightmapMapProvider ?? "OpenStreetMaps";
+    const setHeightmapMapProvider = props.setHeightmapMapProvider ?? contextState?.setHeightmapMapProvider ?? (() => {});
     const heightmapHeightProvider = props.heightmapHeightProvider ?? contextState?.heightmapHeightProvider ?? "Bathymetry";
     const setHeightmapHeightProvider = props.setHeightmapHeightProvider ?? contextState?.setHeightmapHeightProvider ?? (() => {});
-    const identifier = props.identifier ?? contextState?.identifier ?? "";
-    const setIdentifier = props.setIdentifier ?? contextState?.setIdentifier ?? (() => {});
-    const plyUrl = props.plyUrl ?? contextState?.plyUrl ?? "";
-    const setPlyUrl = props.setPlyUrl ?? contextState?.setPlyUrl ?? (() => {});
-    const lod = props.lod ?? contextState?.lod ?? 0;
-    const setLod = props.setLod ?? contextState?.setLod ?? (() => {});
     const isLoading = props.isLoading ?? contextState?.isLoading ?? false;
     const error = props.error ?? contextState?.error ?? null;
     const pointCount = props.pointCount ?? contextState?.pointCount ?? null;
-    const selectedFileName = props.selectedFileName ?? contextState?.selectedFileName ?? null;
     const keyLightIntensity = props.keyLightIntensity ?? contextState?.keyLightIntensity ?? 1.5;
     const setKeyLightIntensity = props.setKeyLightIntensity ?? contextState?.setKeyLightIntensity ?? (() => {});
     const fillLightIntensity = props.fillLightIntensity ?? contextState?.fillLightIntensity ?? 0.5;
@@ -88,16 +66,14 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const setHemisphereLightIntensity = props.setHemisphereLightIntensity ?? contextState?.setHemisphereLightIntensity ?? (() => {});
     const ambientLightIntensity = props.ambientLightIntensity ?? contextState?.ambientLightIntensity ?? 0.4;
     const setAmbientLightIntensity = props.setAmbientLightIntensity ?? contextState?.setAmbientLightIntensity ?? (() => {});
-    const onLoadBinary = props.onLoadBinary ?? contextState?.loadBinaryPointCloud ?? (() => {});
-    const onLoadPlyUrl = props.onLoadPlyUrl ?? contextState?.loadPlyUrl ?? (() => {});
-    const onLoadPlyFile = props.onLoadPlyFile ?? contextState?.loadPlyFile ?? (() => {});
 
     const [datasets, setDatasets] = useState<PointCloudMetadataResponse[]>([]);
-    const [_fetchingDatasets, setFetchingDatasets] = useState<boolean>(false);
+    const [searchQuery, setSearchQuery] = useState<string>("");
+
+    const catalog = contextState?.catalog ?? datasets;
 
     useEffect(() => {
         const fetchDatasets = async () => {
-            setFetchingDatasets(true);
             try {
                 const res = await fetch(`${API_BASE_URL}/pointclouds/`);
                 if (res.ok) {
@@ -106,363 +82,107 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                 }
             } catch (err) {
                 console.error("Failed to fetch available datasets for PLY sidebar:", err);
-            } finally {
-                setFetchingDatasets(false);
             }
         };
 
         fetchDatasets();
     }, []);
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            setMode("plyFile");
-            onLoadPlyFile(e.target.files[0]);
-        }
-    };
-
-    const handleSelectDataset = (id: string) => {
-        setIdentifier(id);
-        onLoadBinary(id, lod);
-    };
-
     return (
-        <div
-            style={{
-                background: "var(--color-bg-card)",
-                border: "1px solid var(--color-border-strong)",
-                borderRadius: "var(--radius-lg)",
-                padding: "var(--spacing-md)",
-                color: "var(--color-text-primary)",
-                fontFamily: "var(--font-sans)",
-                fontSize: "var(--font-size-sm)",
-            }}
-        >
-            <div
-                style={{
-                    fontWeight: "var(--font-weight-semibold)",
-                    fontSize: "var(--font-size-sm)",
-                    marginBottom: "var(--spacing-sm)",
-                    color: "var(--color-accent-text)",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "var(--spacing-xs)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                }}
-            >
-                Point Cloud Controls
+        <div className="pointcloud-sidebar">
+            <div className="pointcloud-sidebar__header">
+                DebugControls
             </div>
 
-            {/* Mode Tabs */}
-            <div
-                style={{
-                    display: "flex",
-                    gap: "var(--spacing-2xs)",
-                    marginBottom: "var(--spacing-md)",
-                    background: "var(--color-bg-subtle)",
-                    padding: "var(--spacing-3xs)",
-                    borderRadius: "var(--radius-md)",
-                }}
-            >
-                <button
-                    type="button"
-                    onClick={() => setMode("binary")}
-                    style={{
-                        flex: 1,
-                        padding: "var(--spacing-xs) var(--spacing-2xs)",
-                        background: mode === "binary" ? "var(--color-accent)" : "transparent",
-                        color: mode === "binary" ? "var(--color-text-contrast)" : "var(--color-text-muted)",
-                        border: "none",
-                        borderRadius: "var(--radius-sm)",
-                        cursor: "pointer",
-                        fontSize: "var(--font-size-xs)",
-                        fontWeight: "var(--font-weight-medium)",
-                        transition: "var(--transition-normal)",
-                    }}
-                >
-                    Binary Stream
-                </button>
-                <button
-                    type="button"
-                    onClick={() => setMode("plyFile")}
-                    style={{
-                        flex: 1,
-                        padding: "var(--spacing-xs) var(--spacing-2xs)",
-                        background: mode === "plyFile" ? "var(--color-accent)" : "transparent",
-                        color: mode === "plyFile" ? "var(--color-text-contrast)" : "var(--color-text-muted)",
-                        border: "none",
-                        borderRadius: "var(--radius-sm)",
-                        cursor: "pointer",
-                        fontSize: "var(--font-size-xs)",
-                        fontWeight: "var(--font-weight-medium)",
-                        transition: "var(--transition-normal)",
-                    }}
-                >
-                    .PLY File
-                </button>
-                <button
-                    type="button"
-                    onClick={() => setMode("plyUrl")}
-                    style={{
-                        flex: 1,
-                        padding: "var(--spacing-xs) var(--spacing-2xs)",
-                        background: mode === "plyUrl" ? "var(--color-accent)" : "transparent",
-                        color: mode === "plyUrl" ? "var(--color-text-contrast)" : "var(--color-text-muted)",
-                        border: "none",
-                        borderRadius: "var(--radius-sm)",
-                        cursor: "pointer",
-                        fontSize: "var(--font-size-xs)",
-                        fontWeight: "var(--font-weight-medium)",
-                        transition: "var(--transition-normal)",
-                    }}
-                >
-                    PLY URL
-                </button>
-            </div>
-
-            {/* Mode Content */}
-            {mode === "binary" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-xs)" }}>
-                    {datasets.length > 0 && (
-                        <>
-                            <label style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>
-                                Available Datasets:
-                            </label>
-                            <select
-                                value={identifier}
-                                onChange={(e) => handleSelectDataset(e.target.value)}
-                                style={{
-                                    background: "var(--color-bg-subtle)",
-                                    border: "1px solid var(--color-border-strong)",
-                                    color: "var(--color-text-secondary)",
-                                    padding: "var(--spacing-xs) var(--spacing-sm)",
-                                    borderRadius: "var(--radius-sm)",
-                                    fontSize: "var(--font-size-xs)",
-                                    width: "100%",
-                                    boxSizing: "border-box",
-                                    cursor: "pointer",
-                                }}
-                            >
-                                <option value="" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>
-                                    -- Select Dataset --
-                                </option>
-                                {datasets.map((d) => {
-                                    const label = d.orig_filename || d.safe_filename || d.id;
-                                    return (
-                                        <option
-                                            key={d.id}
-                                            value={d.id}
-                                            style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}
-                                        >
-                                            {label} ({d.number_of_points?.toLocaleString() ?? "N/A"} pts)
-                                        </option>
-                                    );
-                                })}
-                            </select>
-                        </>
-                    )}
-
-                    <label style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>
-                        Backend Identifier / UUID:
+            {/* Multi-PointCloud Catalog List */}
+            <div className="pointcloud-sidebar__section">
+                <div className="pointcloud-sidebar__section-header">
+                    <label className="pointcloud-sidebar__section-label">
+                        PointCloud Catalog ({catalog.length})
                     </label>
-                    <input
-                        type="text"
-                        value={identifier}
-                        onChange={(e) => setIdentifier(e.target.value)}
-                        placeholder="Identifier UUID"
-                        style={{
-                            background: "var(--color-bg-subtle)",
-                            border: "1px solid var(--color-border-strong)",
-                            color: "var(--color-text-secondary)",
-                            padding: "var(--spacing-xs) var(--spacing-sm)",
-                            borderRadius: "var(--radius-sm)",
-                            fontSize: "var(--font-size-xs)",
-                            fontFamily: "var(--font-mono)",
-                            width: "100%",
-                            boxSizing: "border-box",
-                        }}
-                    />
-
-                    <label style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>
-                        Level of Detail (LOD):
-                    </label>
-                    <select
-                        value={lod}
-                        onChange={(e) => {
-                            const newLod = Number(e.target.value);
-                            setLod(newLod);
-                            if (identifier.trim()) {
-                                onLoadBinary(identifier, newLod);
-                            }
-                        }}
-                        style={{
-                            background: "var(--color-bg-subtle)",
-                            border: "1px solid var(--color-border-strong)",
-                            color: "var(--color-text-secondary)",
-                            padding: "var(--spacing-xs) var(--spacing-sm)",
-                            borderRadius: "var(--radius-sm)",
-                            fontSize: "var(--font-size-xs)",
-                            width: "100%",
-                            boxSizing: "border-box",
-                            cursor: "pointer",
-                        }}
-                    >
-                        <option value={0} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 0 (Full - 100%)</option>
-                        <option value={1} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 1 (High - 50%)</option>
-                        <option value={2} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 2 (Medium - 25%)</option>
-                        <option value={3} style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>LOD 3 (Low - 12.5%)</option>
-                    </select>
-
-                    <button
-                        type="button"
-                        onClick={() => onLoadBinary(identifier, lod)}
-                        disabled={isLoading || !identifier.trim()}
-                        style={{
-                            marginTop: "var(--spacing-2xs)",
-                            background: isLoading || !identifier.trim() ? "var(--color-border-solid)" : "var(--color-accent)",
-                            color: "var(--color-text-contrast)",
-                            border: "none",
-                            padding: "var(--spacing-xs) var(--spacing-lg)",
-                            borderRadius: "var(--radius-sm)",
-                            cursor: isLoading || !identifier.trim() ? "not-allowed" : "pointer",
-                            fontWeight: "var(--font-weight-medium)",
-                            fontSize: "var(--font-size-xs)",
-                        }}
-                    >
-                        {isLoading ? "Streaming Binary..." : "Stream Binary"}
-                    </button>
                 </div>
-            )}
 
-            {mode === "plyFile" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-xs)" }}>
-                    <label style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>
-                        Select .PLY File:
-                    </label>
-                    <input
-                        type="file"
-                        accept=".ply,.PLY"
-                        onChange={handleFileChange}
-                        style={{
-                            fontSize: "var(--font-size-xs)",
-                            color: "var(--color-text-body)",
-                        }}
-                    />
-                    {selectedFileName && (
-                        <div style={{ fontSize: "var(--font-size-2xs)", color: "var(--color-accent-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            Selected: {selectedFileName}
+                <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search point clouds..."
+                    className="pointcloud-sidebar__search-input"
+                />
+
+                <div className="pointcloud-sidebar__catalog-list">
+                    {catalog.length === 0 ? (
+                        <div className="pointcloud-sidebar__empty">
+                            No point clouds available.
                         </div>
+                    ) : (
+                        catalog
+                            .filter((item) => {
+                                if (!searchQuery.trim()) return true;
+                                const name = item.orig_filename || item.safe_filename || item.id;
+                                return name.toLowerCase().includes(searchQuery.toLowerCase());
+                            })
+                            .map((item) => {
+                                const name = item.orig_filename || item.safe_filename || item.id;
+
+                                return (
+                                    <div
+                                        key={item.id}
+                                        onClick={() => {
+                                            const queryName = name ? `Query for ${name}` : undefined;
+                                            if (contextState?.addCustomQuery) {
+                                                contextState.addCustomQuery({
+                                                    name: queryName,
+                                                    filters: [
+                                                        {
+                                                            id: `rule-${Date.now()}`,
+                                                            field: "pointcloud_id",
+                                                            operator: "eq",
+                                                            value: item.id,
+                                                        },
+                                                    ],
+                                                });
+                                            }
+                                        }}
+                                        className="pointcloud-sidebar__item"
+                                    >
+                                        <div className="pointcloud-sidebar__item-info">
+                                            <span className="pointcloud-sidebar__item-title">
+                                                {name}
+                                            </span>
+                                            <span className="pointcloud-sidebar__item-count">
+                                                {item.number_of_points?.toLocaleString() ?? 0} pts
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })
                     )}
                 </div>
-            )}
-
-            {mode === "plyUrl" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-xs)" }}>
-                    <label style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)" }}>
-                        PLY File URL:
-                    </label>
-                    <input
-                        type="text"
-                        value={plyUrl}
-                        onChange={(e) => setPlyUrl(e.target.value)}
-                        style={{
-                            background: "var(--color-bg-subtle)",
-                            border: "1px solid var(--color-border-strong)",
-                            color: "var(--color-text-secondary)",
-                            padding: "var(--spacing-xs) var(--spacing-sm)",
-                            borderRadius: "var(--radius-sm)",
-                            fontSize: "var(--font-size-xs)",
-                            width: "100%",
-                            boxSizing: "border-box",
-                        }}
-                    />
-                    <button
-                        type="button"
-                        onClick={() => onLoadPlyUrl(plyUrl)}
-                        disabled={isLoading}
-                        style={{
-                            marginTop: "var(--spacing-2xs)",
-                            background: isLoading ? "var(--color-border-solid)" : "var(--color-accent)",
-                            color: "var(--color-text-contrast)",
-                            border: "none",
-                            padding: "var(--spacing-xs) var(--spacing-lg)",
-                            borderRadius: "var(--radius-sm)",
-                            cursor: isLoading ? "not-allowed" : "pointer",
-                            fontWeight: "var(--font-weight-medium)",
-                            fontSize: "var(--font-size-xs)",
-                        }}
-                    >
-                        {isLoading ? "Loading PLY..." : "Load PLY URL"}
-                    </button>
-                </div>
-            )}
+            </div>
 
             {/* Display Settings */}
-            <div
-                style={{
-                    marginTop: "var(--spacing-md)",
-                    paddingTop: "var(--spacing-xs)",
-                    borderTop: "1px solid var(--color-border-subtle)",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "var(--spacing-xs)",
-                }}
-            >
-                <div
-                    style={{
-                        fontWeight: "var(--font-weight-semibold)",
-                        fontSize: "var(--font-size-2xs)",
-                        color: "var(--color-text-muted)",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                    }}
-                >
+            <div className="pointcloud-sidebar__display-settings">
+                <div className="pointcloud-sidebar__sub-title">
                     Display Settings
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: "var(--spacing-xs)" }}>
-                    <label style={{ flex: 1, fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                <div className="pointcloud-sidebar__control-row">
+                    <label className="pointcloud-sidebar__label">
                         Render Mode:
                     </label>
-                    <div
-                        style={{
-                            display: "flex",
-                            gap: "var(--spacing-3xs)",
-                            background: "var(--color-bg-subtle)",
-                            padding: "var(--spacing-3xs)",
-                            borderRadius: "var(--radius-sm)",
-                        }}
-                    >
+                    <div className="pointcloud-sidebar__button-group">
                         <button
                             type="button"
                             onClick={() => setRenderMode("points")}
-                            style={{
-                                padding: "var(--spacing-3xs) var(--spacing-xs)",
-                                background: renderMode === "points" ? "var(--color-accent)" : "transparent",
-                                color: renderMode === "points" ? "var(--color-text-contrast)" : "var(--color-text-muted)",
-                                border: "none",
-                                borderRadius: "var(--radius-xs)",
-                                cursor: "pointer",
-                                fontSize: "var(--font-size-xs)",
-                                fontWeight: "var(--font-weight-medium)",
-                            }}
+                            className={`pointcloud-sidebar__mode-btn ${renderMode === "points" ? "pointcloud-sidebar__mode-btn--active" : ""}`}
                         >
                             Points
                         </button>
                         <button
                             type="button"
                             onClick={() => setRenderMode("mesh")}
-                            style={{
-                                padding: "var(--spacing-3xs) var(--spacing-xs)",
-                                background: renderMode === "mesh" ? "var(--color-accent)" : "transparent",
-                                color: renderMode === "mesh" ? "var(--color-text-contrast)" : "var(--color-text-muted)",
-                                border: "none",
-                                borderRadius: "var(--radius-xs)",
-                                cursor: "pointer",
-                                fontSize: "var(--font-size-xs)",
-                                fontWeight: "var(--font-weight-medium)",
-                            }}
+                            className={`pointcloud-sidebar__mode-btn ${renderMode === "mesh" ? "pointcloud-sidebar__mode-btn--active" : ""}`}
                         >
                             Mesh
                         </button>
@@ -470,20 +190,20 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                 </div>
 
                 {renderMode === "mesh" ? (
-                    <label style={{ display: "flex", alignItems: "center", gap: "var(--spacing-xs)", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)", cursor: "pointer" }}>
+                    <label className="pointcloud-sidebar__checkbox-label">
                         <input
                             type="checkbox"
                             checked={wireframe}
                             onChange={(e) => setWireframe(e.target.checked)}
-                            style={{ cursor: "pointer" }}
+                            className="pointcloud-sidebar__checkbox"
                         />
                         Wireframe Overlay
                     </label>
                 ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                    <div className="pointcloud-sidebar__slider-group">
+                        <div className="pointcloud-sidebar__slider-header">
                             <span>Point Size:</span>
-                            <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--font-size-2xs)" }}>{pointSize.toFixed(2)}</span>
+                            <span className="pointcloud-sidebar__mono-val">{pointSize.toFixed(2)}</span>
                         </div>
                         <input
                             type="range"
@@ -492,112 +212,88 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                             step="0.01"
                             value={pointSize}
                             onChange={(e) => setPointSize(parseFloat(e.target.value))}
-                            style={{ width: "100%", cursor: "pointer" }}
+                            className="pointcloud-sidebar__slider"
                         />
                     </div>
                 )}
 
                 {/* Geo-Three Heightmap Controls */}
-                <div style={{ marginTop: "var(--spacing-xs)", paddingTop: "var(--spacing-xs)", borderTop: "1px dashed var(--color-border-subtle)", display: "flex", flexDirection: "column", gap: "var(--spacing-xs)" }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: "var(--spacing-xs)", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)", cursor: "pointer", fontWeight: "var(--font-weight-medium)" }}>
+                <div className="pointcloud-sidebar__dashed-divider">
+                    <label className="pointcloud-sidebar__checkbox-label pointcloud-sidebar__checkbox-label--medium">
                         <input
                             type="checkbox"
                             checked={showHeightmap}
                             onChange={(e) => setShowHeightmap(e.target.checked)}
-                            style={{ cursor: "pointer" }}
+                            className="pointcloud-sidebar__checkbox"
                         />
                         Geo-Three Heightmap Terrain
                     </label>
 
                     {showHeightmap && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-xs)", paddingLeft: "var(--spacing-xs)" }}>
+                        <div className="pointcloud-sidebar__sub-group">
                             {/* Map Provider Select */}
-                            <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                                <label style={{ fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)" }}>Map Imagery Provider:</label>
+                            <div className="pointcloud-sidebar__slider-group">
+                                <label className="pointcloud-sidebar__sub-title">Map Imagery Provider:</label>
                                 <select
                                     value={heightmapMapProvider}
                                     onChange={(e) => setHeightmapMapProvider(e.target.value as any)}
-                                    style={{
-                                        background: "var(--color-bg-subtle)",
-                                        border: "1px solid var(--color-border-strong)",
-                                        color: "var(--color-text-secondary)",
-                                        padding: "var(--spacing-3xs) var(--spacing-xs)",
-                                        borderRadius: "var(--radius-xs)",
-                                        fontSize: "var(--font-size-xs)",
-                                        width: "100%",
-                                        cursor: "pointer",
-                                    }}
+                                    className="pointcloud-sidebar__select"
                                 >
-                                    <option value="OpenStreetMaps" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>OpenStreetMap</option>
-                                    <option value="Bathymetry" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>SeaSee Bathymetry</option>
-                                    <option value="Emodnet" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>EMODnet Bathymetry</option>
-                                    <option value="Debug" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Debug Grid</option>
-                                    <option value="MapTilerBasic" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Vector Map Tiler Basic</option>
-                                    <option value="MapTilerOutdoor" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Vector Map Tiler Outdoor</option>
-                                    <option value="MapTilerSatellite" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Satellite Maps Tiler</option>
-                                    <option value="Bing" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Bing Maps</option>
+                                    <option value="OpenStreetMaps" className="pointcloud-sidebar__select-option">OpenStreetMap</option>
+                                    <option value="Bathymetry" className="pointcloud-sidebar__select-option">SeaSee Bathymetry</option>
+                                    <option value="EmodnetWMS" className="pointcloud-sidebar__select-option">EMODnet WMS</option>
+                                    <option value="EmodnetWCSBilinear" className="pointcloud-sidebar__select-option">EMODnet WCS Bilinear</option>
+                                    <option value="EmodnetWCSNearestNeighbour" className="pointcloud-sidebar__select-option">EMODnet WCS Nearest Neighbour</option>
+                                    <option value="Debug" className="pointcloud-sidebar__select-option">Debug Grid</option>
+                                    <option value="MapTilerBasic" className="pointcloud-sidebar__select-option">Vector Map Tiler Basic</option>
+                                    <option value="MapTilerOutdoor" className="pointcloud-sidebar__select-option">Vector Map Tiler Outdoor</option>
+                                    <option value="MapTilerSatellite" className="pointcloud-sidebar__select-option">Satellite Maps Tiler</option>
+                                    <option value="Bing" className="pointcloud-sidebar__select-option">Bing Maps</option>
                                 </select>
                             </div>
 
                             {/* Height Provider Select */}
-                            <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                                <label style={{ fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)" }}>Height Data Provider:</label>
+                            <div className="pointcloud-sidebar__slider-group">
+                                <label className="pointcloud-sidebar__sub-title">Height Data Provider:</label>
                                 <select
                                     value={heightmapHeightProvider}
                                     onChange={(e) => setHeightmapHeightProvider(e.target.value as any)}
-                                    style={{
-                                        background: "var(--color-bg-subtle)",
-                                        border: "1px solid var(--color-border-strong)",
-                                        color: "var(--color-text-secondary)",
-                                        padding: "var(--spacing-3xs) var(--spacing-xs)",
-                                        borderRadius: "var(--radius-xs)",
-                                        fontSize: "var(--font-size-xs)",
-                                        width: "100%",
-                                        cursor: "pointer",
-                                    }}
+                                    className="pointcloud-sidebar__select"
                                 >
-                                    <option value="Bathymetry" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>SeaSeer Bathymetry</option>
-                                    <option value="Emodnet" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>EMODnet Bathymetry</option>
-                                    <option value="None" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>None (Flat Surface)</option>
-                                    <option value="Debug" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Height Debug Grid</option>
-                                    <option value="MapTiler" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Height Map Tiler</option>
+                                    <option value="Bathymetry" className="pointcloud-sidebar__select-option">SeaSeer Bathymetry</option>
+                                    <option value="EmodnetWCSBilinear" className="pointcloud-sidebar__select-option">EMODnet WCS Bilinear</option>
+                                    <option value="EmodnetWCSNearestNeighbour" className="pointcloud-sidebar__select-option">EMODnet WCS Nearest Neighbour</option>
+                                    <option value="None" className="pointcloud-sidebar__select-option">None (Flat Surface)</option>
+                                    <option value="Debug" className="pointcloud-sidebar__select-option">Height Debug Grid</option>
+                                    <option value="MapTiler" className="pointcloud-sidebar__select-option">Height Map Tiler</option>
                                 </select>
                             </div>
 
-                            <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                                <label style={{ fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)" }}>Heightmap Mode:</label>
+                            <div className="pointcloud-sidebar__slider-group">
+                                <label className="pointcloud-sidebar__sub-title">Heightmap Mode:</label>
                                 <select
                                     value={heightmapMode}
                                     onChange={(e) => setHeightmapMode(e.target.value as any)}
-                                    style={{
-                                        background: "var(--color-bg-subtle)",
-                                        border: "1px solid var(--color-border-strong)",
-                                        color: "var(--color-text-secondary)",
-                                        padding: "var(--spacing-3xs) var(--spacing-xs)",
-                                        borderRadius: "var(--radius-xs)",
-                                        fontSize: "var(--font-size-xs)",
-                                        width: "100%",
-                                        cursor: "pointer",
-                                    }}
+                                    className="pointcloud-sidebar__select"
                                 >
-                                    <option value="HEIGHT" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>CPU Height (HeightNode)</option>
-                                    <option value="HEIGHT_SHADER" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>GPU Shader Height</option>
-                                    <option value="MARTINI" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Martini Mesh</option>
-                                    <option value="PLANAR" style={{ background: "var(--color-bg-card)", color: "var(--color-text-primary)" }}>Planar (2D Map)</option>
+                                    <option value="HEIGHT" className="pointcloud-sidebar__select-option">CPU Height (HeightNode)</option>
+                                    <option value="HEIGHT_SHADER" className="pointcloud-sidebar__select-option">GPU Shader Height</option>
+                                    <option value="MARTINI" className="pointcloud-sidebar__select-option">Martini Mesh</option>
+                                    <option value="PLANAR" className="pointcloud-sidebar__select-option">Planar (2D Map)</option>
                                 </select>
                             </div>
 
                             {/* Lighting Intensity Controls */}
-                            <div style={{ marginTop: "var(--spacing-xs)", paddingTop: "var(--spacing-xs)", borderTop: "1px dashed var(--color-border-subtle)", display: "flex", flexDirection: "column", gap: "var(--spacing-xs)" }}>
-                                <div style={{ fontWeight: "var(--font-weight-semibold)", fontSize: "var(--font-size-2xs)", color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                            <div className="pointcloud-sidebar__dashed-divider">
+                                <div className="pointcloud-sidebar__sub-title">
                                     Lighting Intensity Controls
                                 </div>
 
                                 {/* Key Sun Light (NW) */}
-                                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                                <div className="pointcloud-sidebar__slider-group">
+                                    <div className="pointcloud-sidebar__slider-header">
                                         <span>Key Sun Light (NW):</span>
-                                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--font-size-2xs)" }}>{keyLightIntensity.toFixed(1)}</span>
+                                        <span className="pointcloud-sidebar__mono-val">{keyLightIntensity.toFixed(1)}</span>
                                     </div>
                                     <input
                                         type="range"
@@ -606,15 +302,15 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                         step="0.1"
                                         value={keyLightIntensity}
                                         onChange={(e) => setKeyLightIntensity(parseFloat(e.target.value))}
-                                        style={{ width: "100%", cursor: "pointer" }}
+                                        className="pointcloud-sidebar__slider"
                                     />
                                 </div>
 
                                 {/* Fill Light (SE) */}
-                                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                                <div className="pointcloud-sidebar__slider-group">
+                                    <div className="pointcloud-sidebar__slider-header">
                                         <span>Fill Light (SE):</span>
-                                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--font-size-2xs)" }}>{fillLightIntensity.toFixed(1)}</span>
+                                        <span className="pointcloud-sidebar__mono-val">{fillLightIntensity.toFixed(1)}</span>
                                     </div>
                                     <input
                                         type="range"
@@ -623,15 +319,15 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                         step="0.1"
                                         value={fillLightIntensity}
                                         onChange={(e) => setFillLightIntensity(parseFloat(e.target.value))}
-                                        style={{ width: "100%", cursor: "pointer" }}
+                                        className="pointcloud-sidebar__slider"
                                     />
                                 </div>
 
                                 {/* Hemisphere Sky/Ground Light */}
-                                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                                <div className="pointcloud-sidebar__slider-group">
+                                    <div className="pointcloud-sidebar__slider-header">
                                         <span>Hemisphere Light:</span>
-                                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--font-size-2xs)" }}>{hemisphereLightIntensity.toFixed(1)}</span>
+                                        <span className="pointcloud-sidebar__mono-val">{hemisphereLightIntensity.toFixed(1)}</span>
                                     </div>
                                     <input
                                         type="range"
@@ -640,15 +336,15 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                         step="0.1"
                                         value={hemisphereLightIntensity}
                                         onChange={(e) => setHemisphereLightIntensity(parseFloat(e.target.value))}
-                                        style={{ width: "100%", cursor: "pointer" }}
+                                        className="pointcloud-sidebar__slider"
                                     />
                                 </div>
 
                                 {/* Ambient Base Light */}
-                                <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-3xs)" }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                                <div className="pointcloud-sidebar__slider-group">
+                                    <div className="pointcloud-sidebar__slider-header">
                                         <span>Ambient Light:</span>
-                                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--font-size-2xs)" }}>{ambientLightIntensity.toFixed(1)}</span>
+                                        <span className="pointcloud-sidebar__mono-val">{ambientLightIntensity.toFixed(1)}</span>
                                     </div>
                                     <input
                                         type="range"
@@ -657,38 +353,27 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                         step="0.1"
                                         value={ambientLightIntensity}
                                         onChange={(e) => setAmbientLightIntensity(parseFloat(e.target.value))}
-                                        style={{ width: "100%", cursor: "pointer" }}
+                                        className="pointcloud-sidebar__slider"
                                     />
                                 </div>
                             </div>
                         </div>
                     )}
                 </div>
-
-
             </div>
 
             {/* Status / Errors / Stats */}
-            <div
-                style={{
-                    marginTop: "var(--spacing-sm)",
-                    paddingTop: "var(--spacing-xs)",
-                    borderTop: "1px solid var(--color-border-subtle)",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                }}
-            >
+            <div className="pointcloud-sidebar__status-bar">
                 {isLoading ? (
-                    <span style={{ color: "var(--color-warning)", fontStyle: "italic", fontSize: "var(--font-size-xs)" }}>Loading...</span>
+                    <span className="pointcloud-sidebar__status--loading">Loading...</span>
                 ) : error ? (
-                    <span style={{ color: "var(--color-danger-text)", fontSize: "var(--font-size-2xs)" }}>{error}</span>
+                    <span className="pointcloud-sidebar__status--error">{error}</span>
                 ) : pointCount !== null ? (
-                    <span style={{ color: "var(--color-success-text)", fontWeight: "var(--font-weight-medium)", fontSize: "var(--font-size-xs)" }}>
+                    <span className="pointcloud-sidebar__status--success">
                         {pointCount.toLocaleString()} pts loaded
                     </span>
                 ) : (
-                    <span style={{ color: "var(--color-text-subtle)", fontSize: "var(--font-size-xs)" }}>No points loaded</span>
+                    <span className="pointcloud-sidebar__status--muted">No points loaded</span>
                 )}
             </div>
         </div>

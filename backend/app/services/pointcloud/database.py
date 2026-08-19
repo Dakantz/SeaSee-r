@@ -3,7 +3,8 @@ import os
 import re
 import subprocess
 import uuid
-from typing import List
+from typing import List, Optional
+from urllib.parse import unquote
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import async_session
 from app.repositories.pointcloud_repository import PointCloudRepository
 from app.services.pointcloud.exporters import BinaryStreamExporter, PLYStreamExporter
+from app.schemas.filter import FilterCriterion
 
 logger = logging.getLogger(__name__)
 
@@ -21,39 +23,44 @@ class DatabasePointCloudStorageService:
         self.binary_exporter = BinaryStreamExporter(self.repository)
         self.ply_exporter = PLYStreamExporter(self.repository)
 
-    async def stream_pointcloud_binary(self, identifier: str, lod: int = 0) -> StreamingResponse:
+    async def stream_pointcloud_binary(
+        self,
+        lod: int,
+        filters: Optional[List[FilterCriterion]] = None
+    ) -> StreamingResponse:
         """
         Streams point cloud data directly from database as raw binary buffer (Float32 XYZ, Uint8 RGB).
+        Supports parameter filters.
         """
-        pointcloud_uuid = identifier
-        if "?" in identifier:
-            parts = identifier.split("?")
-            pointcloud_uuid = parts[0]
-            for param in parts[1].split("&"):
-                if param.startswith("lod="):
-                    try:
-                        lod = int(param.split("=")[1])
-                    except ValueError:
-                        pass
-
-        clean_uuid = re.sub(r'[^a-fA-F0-9\-]', '', pointcloud_uuid)
-        table_uuid = clean_uuid.replace("-", "")
-        if not table_uuid:
-            raise HTTPException(status_code=400, detail="Invalid Point Cloud UUID format.")
-
-        try:
-            row = await self.repository.get_metadata_by_id(clean_uuid)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Database query failed: {str(e)}")
-
-        if not row:
-            raise HTTPException(status_code=404, detail="Point cloud metadata not found in database.")
+        filename = f"pointcloud_lod{lod}.bin"
 
         return StreamingResponse(
-            self.binary_exporter.export_stream(clean_uuid, lod=lod),
+            self.binary_exporter.export_stream(
+                filters=filters,
+                lod=lod
+            ),
             media_type="application/octet-stream",
-            headers={"Content-Disposition": f"attachment; filename={pointcloud_uuid}_lod{lod}.bin"}
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
+
+    async def get_pointcloud_stream_summary(
+        self,
+        lod: int,
+        filters: Optional[List[FilterCriterion]] = None
+    ) -> dict:
+        """
+        Returns summary (point count, bounding box, and connected pointcloud metadata) for the parameter selection.
+        """
+        try:
+            return await self.repository.get_summary_info(
+                filters=filters,
+                lod=lod
+            )
+
+        except Exception as e:
+            logger.error(f"Database query failed in get_pointcloud_stream_summary: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Database query failed: {str(e)}")
+
 
     async def get_pointcloud(self, identifier: str, lod: int = 0) -> StreamingResponse:
         """

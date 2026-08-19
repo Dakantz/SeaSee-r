@@ -37,6 +37,7 @@ function getCircleTexture(): THREE.CanvasTexture {
 
 export interface TrajectoryRendererProps {
     url: string;
+    allowedHeaderIds?: Set<string>;
     videoId?: string;
     color?: THREE.ColorRepresentation;
     lineWidth?: number;
@@ -48,10 +49,14 @@ export interface TrajectoryRendererProps {
     onInitialPositionLoaded?: () => void;
     showPoints?: boolean;
     pointSize?: number;
+    showDirections?: boolean;
+    directionLength?: number;
+    directionColor?: THREE.ColorRepresentation;
 }
 
 export function TrajectoryRenderer({
     url,
+    allowedHeaderIds,
     videoId,
     color = 0x00ff00,
     lineWidth = 3,
@@ -63,6 +68,9 @@ export function TrajectoryRenderer({
     onInitialPositionLoaded,
     showPoints = true,
     pointSize = 0.5,
+    showDirections = true,
+    directionLength = 3.0,
+    directionColor = 0xffaa00,
 }: TrajectoryRendererProps) {
 
     const [group, setGroup] = useState<THREE.Group | null>(null);
@@ -103,22 +111,28 @@ export function TrajectoryRenderer({
         let cancelled = false;
 
         async function build() {
-            const samples =
-                await reader.getPositionData();
+            const rawSamples = await reader.getPositionData();
+            const samples = allowedHeaderIds
+                ? rawSamples.filter((s) => s.cameraHeaderId && allowedHeaderIds.has(s.cameraHeaderId))
+                : rawSamples;
 
             if (cancelled) {
                 return;
             }
 
-            if (samples.length > 0) {
-                TrajectoryRenderer.initialPositions[url] = [
-                    samples[0].x,
-                    samples[0].y,
-                    samples[0].z,
-                ];
-                if (onInitialPositionLoaded) {
-                    onInitialPositionLoaded();
-                }
+            if (samples.length === 0) {
+                setSamples([]);
+                setGroup(null);
+                return;
+            }
+
+            TrajectoryRenderer.initialPositions[url] = [
+                samples[0].x,
+                samples[0].y,
+                samples[0].z,
+            ];
+            if (onInitialPositionLoaded) {
+                onInitialPositionLoaded();
             }
 
             setSamples(samples);
@@ -199,6 +213,59 @@ export function TrajectoryRenderer({
 
                 const points = new THREE.Points(pointsGeometry, pointsMaterial);
                 group.add(points);
+            }
+
+            if (showDirections) {
+                const dirLinePositions: number[] = [];
+
+                for (let i = 0; i < samples.length; i++) {
+                    const s = samples[i];
+                    let dirVec = new THREE.Vector3();
+
+                    if (s.direction && Array.isArray(s.direction) && s.direction.length === 3) {
+                        dirVec.set(s.direction[0], s.direction[1], s.direction[2]);
+                    }
+
+                    if (dirVec.lengthSq() < 1e-6) {
+                        if (i < samples.length - 1) {
+                            const next = samples[i + 1];
+                            dirVec.set(next.x - s.x, next.y - s.y, next.z - s.z);
+                        } else if (i > 0) {
+                            const prev = samples[i - 1];
+                            dirVec.set(s.x - prev.x, s.y - prev.y, s.z - prev.z);
+                        }
+                    }
+
+                    if (dirVec.lengthSq() < 1e-6) {
+                        dirVec.set(0, 0, 1);
+                    } else {
+                        dirVec.normalize();
+                    }
+
+                    const startX = s.x;
+                    const startY = s.y;
+                    const startZ = s.z;
+
+                    const endX = startX + dirVec.x * directionLength;
+                    const endY = startY + dirVec.y * directionLength;
+                    const endZ = startZ + dirVec.z * directionLength;
+
+                    dirLinePositions.push(startX, startY, startZ, endX, endY, endZ);
+                }
+
+                const dirGeom = new THREE.BufferGeometry();
+                dirGeom.setAttribute(
+                    "position",
+                    new THREE.Float32BufferAttribute(dirLinePositions, 3)
+                );
+                const dirMat = new THREE.LineBasicMaterial({
+                    color: directionColor,
+                    transparent: opacity < 1,
+                    opacity,
+                });
+                const dirLines = new THREE.LineSegments(dirGeom, dirMat);
+
+                group.add(dirLines);
             }
 
             setGroup(group);

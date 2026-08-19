@@ -92,7 +92,7 @@ class PostGISRaster:
             if pointcloud_id:
                 await session.execute(
                     text("""
-                        INSERT INTO pointclouds (id, orig_filename, number_of_points, pcid, created_at, transform_matrix)
+                        INSERT INTO pointcloud_metadata (id, orig_filename, number_of_points, pcid, created_at, transform_matrix)
                         VALUES (:id, :filename, 0, 1, NOW(), '{1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0}')
                         ON CONFLICT (id) DO NOTHING
                     """),
@@ -149,7 +149,7 @@ class PostGISRaster:
             try:
                 await session.execute(text(f"""
                     ALTER TABLE {cls.DEFAULT_TABLE_NAME} 
-                    ADD COLUMN IF NOT EXISTS pointcloud_id UUID REFERENCES pointclouds(id) ON DELETE CASCADE;
+                    ADD COLUMN IF NOT EXISTS pointcloud_id UUID REFERENCES pointcloud_metadata(id) ON DELETE CASCADE;
                 """))
             except Exception as col_err:
                 print(f"[PostGIS Raster] Warning adding pointcloud_id column: {col_err}")

@@ -31,10 +31,11 @@ def test_create_job(client):
     mock_db_session.refresh.side_effect = mock_refresh
 
 
-    response = client.post("/jobs", json={"name": "test_job", "payload": {"arg": 1}})
+    response = client.post("/jobs", json={"name": "test_job", "task_type": "pointcloud_upload", "payload": {"arg": 1}})
     assert response.status_code == 201
     data = response.json()
     assert data["name"] == "test_job"
+    assert data["task_type"] == "pointcloud_upload"
     assert data["status"] == "PENDING"
     assert data["progress"] == 0.0
     assert data["id"] == "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
@@ -43,6 +44,7 @@ def test_list_jobs(client):
     mock_job = MagicMock()
     mock_job.id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
     mock_job.name = "test_job"
+    mock_job.task_type = "pointcloud_upload"
     mock_job.status = JobStatus.PENDING
     mock_job.progress = 0.0
     mock_job.payload = None
@@ -61,11 +63,13 @@ def test_list_jobs(client):
     data = response.json()
     assert len(data) == 1
     assert data[0]["name"] == "test_job"
+    assert data[0]["task_type"] == "pointcloud_upload"
 
 def test_get_job(client):
     mock_job = MagicMock()
     mock_job.id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
     mock_job.name = "test_job"
+    mock_job.task_type = "pointcloud_upload"
     mock_job.status = JobStatus.PENDING
     mock_job.progress = 0.0
     mock_job.payload = None
@@ -81,6 +85,7 @@ def test_get_job(client):
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    assert data["task_type"] == "pointcloud_upload"
 
 def test_get_job_not_found(client):
     mock_db_session.execute.return_value.scalar_one_or_none.return_value = None
@@ -93,6 +98,7 @@ def test_retry_job_success(client):
     mock_job = MagicMock()
     mock_job.id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
     mock_job.name = "test_job"
+    mock_job.task_type = "pointcloud_upload"
     mock_job.status = "FAILED"
     mock_job.progress = 0.0
     mock_job.payload = None

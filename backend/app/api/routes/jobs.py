@@ -26,6 +26,7 @@ async def create_job(
     """
     job = Job(
         name=payload.name,
+        task_type=payload.task_type,
         payload=payload.payload,
         status="PENDING",
         progress=0.0

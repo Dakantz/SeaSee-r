@@ -7,7 +7,7 @@ class BasePointCloudExporter(ABC):
         self.repository = repository
 
     @abstractmethod
-    async def export_stream(self, pointcloud_id: str, lod: int = 0) -> AsyncGenerator[bytes, None]:
+    async def export_stream(self, *args, **kwargs) -> AsyncGenerator[bytes, None]:
         """
         Abstract method to generate binary data stream chunks for a pointcloud.
         """

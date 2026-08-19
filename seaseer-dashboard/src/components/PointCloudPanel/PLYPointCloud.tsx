@@ -1,10 +1,18 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import { generateDelaunayTerrainMesh } from "./utils/delaunayTriangulation";
+import { TrajectoryRenderer } from "../RovRenderer/trajectoryRenderer";
+
+export { CustomQueryManager, PointCloudList } from "./CustomQueryManager";
+export { CustomQueryManagerContainer, PointCloudListContainer } from "./CustomQueryManagerContainer";
+export type { CustomQuery, CustomQueryManagerProps, PointCloudItem, PointCloudListProps } from "./CustomQueryManager";
+import { getBoundingBoxCenter, type CustomQuery } from "./CustomQueryManager";
+
+
 // @ts-expect-error - geo-three submodule
-import { MapView, DebugProvider, HeightDebugProvider, OpenStreetMapsProvider, OpenMapTilesProvider, MapTilerProvider, BingMapsProvider, BathymetryProvider, EmodnetProvider, UnitsUtils, MapNodeGeometry, MapHeightNodeShader, MapHeightNode, MapNodeHeightGeometry, MapPlaneNode, CanvasUtils } from "../../../public/geo-three/build/geo-three.module.js";
+import { MapView, DebugProvider, HeightDebugProvider, OpenStreetMapsProvider, OpenMapTilesProvider, MapTilerProvider, BingMapsProvider, BathymetryProvider, EmodnetProvider, EmodnetTileProvider, EmodnetWCSProvider, UnitsUtils, MapNodeGeometry, MapHeightNodeShader, MapHeightNode, MapNodeHeightGeometry, MapPlaneNode, CanvasUtils } from "../../../public/geo-three/build/geo-three.module.js";
 
 // Set skirt depth to 100.0 so the skirt extends down to height -100
 MapHeightNodeShader.geometry = new MapNodeGeometry(1.0, 1.0, MapHeightNodeShader.geometrySize, MapHeightNodeShader.geometrySize, true, 2000.0);
@@ -24,14 +32,38 @@ if (MapHeightNode.prototype.loadHeightGeometry) {
             const image = await this.mapView.heightProvider.fetchTile(this.level, this.x, this.y);
             if (this.disposed) return;
 
-            const canvas = CanvasUtils.createOffscreenCanvas(this.geometrySize + 1, this.geometrySize + 1);
-            const context = canvas.getContext('2d') as CanvasRenderingContext2D;
-            context.imageSmoothingEnabled = false;
-            context.drawImage(image, 0, 0, MapHeightNode.tileSize, MapHeightNode.tileSize, 0, 0, canvas.width, canvas.height);
-            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            // 1. Draw 1:1 onto a 256x256 canvas without downscaling to extract exact uncorrupted RGBA bytes
+            const srcTileSize = MapHeightNode.tileSize; // 256
+            const srcCanvas = CanvasUtils.createOffscreenCanvas(srcTileSize, srcTileSize);
+            const srcContext = srcCanvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
+            srcContext.imageSmoothingEnabled = false;
+            srcContext.drawImage(image, 0, 0, srcTileSize, srcTileSize, 0, 0, srcTileSize, srcTileSize);
+            const srcData = srcContext.getImageData(0, 0, srcTileSize, srcTileSize).data;
 
-            // Use skirtDepth = 100.0 so skirt extends down to height -100
-            this.geometry = new MapNodeHeightGeometry(1, 1, this.geometrySize, this.geometrySize, true, 2000.0, imageData, true);
+            // 2. Downsample to 17x17 via pure nearest-neighbor pixel sampling (prevents 2D canvas color byte interpolation craters)
+            const dstSize = this.geometrySize + 1; // 17
+            const dstCanvas = CanvasUtils.createOffscreenCanvas(dstSize, dstSize);
+            const dstContext = dstCanvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
+            const dstImageData = dstContext.createImageData(dstSize, dstSize);
+            const dstData = dstImageData.data;
+
+            for (let r = 0; r < dstSize; r++) {
+                const srcY = Math.min(srcTileSize - 1, Math.round((r / (dstSize - 1)) * (srcTileSize - 1)));
+                for (let c = 0; c < dstSize; c++) {
+                    const srcX = Math.min(srcTileSize - 1, Math.round((c / (dstSize - 1)) * (srcTileSize - 1)));
+
+                    const srcIdx = (srcY * srcTileSize + srcX) * 4;
+                    const dstIdx = (r * dstSize + c) * 4;
+
+                    dstData[dstIdx + 0] = srcData[srcIdx + 0];
+                    dstData[dstIdx + 1] = srcData[srcIdx + 1];
+                    dstData[dstIdx + 2] = srcData[srcIdx + 2];
+                    dstData[dstIdx + 3] = srcData[srcIdx + 3];
+                }
+            }
+
+            // 3. Build geometry with non-corrupted 17x17 height grid
+            this.geometry = new MapNodeHeightGeometry(1, 1, this.geometrySize, this.geometrySize, true, 2000.0, dstImageData, true);
         } catch (e) {
             if (this.disposed) return;
             this.geometry = MapPlaneNode.baseGeometry;
@@ -107,6 +139,14 @@ function getHeightFactor(y: number): number {
         : Math.max(0.0001, 0.1 * Math.exp(y / 1000));
 }
 
+const _tmpVecForward = new THREE.Vector3();
+const _tmpVecRight = new THREE.Vector3();
+const _tmpVecUp = new THREE.Vector3();
+const _tmpVecDir = new THREE.Vector3();
+
+const _colorHovered = new THREE.Color("#ffaa00");
+const _colorDefault = new THREE.Color("#00e5ff");
+
 function CameraPositionControls() {
     const { camera, gl } = useThree();
     const isDragging = useRef(false);
@@ -131,6 +171,7 @@ function CameraPositionControls() {
             isDragging.current = true;
             dragButton.current = e.button;
             previousMouse.current = { x: e.clientX, y: e.clientY };
+            euler.current.setFromQuaternion(camera.quaternion, "YXZ");
         };
 
         const onPointerMove = (e: PointerEvent) => {
@@ -154,8 +195,8 @@ function CameraPositionControls() {
                 // Right or middle click: Pan camera position
                 const heightFactor = getHeightFactor(camera.position.y);
                 const panSpeed = 2.0 * heightFactor;
-                const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-                const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+                const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+                const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
 
                 right.y = 0;
                 up.y = 0;
@@ -176,11 +217,10 @@ function CameraPositionControls() {
             e.preventDefault();
             const heightFactor = getHeightFactor(camera.position.y);
             const zoomSpeed = 1.0 * heightFactor;
-            const dir = new THREE.Vector3();
-            camera.getWorldDirection(dir);
+            camera.getWorldDirection(_tmpVecDir);
 
             const moveDistance = -Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 100) * zoomSpeed;
-            camera.position.addScaledVector(dir, moveDistance);
+            camera.position.addScaledVector(_tmpVecDir, moveDistance);
         };
 
         const onContextMenu = (e: MouseEvent) => {
@@ -227,31 +267,29 @@ function CameraPositionControls() {
         const keys = keysPressed.current;
         if (!keys) return;
 
-        const isShift = keys["ShiftLeft"] || keys["ShiftRight"];
+        const isShift = keys["ShiftLeft"];
         const heightFactor = getHeightFactor(camera.position.y);
         const moveSpeed = (isShift ? 3000 : 800) * heightFactor * delta;
 
-        const forward = new THREE.Vector3();
-        camera.getWorldDirection(forward);
+        camera.getWorldDirection(_tmpVecForward);
+        const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
 
-        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-
-        if (keys["KeyW"] || keys["ArrowUp"]) {
-            camera.position.addScaledVector(forward, moveSpeed);
+        if (keys["KeyW"]) {
+            camera.position.addScaledVector(_tmpVecForward, moveSpeed);
         }
-        if (keys["KeyS"] || keys["ArrowDown"]) {
-            camera.position.addScaledVector(forward, -moveSpeed);
+        if (keys["KeyS"]) {
+            camera.position.addScaledVector(_tmpVecForward, -moveSpeed);
         }
-        if (keys["KeyA"] || keys["ArrowLeft"]) {
+        if (keys["KeyA"]) {
             camera.position.addScaledVector(right, -moveSpeed);
         }
-        if (keys["KeyD"] || keys["ArrowRight"]) {
+        if (keys["KeyD"]) {
             camera.position.addScaledVector(right, moveSpeed);
         }
-        if (keys["KeyE"] || keys["Space"]) {
+        if (keys["KeyE"]) {
             camera.position.y += moveSpeed;
         }
-        if (keys["KeyQ"] || keys["ControlLeft"] || keys["ControlRight"]) {
+        if (keys["KeyQ"]) {
             camera.position.y -= moveSpeed;
         }
     });
@@ -260,7 +298,7 @@ function CameraPositionControls() {
 }
 
 function GeoThreeHeightmap() {
-    const { showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider, heightmapProvider } = usePLYPointCloudContext();
+    const { showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider } = usePLYPointCloudContext();
     const mapViewRef = useRef<any>(null);
 
     const mapView = useMemo(() => {
@@ -270,7 +308,7 @@ function GeoThreeHeightmap() {
             let heightProvider: any = null;
             const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-            const mapChoice = heightmapMapProvider ?? heightmapProvider ?? "OpenStreetMaps";
+            const mapChoice = heightmapMapProvider ?? "OpenStreetMaps";
             const heightChoice = heightmapHeightProvider ?? "Bathymetry";
 
             // 1. Map Imagery Provider
@@ -278,8 +316,14 @@ function GeoThreeHeightmap() {
                 case "Bathymetry":
                     provider = new BathymetryProvider(`${apiBaseUrl}/bathymetry`);
                     break;
-                case "Emodnet":
-                    provider = new EmodnetProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", "", "image/png", "WCS");
+                case "EmodnetWMS":
+                    provider = new EmodnetTileProvider();
+                    break;
+                case "EmodnetWCSBilinear":
+                    provider = new EmodnetWCSProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", 1.0, true);
+                    break;
+                case "EmodnetWCSNearestNeighbour":
+                    provider = new EmodnetWCSProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", 1.0, false);
                     break;
                 case "Debug":
                     provider = new DebugProvider();
@@ -308,8 +352,11 @@ function GeoThreeHeightmap() {
                 case "Bathymetry":
                     heightProvider = new BathymetryProvider(`${apiBaseUrl}/bathymetry`);
                     break;
-                case "Emodnet":
-                    heightProvider = new EmodnetProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", "", "image/png", "WCS", 1.0);
+                case "EmodnetWCSBilinear":
+                    heightProvider = new EmodnetWCSProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", 1.0, true);
+                    break;
+                case "EmodnetWCSNearestNeighbour":
+                    heightProvider = new EmodnetWCSProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", 1.0, false);
                     break;
                 case "Debug":
                     heightProvider = new HeightDebugProvider(new DebugProvider());
@@ -339,12 +386,34 @@ function GeoThreeHeightmap() {
             console.error("Failed to initialize GeoThree MapView:", err);
             return null;
         }
-    }, [showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider, heightmapProvider]);
+    }, [showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider]);
 
     useFrame(({ camera, gl, scene }) => {
         if (mapViewRef.current?.lod) {
             try {
                 mapViewRef.current.lod.updateLOD(mapViewRef.current, camera, gl, scene);
+
+                // Enforce THREE.NearestFilter on all terrain/height textures to prevent RGB channel interpolation craters
+                mapViewRef.current.traverse((child: any) => {
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach((mat: any) => {
+                            if (mat.map && (mat.map.magFilter !== THREE.NearestFilter || mat.map.minFilter !== THREE.NearestFilter)) {
+                                mat.map.magFilter = THREE.NearestFilter;
+                                mat.map.minFilter = THREE.NearestFilter;
+                                mat.map.needsUpdate = true;
+                            }
+                            if (mat.userData?.heightMap?.value && mat.userData.heightMap.value !== MapHeightNodeShader.defaultHeightTexture) {
+                                const hm = mat.userData.heightMap.value;
+                                if (hm.magFilter !== THREE.NearestFilter || hm.minFilter !== THREE.NearestFilter) {
+                                    hm.magFilter = THREE.NearestFilter;
+                                    hm.minFilter = THREE.NearestFilter;
+                                    hm.needsUpdate = true;
+                                }
+                            }
+                        });
+                    }
+                });
             } catch (e) {
                 // Ignore transient update errors on unmount/re-render
             }
@@ -356,45 +425,333 @@ function GeoThreeHeightmap() {
     return <primitive object={mapView} position={[0, -0.5, 0]} />;
 }
 
+
+
+function PointCloudCenterMarkers() {
+    const {
+        queries,
+        summaryMap,
+        hoveredId,
+        selectPointcloud,
+        hoverPointcloud,
+        focusCameraTarget,
+        startProgressiveStream,
+    } = usePLYPointCloudContext();
+
+    const meshRef = useRef<THREE.InstancedMesh>(null);
+    const dummy = useMemo(() => new THREE.Object3D(), []);
+
+    useEffect(() => {
+        if (meshRef.current && meshRef.current.geometry) {
+            meshRef.current.geometry.boundingSphere = new THREE.Sphere(
+                new THREE.Vector3(0, 0, 0),
+                Infinity
+            );
+        }
+    }, [queries]);
+
+    useFrame(() => {
+        if (!meshRef.current || queries.length === 0) return;
+
+        queries.forEach((query, index) => {
+            const [cx, cy, cz] = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, 0, TARGET_Z];
+
+            const isHovered = query.id === hoveredId;
+
+            // Fixed size in 3D world space
+            const scale = isHovered ? 1.5 : 1.0;
+
+            dummy.position.set(cx, cy, cz);
+            dummy.scale.set(scale, scale, scale);
+            dummy.updateMatrix();
+            meshRef.current!.setMatrixAt(index, dummy.matrix);
+
+            const color = isHovered ? _colorHovered : _colorDefault;
+            meshRef.current!.setColorAt(index, color);
+        });
+
+        meshRef.current.instanceMatrix.needsUpdate = true;
+        if (meshRef.current.instanceColor) {
+            meshRef.current.instanceColor.needsUpdate = true;
+        }
+    });
+
+    if (queries.length === 0) return null;
+
+    const handleLoadQuery = (query: CustomQuery) => {
+        selectPointcloud(query.id);
+        if (startProgressiveStream) {
+            startProgressiveStream(query.id, 10, 0, query.filters);
+        }
+    };
+
+    return (
+        <instancedMesh
+            ref={meshRef}
+            args={[undefined, undefined, queries.length]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            onClick={(e) => {
+                e.stopPropagation();
+                if (e.instanceId !== undefined && queries[e.instanceId]) {
+                    const query = queries[e.instanceId];
+                    handleLoadQuery(query);
+                }
+            }}
+            onDoubleClick={(e) => {
+                e.stopPropagation();
+                if (e.instanceId !== undefined && queries[e.instanceId]) {
+                    const query = queries[e.instanceId];
+                    handleLoadQuery(query);
+                    const center = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, 0, TARGET_Z];
+                    focusCameraTarget(center);
+                }
+            }}
+            onPointerOver={(e) => {
+                e.stopPropagation();
+                document.body.style.cursor = "pointer";
+                if (e.instanceId !== undefined && queries[e.instanceId]) {
+                    hoverPointcloud(queries[e.instanceId].id);
+                }
+            }}
+            onPointerOut={(e) => {
+                e.stopPropagation();
+                document.body.style.cursor = "auto";
+                hoverPointcloud(null);
+            }}
+        >
+            <sphereGeometry args={[1, 16, 16]} />
+            <meshStandardMaterial roughness={0.3} metalness={0.2} />
+        </instancedMesh>
+    );
+}
+
+function CameraFocusController() {
+    const { camera, gl } = useThree();
+    const { cameraTarget } = usePLYPointCloudContext();
+
+    const animState = useRef<{
+        startTime: number;
+        duration: number;
+        startPos: THREE.Vector3;
+        targetCamPos: THREE.Vector3;
+        targetCenter: THREE.Vector3;
+    } | null>(null);
+
+    const startFocusAnimation = useCallback((targetCenter: THREE.Vector3, customOffset?: [number, number, number] | number) => {
+        let offsetVec = new THREE.Vector3(0, 150, 150);
+        if (customOffset !== undefined) {
+            if (Array.isArray(customOffset)) {
+                offsetVec = new THREE.Vector3(...customOffset);
+            } else if (typeof customOffset === "number") {
+                offsetVec = new THREE.Vector3(0, customOffset, customOffset);
+            }
+        }
+        const targetCamPos = targetCenter.clone().add(offsetVec);
+
+        animState.current = {
+            startTime: performance.now() / 1000,
+            duration: 0.6,
+            startPos: camera.position.clone(),
+            targetCamPos: targetCamPos,
+            targetCenter: targetCenter.clone(),
+        };
+    }, [camera]);
+
+    useEffect(() => {
+        if (!cameraTarget) return;
+        const { x, y, z, offset } = cameraTarget;
+        if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
+            const targetCenter = new THREE.Vector3(x, y, z).applyEuler(
+                new THREE.Euler(-Math.PI / 2, 0, 0)
+            );
+            startFocusAnimation(targetCenter, offset);
+        }
+    }, [cameraTarget, startFocusAnimation]);
+
+    useEffect(() => {
+        const domElement = gl.domElement;
+
+        const stopAnimation = () => {
+            if (animState.current) {
+                animState.current = null;
+            }
+        };
+
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (
+                document.activeElement &&
+                (document.activeElement.tagName === "INPUT" ||
+                    document.activeElement.tagName === "TEXTAREA" ||
+                    document.activeElement.tagName === "SELECT")
+            ) {
+                return;
+            }
+            const navKeys = [
+                "KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "Space",
+                "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"
+            ];
+            if (navKeys.includes(e.code)) {
+                stopAnimation();
+            }
+        };
+
+        domElement.addEventListener("pointerdown", stopAnimation);
+        domElement.addEventListener("wheel", stopAnimation, { passive: true });
+        domElement.addEventListener("touchstart", stopAnimation, { passive: true });
+        window.addEventListener("keydown", onKeyDown);
+
+        return () => {
+            domElement.removeEventListener("pointerdown", stopAnimation);
+            domElement.removeEventListener("wheel", stopAnimation);
+            domElement.removeEventListener("touchstart", stopAnimation);
+            window.removeEventListener("keydown", onKeyDown);
+        };
+    }, [gl]);
+
+    useFrame(() => {
+        if (!animState.current) return;
+
+        const { startTime, duration, startPos, targetCamPos, targetCenter } = animState.current;
+        const now = performance.now() / 1000;
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / duration);
+
+        const easeT = 1 - Math.pow(1 - progress, 3);
+
+        camera.position.lerpVectors(startPos, targetCamPos, easeT);
+        camera.lookAt(targetCenter);
+
+        if (progress >= 1) {
+            camera.position.copy(targetCamPos);
+            camera.lookAt(targetCenter);
+            animState.current = null;
+        }
+    });
+
+    return null;
+}
+
+function DBCameraTrajectoryDisplay() {
+    const {
+        showCameraTrajectories,
+        loadedGeometries,
+        loadingIds,
+        summaryMap,
+        mode,
+    } = usePLYPointCloudContext();
+
+    const displayedKeys = useMemo(() => {
+        const keys = new Set<string>();
+        for (const id of loadedGeometries.keys()) {
+            if (id) keys.add(id);
+        }
+        if (loadingIds) {
+            for (const id of loadingIds) {
+                if (id) keys.add(id);
+            }
+        }
+        return Array.from(keys);
+    }, [loadedGeometries, loadingIds]);
+
+    if (!showCameraTrajectories || displayedKeys.length === 0) return null;
+
+    const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+    const routesToRender: Array<{
+        key: string;
+        url: string;
+        allowedHeaderIds: Set<string>;
+        position: [number, number, number];
+    }> = [];
+
+    for (const qId of displayedKeys) {
+        const summary = summaryMap?.[qId];
+        const connectedHeaders = summary?.connected_camera_headers;
+        if (!connectedHeaders || connectedHeaders.length === 0) {
+            continue;
+        }
+
+        // Group headers by pointcloud_id
+        const headersByPc = new Map<string, Set<string>>();
+        for (const header of connectedHeaders) {
+            if (header.pointcloud_id && header.id) {
+                if (!headersByPc.has(header.pointcloud_id)) {
+                    headersByPc.set(header.pointcloud_id, new Set());
+                }
+                headersByPc.get(header.pointcloud_id)!.add(header.id);
+            }
+        }
+
+        headersByPc.forEach((headerIds, pcId) => {
+            const position: [number, number, number] =
+                mode === "plyUrl" ? [TARGET_X, 0, TARGET_Z] : [0, 0, 0];
+
+            routesToRender.push({
+                key: `${qId}-${pcId}`,
+                url: `${apiBaseUrl}/pointclouds/${pcId}/camera-routes`,
+                allowedHeaderIds: headerIds,
+                position,
+            });
+        });
+    }
+
+    if (routesToRender.length === 0) return null;
+
+    return (
+        <group>
+            {routesToRender.map((route) => (
+                <TrajectoryRenderer
+                    key={route.key}
+                    url={route.url}
+                    allowedHeaderIds={route.allowedHeaderIds}
+                    position={route.position}
+                    rotation={[-Math.PI / 2, 0, 0]}
+                    color={0x00ffcc}
+                    lineWidth={3}
+                    showPoints={true}
+                    pointSize={1.5}
+                />
+            ))}
+        </group>
+    );
+}
+
 export default function PLYPointCloud() {
     const {
         geometry,
-        mode,
         renderMode,
         wireframe,
         pointSize,
-        identifier,
-        lod,
-        plyUrl,
-        loadBinaryPointCloud,
-        loadPlyUrl,
+        loadedGeometries,
     } = usePLYPointCloudContext();
 
     useEffect(() => {
-        if (mode === "binary") {
-            loadBinaryPointCloud(identifier, lod);
-        } else if (mode === "plyUrl") {
-            loadPlyUrl(plyUrl);
+        if (renderMode === "mesh") {
+            if (geometry) {
+                generateDelaunayTerrainMesh(geometry, true);
+            }
+            loadedGeometries.forEach((geom) => {
+                generateDelaunayTerrainMesh(geom, true);
+            });
         }
-    }, [mode, identifier, lod, loadBinaryPointCloud, loadPlyUrl]);
-
-    useEffect(() => {
-        if (geometry && renderMode === "mesh") {
-            generateDelaunayTerrainMesh(geometry, true);
-        }
-    }, [geometry, renderMode]);
+    }, [geometry, loadedGeometries, renderMode]);
 
     return (
         <group>
             <CameraPositionControls />
+            <CameraFocusController />
             <SceneLighting />
             <GeoThreeHeightmap />
-            {geometry && (
-                <group position={[TARGET_X, 0, TARGET_Z]}>
+            <PointCloudCenterMarkers />
+            <DBCameraTrajectoryDisplay />
+
+            {/* Render dynamically streamed full pointcloud geometries */}
+            {Array.from(loadedGeometries.entries()).map(([id, geom]) => (
+                <group key={id}>
                     {renderMode === "mesh" ? (
-                        <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}>
+                        <mesh geometry={geom} rotation={[-Math.PI / 2, 0, 0]}>
                             <meshStandardMaterial
-                                vertexColors={!!geometry.attributes.color}
+                                vertexColors={!!geom.attributes.color}
                                 side={THREE.DoubleSide}
                                 wireframe={wireframe}
                                 roughness={0.5}
@@ -402,16 +759,16 @@ export default function PLYPointCloud() {
                             />
                         </mesh>
                     ) : (
-                        <points geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}>
+                        <points geometry={geom} rotation={[-Math.PI / 2, 0, 0]}>
                             <pointsMaterial
-                                vertexColors={!!geometry.attributes.color}
+                                vertexColors={!!geom.attributes.color}
                                 size={pointSize}
                                 sizeAttenuation
                             />
                         </points>
                     )}
                 </group>
-            )}
+            ))}
         </group>
     );
 }
