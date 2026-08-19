@@ -170,6 +170,7 @@ async def get_camera_routes(
         CameraFrame.timestamp,
         ST_AsGeoJSON(CameraFrame.position).label("pos_geojson"),
         ST_AsGeoJSON(CameraFrame.direction).label("dir_geojson"),
+        CameraFrame.rotation,
         CameraFrame.relative_time,
         CameraFrame.filename
     ).where(CameraFrame.camera_header_id.in_(header_ids)).order_by(CameraFrame.timestamp.asc())
@@ -188,6 +189,7 @@ async def get_camera_routes(
             timestamp=r.timestamp,
             position=pos_coords,
             direction=dir_coords,
+            rotation=r.rotation,
             relative_time=r.relative_time,
             filename=r.filename
         ))

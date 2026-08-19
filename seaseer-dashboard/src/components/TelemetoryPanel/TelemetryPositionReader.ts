@@ -4,6 +4,7 @@ export interface PositionSample {
     y: number;
     z: number;
     direction?: [number, number, number];
+    rotation?: [number, number, number, number];
     filename?: string;
     id?: string;
     cameraHeaderId?: string;
@@ -67,6 +68,9 @@ export class TelemetryPositionReader {
                     z: item.position[2],
                     direction: item.direction && Array.isArray(item.direction) && item.direction.length === 3
                         ? item.direction
+                        : undefined,
+                    rotation: item.rotation && Array.isArray(item.rotation) && item.rotation.length === 4
+                        ? item.rotation
                         : undefined,
                     filename: item.filename,
                     id: item.id,

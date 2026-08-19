@@ -36,6 +36,63 @@ def get_camera_viewing_direction(rotation: List[float]) -> List[float]:
         view_dir = np.array([0.0, 0.0, 1.0])
     return view_dir.tolist()
 
+def rotation_matrix_to_quaternion(R: np.ndarray) -> List[float]:
+    """
+    Converts a 3x3 rotation matrix R into a normalized unit quaternion [x, y, z, w].
+    Matches Three.js Quaternion constructor / method set(x, y, z, w).
+    """
+    tr = np.trace(R)
+    if tr > 0:
+        S = np.sqrt(tr + 1.0) * 2.0
+        qw = 0.25 * S
+        qx = (R[2, 1] - R[1, 2]) / S
+        qy = (R[0, 2] - R[2, 0]) / S
+        qz = (R[1, 0] - R[0, 1]) / S
+    elif (R[0, 0] > R[1, 1]) and (R[0, 0] > R[2, 2]):
+        S = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2.0
+        qw = (R[2, 1] - R[1, 2]) / S
+        qx = 0.25 * S
+        qy = (R[0, 1] + R[1, 0]) / S
+        qz = (R[0, 2] + R[2, 0]) / S
+    elif R[1, 1] > R[2, 2]:
+        S = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2.0
+        qw = (R[0, 2] - R[2, 0]) / S
+        qx = (R[0, 1] + R[1, 0]) / S
+        qy = 0.25 * S
+        qz = (R[1, 2] + R[2, 1]) / S
+    else:
+        S = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2.0
+        qw = (R[1, 0] - R[0, 1]) / S
+        qx = (R[0, 2] + R[2, 0]) / S
+        qy = (R[1, 2] + R[2, 1]) / S
+        qz = 0.25 * S
+
+    q = np.array([qx, qy, qz, qw], dtype=float)
+    norm = np.linalg.norm(q)
+    if norm > 1e-8:
+        q /= norm
+    else:
+        q = np.array([0.0, 0.0, 0.0, 1.0])
+    return q.tolist()
+
+def get_camera_three_quaternion(rotation: List[float]) -> List[float]:
+    """
+    Calculates the 4D camera rotation unit quaternion [x, y, z, w] for baseline camera usage
+    in Three.js (camera.quaternion.set(x, y, z, w)) from an OpenSfM Rodrigues rotation vector.
+    
+    OpenSfM rotation matrix R_sfm converts world -> OpenSfM camera coords.
+    The camera frame in world space is R_world = R_sfm^T.
+    Three.js camera coordinate frame has +X right, +Y up, -Z forward (vs OpenSfM +X right, +Y down, +Z forward).
+    Thus R_three_world = R_sfm^T @ diag(1, -1, -1).
+    """
+    if not rotation or len(rotation) != 3:
+        return [1.0, 0.0, 0.0, 0.0]
+    
+    R_sfm = rotvec_to_matrix(rotation)
+    M_sfm_to_three = np.diag([1.0, -1.0, -1.0])
+    R_three_world = np.dot(R_sfm.T, M_sfm_to_three)
+    return rotation_matrix_to_quaternion(R_three_world)
+
 def parse_reconstruction_json(reconstruction_json_path: str) -> List[Dict[str, Any]]:
     """Reads and validates an OpenSfM reconstruction.json file."""
     if not os.path.exists(reconstruction_json_path):
@@ -97,6 +154,7 @@ def parse_shots_geojson(geojson_path: str) -> Tuple[Dict[str, Any], List[Dict[st
         coords = geometry.get("coordinates", [0.0, 0.0, 0.0])
         rotation = props.get("rotation", [0.0, 0.0, 0.0])
         direction = get_camera_viewing_direction(rotation) if len(rotation) == 3 else [0.0, 0.0, 1.0]
+        rot_quat = get_camera_three_quaternion(rotation) if len(rotation) == 3 else [1.0, 0.0, 0.0, 0.0]
         capture_time = props.get("capture_time", 0.0)
         timestamp_val = int(capture_time * 1000) if capture_time > 1e8 else int(capture_time)
         
@@ -105,6 +163,7 @@ def parse_shots_geojson(geojson_path: str) -> Tuple[Dict[str, Any], List[Dict[st
             "timestamp": timestamp_val,
             "position": coords,
             "direction": direction,
+            "rotation": rot_quat,
             "relative_time": props.get("relative_time", 0.0)
         })
 

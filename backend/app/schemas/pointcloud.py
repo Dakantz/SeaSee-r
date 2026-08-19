@@ -55,6 +55,7 @@ class CameraFrameResponse(BaseModel):
     timestamp: int
     position: Optional[List[float]] = None
     direction: Optional[List[float]] = None
+    rotation: Optional[List[float]] = None
     relative_time: Optional[float] = None
     filename: Optional[str] = None
 
