@@ -50,7 +50,7 @@ Retrieves all camera metadata headers linked to the specified point cloud datase
 
 ### 2. `GET /pointclouds/{identifier}/camera-routes`
 
-Retrieves all camera frames for all camera headers linked to the specified point cloud dataset, ordered by frame `timestamp` ascending.
+Retrieves all camera frames for all camera headers linked to the specified point cloud dataset, ordered by frame `timestamp` ascending, and secondarily by `filename` ascending when timestamps are equal.
 
 - **Path**: `/pointclouds/{identifier}/camera-routes`
 - **HTTP Method**: `GET`

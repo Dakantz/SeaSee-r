@@ -468,5 +468,55 @@ def test_ingest_opensfm_init_laz_file():
             app.dependency_overrides.clear()
 
 
+def test_endpoint_get_camera_routes_ordering():
+    import uuid
+    mock_db = MagicMock()
+
+    header_id = uuid.uuid4()
+    mock_header_res = MagicMock()
+    mock_header_res.scalars.return_value.all.return_value = [header_id]
+
+    frame1 = MagicMock()
+    frame1.id = uuid.uuid4()
+    frame1.camera_header_id = header_id
+    frame1.timestamp = 1000
+    frame1.pos_geojson = None
+    frame1.dir_geojson = None
+    frame1.rotation = None
+    frame1.relative_time = 0.0
+    frame1.filename = "01.jpg"
+
+    frame2 = MagicMock()
+    frame2.id = uuid.uuid4()
+    frame2.camera_header_id = header_id
+    frame2.timestamp = 1000
+    frame2.pos_geojson = None
+    frame2.dir_geojson = None
+    frame2.rotation = None
+    frame2.relative_time = 0.0
+    frame2.filename = "02.jpg"
+
+    mock_frames_res = MagicMock()
+    mock_frames_res.all.return_value = [frame1, frame2]
+
+    mock_db.execute = AsyncMock(side_effect=[mock_header_res, mock_frames_res])
+
+    from app.core.database import get_db_session
+    app.dependency_overrides[get_db_session] = lambda: mock_db
+
+    pc_id = str(uuid.uuid4())
+
+    try:
+        response = client.get(f"/pointclouds/{pc_id}/camera-routes")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+        assert data[0]["filename"] == "01.jpg"
+        assert data[1]["filename"] == "02.jpg"
+    finally:
+        app.dependency_overrides.clear()
+
+
+
 
 

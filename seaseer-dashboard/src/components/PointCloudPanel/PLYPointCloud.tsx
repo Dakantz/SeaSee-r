@@ -134,11 +134,11 @@ function SceneLighting() {
 }
 
 function getHeightFactor(y: number): number {
-    return y > 0
-        ? Math.max(0.1, y / 1000)
-        : Math.max(0.0001, 0.1 * Math.exp(y / 1000));
+    return Math.max(0.1, Math.abs(y) / 1000);
 }
 
+const _qYaw = new THREE.Quaternion();
+const _qPitch = new THREE.Quaternion();
 const _tmpVecForward = new THREE.Vector3();
 const _tmpVecRight = new THREE.Vector3();
 const _tmpVecUp = new THREE.Vector3();
@@ -152,14 +152,12 @@ function CameraPositionControls() {
     const isDragging = useRef(false);
     const dragButton = useRef<number | null>(null);
     const previousMouse = useRef({ x: 0, y: 0 });
-    const euler = useRef(new THREE.Euler(0, 0, 0, "YXZ"));
     const keysPressed = useRef<{ [key: string]: boolean }>({});
 
     const initialized = useRef(false);
     useEffect(() => {
         if (!initialized.current) {
             camera.lookAt(TARGET_X, 0, TARGET_Z);
-            euler.current.setFromQuaternion(camera.quaternion, "YXZ");
             initialized.current = true;
         }
     }, [camera]);
@@ -171,7 +169,6 @@ function CameraPositionControls() {
             isDragging.current = true;
             dragButton.current = e.button;
             previousMouse.current = { x: e.clientX, y: e.clientY };
-            euler.current.setFromQuaternion(camera.quaternion, "YXZ");
         };
 
         const onPointerMove = (e: PointerEvent) => {
@@ -182,15 +179,19 @@ function CameraPositionControls() {
             previousMouse.current = { x: e.clientX, y: e.clientY };
 
             if (dragButton.current === 0) {
-                // Left click: Rotate around current camera position
+                // Left click: Rotate around current camera position using quaternions
                 const rotateSpeed = 0.003;
-                euler.current.y -= deltaX * rotateSpeed;
-                euler.current.x -= deltaY * rotateSpeed;
 
-                const maxPitch = Math.PI / 2 - 0.01;
-                euler.current.x = Math.max(-maxPitch, Math.min(maxPitch, euler.current.x));
+                // 1. Yaw rotation around local camera Up-axis
+                const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+                _qYaw.setFromAxisAngle(up, -deltaX * rotateSpeed);
 
-                camera.quaternion.setFromEuler(euler.current);
+                // 2. Pitch rotation around local camera Right-axis
+                const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+                _qPitch.setFromAxisAngle(right, -deltaY * rotateSpeed);
+
+                // Apply pitch then yaw to camera quaternion
+                camera.quaternion.premultiply(_qPitch).premultiply(_qYaw).normalize();
             } else if (dragButton.current === 2 || dragButton.current === 1) {
                 // Right or middle click: Pan camera position
                 const heightFactor = getHeightFactor(camera.position.y);
@@ -273,6 +274,7 @@ function CameraPositionControls() {
 
         camera.getWorldDirection(_tmpVecForward);
         const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+        const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
 
         if (keys["KeyW"]) {
             camera.position.addScaledVector(_tmpVecForward, moveSpeed);
@@ -287,10 +289,10 @@ function CameraPositionControls() {
             camera.position.addScaledVector(right, moveSpeed);
         }
         if (keys["KeyE"]) {
-            camera.position.y += moveSpeed;
+            camera.position.addScaledVector(up, moveSpeed);
         }
         if (keys["KeyQ"]) {
-            camera.position.y -= moveSpeed;
+            camera.position.addScaledVector(up, -moveSpeed);
         }
     });
 
@@ -379,14 +381,28 @@ function GeoThreeHeightmap() {
                 1,
                 UnitsUtils.EARTH_PERIMETER
             );
-            // eslint-disable-next-line react-hooks/refs
-            mapViewRef.current = map;
             return map;
         } catch (err) {
             console.error("Failed to initialize GeoThree MapView:", err);
             return null;
         }
     }, [showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider]);
+
+    useEffect(() => {
+        mapViewRef.current = mapView;
+        return () => {
+            if (mapView) {
+                if (mapView.root?.dispose) {
+                    mapView.root.dispose();
+                }
+                mapView.traverse((child: any) => {
+                    if (child !== mapView && typeof child.dispose === "function") {
+                        child.dispose();
+                    }
+                });
+            }
+        };
+    }, [mapView]);
 
     useFrame(({ camera, gl, scene }) => {
         if (mapViewRef.current?.lod) {
@@ -442,16 +458,14 @@ function PointCloudCenterMarkers() {
     const dummy = useMemo(() => new THREE.Object3D(), []);
 
     useEffect(() => {
-        if (meshRef.current && meshRef.current.geometry) {
+        if (!meshRef.current || queries.length === 0) return;
+
+        if (meshRef.current.geometry) {
             meshRef.current.geometry.boundingSphere = new THREE.Sphere(
                 new THREE.Vector3(0, 0, 0),
                 Infinity
             );
         }
-    }, [queries]);
-
-    useFrame(() => {
-        if (!meshRef.current || queries.length === 0) return;
 
         queries.forEach((query, index) => {
             const [cx, cy, cz] = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, 0, TARGET_Z];
@@ -474,7 +488,7 @@ function PointCloudCenterMarkers() {
         if (meshRef.current.instanceColor) {
             meshRef.current.instanceColor.needsUpdate = true;
         }
-    });
+    }, [queries, summaryMap, hoveredId, dummy]);
 
     if (queries.length === 0) return null;
 
@@ -525,9 +539,11 @@ function PointCloudCenterMarkers() {
     );
 }
 
+import type { PositionSample } from "../TelemetoryPanel/TelemetryPositionReader";
+
 function CameraFocusController() {
     const { camera, gl } = useThree();
-    const { cameraTarget } = usePLYPointCloudContext();
+    const { cameraTarget, cameraViewTarget } = usePLYPointCloudContext();
 
     const animState = useRef<{
         startTime: number;
@@ -535,6 +551,17 @@ function CameraFocusController() {
         startPos: THREE.Vector3;
         targetCamPos: THREE.Vector3;
         targetCenter: THREE.Vector3;
+    } | null>(null);
+
+    const viewAnimState = useRef<{
+        startTime: number;
+        duration: number;
+        startPos: THREE.Vector3;
+        targetPos: THREE.Vector3;
+        startQuat: THREE.Quaternion;
+        targetQuat: THREE.Quaternion;
+        startFov: number;
+        targetFov: number;
     } | null>(null);
 
     const startFocusAnimation = useCallback((targetCenter: THREE.Vector3, customOffset?: [number, number, number] | number) => {
@@ -548,6 +575,7 @@ function CameraFocusController() {
         }
         const targetCamPos = targetCenter.clone().add(offsetVec);
 
+        viewAnimState.current = null;
         animState.current = {
             startTime: performance.now() / 1000,
             duration: 0.6,
@@ -569,11 +597,43 @@ function CameraFocusController() {
     }, [cameraTarget, startFocusAnimation]);
 
     useEffect(() => {
+        if (!cameraViewTarget) return;
+        const { position, quaternion, fov } = cameraViewTarget;
+        const targetPos = new THREE.Vector3(...position);
+        
+        let targetQuat: THREE.Quaternion;
+        if (quaternion && quaternion.length === 4) {
+            targetQuat = new THREE.Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
+        } else {
+            targetQuat = camera.quaternion.clone();
+        }
+
+        const perspCam = camera as THREE.PerspectiveCamera;
+        const startFov = perspCam.fov ?? 60;
+        const targetFov = fov ?? startFov;
+
+        animState.current = null;
+        viewAnimState.current = {
+            startTime: performance.now() / 1000,
+            duration: 0.6,
+            startPos: camera.position.clone(),
+            targetPos,
+            startQuat: camera.quaternion.clone(),
+            targetQuat,
+            startFov,
+            targetFov,
+        };
+    }, [cameraViewTarget, camera]);
+
+    useEffect(() => {
         const domElement = gl.domElement;
 
         const stopAnimation = () => {
             if (animState.current) {
                 animState.current = null;
+            }
+            if (viewAnimState.current) {
+                viewAnimState.current = null;
             }
         };
 
@@ -587,8 +647,7 @@ function CameraFocusController() {
                 return;
             }
             const navKeys = [
-                "KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "Space",
-                "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"
+                "KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE"
             ];
             if (navKeys.includes(e.code)) {
                 stopAnimation();
@@ -609,22 +668,49 @@ function CameraFocusController() {
     }, [gl]);
 
     useFrame(() => {
-        if (!animState.current) return;
+        if (animState.current) {
+            const { startTime, duration, startPos, targetCamPos, targetCenter } = animState.current;
+            const now = performance.now() / 1000;
+            const elapsed = now - startTime;
+            const progress = Math.min(1, elapsed / duration);
+            const easeT = 1 - Math.pow(1 - progress, 3);
 
-        const { startTime, duration, startPos, targetCamPos, targetCenter } = animState.current;
-        const now = performance.now() / 1000;
-        const elapsed = now - startTime;
-        const progress = Math.min(1, elapsed / duration);
-
-        const easeT = 1 - Math.pow(1 - progress, 3);
-
-        camera.position.lerpVectors(startPos, targetCamPos, easeT);
-        camera.lookAt(targetCenter);
-
-        if (progress >= 1) {
-            camera.position.copy(targetCamPos);
+            camera.position.lerpVectors(startPos, targetCamPos, easeT);
             camera.lookAt(targetCenter);
-            animState.current = null;
+
+            if (progress >= 1) {
+                camera.position.copy(targetCamPos);
+                camera.lookAt(targetCenter);
+                animState.current = null;
+            }
+            return;
+        }
+
+        if (viewAnimState.current) {
+            const { startTime, duration, startPos, targetPos, startQuat, targetQuat, startFov, targetFov } = viewAnimState.current;
+            const now = performance.now() / 1000;
+            const elapsed = now - startTime;
+            const progress = Math.min(1, elapsed / duration);
+            const easeT = 1 - Math.pow(1 - progress, 3);
+
+            camera.position.lerpVectors(startPos, targetPos, easeT);
+            camera.quaternion.slerpQuaternions(startQuat, targetQuat, easeT);
+
+            const perspCam = camera as THREE.PerspectiveCamera;
+            if (perspCam.fov !== undefined && startFov !== targetFov) {
+                perspCam.fov = THREE.MathUtils.lerp(startFov, targetFov, easeT);
+                perspCam.updateProjectionMatrix();
+            }
+
+            if (progress >= 1) {
+                camera.position.copy(targetPos);
+                camera.quaternion.copy(targetQuat);
+                if (perspCam.fov !== undefined && targetFov) {
+                    perspCam.fov = targetFov;
+                    perspCam.updateProjectionMatrix();
+                }
+                viewAnimState.current = null;
+            }
         }
     });
 
@@ -638,6 +724,7 @@ function DBCameraTrajectoryDisplay() {
         loadingIds,
         summaryMap,
         mode,
+        setCameraView,
     } = usePLYPointCloudContext();
 
     const displayedKeys = useMemo(() => {
@@ -652,6 +739,81 @@ function DBCameraTrajectoryDisplay() {
         }
         return Array.from(keys);
     }, [loadedGeometries, loadingIds]);
+
+    const headerMap = useMemo(() => {
+        const map = new Map<string, { id: string; focal?: number | null; width?: number | null; height?: number | null }>();
+        if (summaryMap) {
+            Object.values(summaryMap).forEach((summary) => {
+                if (summary?.connected_camera_headers) {
+                    summary.connected_camera_headers.forEach((h) => {
+                        if (h && h.id) {
+                            map.set(h.id, h);
+                        }
+                    });
+                }
+            });
+        }
+        return map;
+    }, [summaryMap]);
+
+    const handlePointClick = useCallback((sample: PositionSample, routePosition: [number, number, number]) => {
+        if (!sample) return;
+
+        if (sample.filename) {
+            console.log("Clicked trajectory point filename:", sample.filename);
+        }
+
+        // Group transformation: rotation [-Math.PI / 2, 0, 0] and position routePosition
+        const groupEuler = new THREE.Euler(-Math.PI / 2, 0, 0);
+        const groupQuat = new THREE.Quaternion().setFromEuler(groupEuler);
+        const routeOffset = new THREE.Vector3(...routePosition);
+
+        // 1. Compute 3D camera position in world coordinates
+        const localPos = new THREE.Vector3(sample.x, sample.y, sample.z);
+        const worldPos = localPos.clone().applyEuler(groupEuler).add(routeOffset);
+
+        // 2. Compute 3D camera orientation quaternion in world coordinates
+        let worldQuat: THREE.Quaternion;
+        if (sample.rotation && Array.isArray(sample.rotation) && sample.rotation.length === 4) {
+            const localQuat = new THREE.Quaternion(
+                sample.rotation[0],
+                sample.rotation[1],
+                sample.rotation[2],
+                sample.rotation[3]
+            );
+            worldQuat = groupQuat.clone().multiply(localQuat);
+        } else if (sample.direction && Array.isArray(sample.direction) && sample.direction.length === 3) {
+            const localDir = new THREE.Vector3(sample.direction[0], sample.direction[1], sample.direction[2]).normalize();
+            const worldDir = localDir.clone().applyEuler(groupEuler).normalize();
+
+            const tempCam = new THREE.PerspectiveCamera();
+            tempCam.position.copy(worldPos);
+            tempCam.lookAt(worldPos.clone().add(worldDir));
+            worldQuat = tempCam.quaternion.clone();
+        } else {
+            worldQuat = groupQuat.clone();
+        }
+
+        // 3. Compute camera vertical FOV (in degrees) from camera header focal length
+        let fovDeg: number | undefined = undefined;
+        if (sample.cameraHeaderId && headerMap.has(sample.cameraHeaderId)) {
+            const header = headerMap.get(sample.cameraHeaderId);
+            if (header && typeof header.focal === "number" && header.width && header.height) {
+                const maxDim = Math.max(header.width, header.height);
+                const focalPixels = header.focal * maxDim;
+                if (focalPixels > 0) {
+                    const fovRad = 2 * Math.atan((header.height / 2) / focalPixels);
+                    fovDeg = fovRad * (180 / Math.PI);
+                }
+            }
+        }
+
+        setCameraView({
+            position: [worldPos.x, worldPos.y, worldPos.z],
+            quaternion: [worldQuat.x, worldQuat.y, worldQuat.z, worldQuat.w],
+            fov: fovDeg,
+        });
+    }, [headerMap, setCameraView]);
 
     if (!showCameraTrajectories || displayedKeys.length === 0) return null;
 
@@ -710,6 +872,7 @@ function DBCameraTrajectoryDisplay() {
                     lineWidth={3}
                     showPoints={true}
                     pointSize={1.5}
+                    onPointClick={(sample) => handlePointClick(sample, route.position)}
                 />
             ))}
         </group>

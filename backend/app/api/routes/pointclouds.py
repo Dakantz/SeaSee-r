@@ -173,7 +173,10 @@ async def get_camera_routes(
         CameraFrame.rotation,
         CameraFrame.relative_time,
         CameraFrame.filename
-    ).where(CameraFrame.camera_header_id.in_(header_ids)).order_by(CameraFrame.timestamp.asc())
+    ).where(CameraFrame.camera_header_id.in_(header_ids)).order_by(
+        CameraFrame.timestamp.asc(),
+        CameraFrame.filename.asc()
+    )
 
     result = await db.execute(query)
     rows = result.all()
