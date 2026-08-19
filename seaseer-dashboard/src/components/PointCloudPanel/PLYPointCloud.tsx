@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import { generateDelaunayTerrainMesh } from "./utils/delaunayTriangulation";
 import { TrajectoryRenderer } from "../RovRenderer/trajectoryRenderer";
+import { fetchBinaryGeometry } from "./utils/pointCloudLoader";
+import type { FilterRule } from "./utils/filterUtils";
 
 export { CustomQueryManager, PointCloudList } from "./CustomQueryManager";
 export { CustomQueryManagerContainer, PointCloudListContainer } from "./CustomQueryManagerContainer";
@@ -879,6 +881,281 @@ function DBCameraTrajectoryDisplay() {
     );
 }
 
+interface LodSlotData {
+    gridKey: string;
+    geometry: THREE.BufferGeometry;
+    bounds?: {
+        minX: number; maxX: number;
+        minY: number; maxY: number;
+        minZ: number; maxZ: number;
+    };
+}
+
+function getLodColor(lod: number): string {
+    const colors: Record<number, string> = {
+        0: "#ff0055", // Red/Pink (LOD 0 - highest detail)
+        1: "#ffaa00", // Orange (LOD 1)
+        2: "#ffff00", // Yellow (LOD 2)
+        3: "#00ff66", // Bright Green (LOD 3)
+        4: "#00ffff", // Cyan (LOD 4)
+        5: "#0088ff", // Blue (LOD 5)
+        6: "#aa00ff", // Purple (LOD 6)
+        7: "#ff00aa", // Magenta (LOD 7)
+        8: "#888888", // Gray (LOD 8)
+        9: "#ffffff", // White (LOD 9)
+        10: "#445566", // Slate (LOD 10 - Global)
+    };
+    return colors[lod] || "#ffffff";
+}
+
+function BoxOutline({ width, height, depth, color }: { width: number; height: number; depth: number; color: string }) {
+    const edgesGeometry = useMemo(() => {
+        const box = new THREE.BoxGeometry(width, height, depth);
+        const edges = new THREE.EdgesGeometry(box);
+        box.dispose();
+        return edges;
+    }, [width, height, depth]);
+
+    useEffect(() => {
+        return () => {
+            edgesGeometry.dispose();
+        };
+    }, [edgesGeometry]);
+
+    return (
+        <lineSegments geometry={edgesGeometry}>
+            <lineBasicMaterial color={color} transparent opacity={0.7} />
+        </lineSegments>
+    );
+}
+
+function DynamicCubicLODController() {
+    const { camera } = useThree();
+    const {
+        queries,
+        loadedGeometries,
+        mode,
+        renderMode,
+        wireframe,
+        pointSize,
+    } = usePLYPointCloudContext();
+
+    const [lodGeometriesMap, setLodGeometriesMap] = useState<Map<string, Map<number, LodSlotData>>>(new Map());
+    const activeControllersRef = useRef<Map<string, AbortController>>(new Map());
+    const currentGridKeysRef = useRef<Map<string, string>>(new Map());
+
+    const activeTargetQueries = useMemo(() => {
+        if (mode !== "binary") return [];
+        const targets: Array<{ id: string; filters?: FilterRule[] }> = [];
+        const targetIds = new Set<string>();
+
+        for (const id of loadedGeometries.keys()) {
+            if (id) targetIds.add(id);
+        }
+        for (const q of queries) {
+            if (q.id) targetIds.add(q.id);
+        }
+
+        for (const id of targetIds) {
+            const matchedQuery = queries.find((q) => q.id === id);
+            targets.push({
+                id,
+                filters: matchedQuery?.filters || [
+                    { id: `filter-${id}`, field: "pointcloud_id", operator: "eq", value: id }
+                ]
+            });
+        }
+        return targets;
+    }, [mode, loadedGeometries, queries]);
+
+    const fetchLodLevel = useCallback(async (
+        queryId: string,
+        lod: number,
+        gridKey: string,
+        filters: FilterRule[],
+        bounds?: { minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number }
+    ) => {
+        const fetchId = `${queryId}_lod${lod}`;
+
+        if (activeControllersRef.current.has(fetchId)) {
+            activeControllersRef.current.get(fetchId)?.abort();
+            activeControllersRef.current.delete(fetchId);
+        }
+
+        const controller = new AbortController();
+        activeControllersRef.current.set(fetchId, controller);
+        currentGridKeysRef.current.set(fetchId, gridKey);
+
+        try {
+            const geom = await fetchBinaryGeometry(queryId, lod, controller.signal, filters);
+
+            if (controller.signal.aborted) {
+                geom.dispose();
+                return;
+            }
+
+            if (renderMode === "mesh") {
+                generateDelaunayTerrainMesh(geom, true);
+            }
+
+            setLodGeometriesMap((prevMap) => {
+                const newMap = new Map(prevMap);
+                let queryMap = newMap.get(queryId);
+                if (!queryMap) {
+                    queryMap = new Map();
+                    newMap.set(queryId, queryMap);
+                }
+
+                const existingSlot = queryMap.get(lod);
+                if (existingSlot?.geometry && existingSlot.geometry !== geom) {
+                    existingSlot.geometry.dispose();
+                }
+
+                queryMap.set(lod, { gridKey, geometry: geom, bounds });
+                return newMap;
+            });
+        } catch (err: unknown) {
+            if (controller.signal.aborted) return;
+        } finally {
+            if (activeControllersRef.current.get(fetchId) === controller) {
+                activeControllersRef.current.delete(fetchId);
+            }
+        }
+    }, [renderMode]);
+
+    useEffect(() => {
+        if (mode !== "binary") return;
+
+        activeTargetQueries.forEach(({ id, filters }) => {
+            const fetchId = `${id}_lod10`;
+            if (!currentGridKeysRef.current.has(fetchId)) {
+                fetchLodLevel(id, 10, "global", filters || []);
+            }
+        });
+    }, [activeTargetQueries, fetchLodLevel, mode]);
+
+    useFrame(() => {
+        if (mode !== "binary" || activeTargetQueries.length === 0) return;
+
+        const camPos = camera.position;
+        const pcX = camPos.x;
+        const pcY = -camPos.z;
+        const pcZ = camPos.y;
+
+        const baseRadius = 0.2; // R0 = 0.2m
+
+        for (const { id: queryId, filters: baseFilters } of activeTargetQueries) {
+            for (let lod = 0; lod <= 9; lod++) {
+                const radius = baseRadius * Math.pow(2, lod);
+                const sideLength = radius * 2.0;
+
+                const gridI = Math.floor(pcX / sideLength);
+                const gridJ = Math.floor(pcY / sideLength);
+                const gridK = Math.floor(pcZ / sideLength);
+                const gridKey = `${gridI}_${gridJ}_${gridK}`;
+
+                const fetchId = `${queryId}_lod${lod}`;
+                const activeKey = currentGridKeysRef.current.get(fetchId);
+
+                if (activeKey === gridKey) continue;
+
+                const centerX = (gridI + 0.5) * sideLength;
+                const centerY = (gridJ + 0.5) * sideLength;
+                const centerZ = (gridK + 0.5) * sideLength;
+
+                const minX = centerX - radius;
+                const maxX = centerX + radius;
+                const minY = centerY - radius;
+                const maxY = centerY + radius;
+                const minZ = centerZ - radius;
+                const maxZ = centerZ + radius;
+
+                const combinedFilters: FilterRule[] = [
+                    ...(baseFilters || []),
+                    { id: `spatial-min_x-${lod}`, field: "min_x", operator: "gte", value: minX },
+                    { id: `spatial-max_x-${lod}`, field: "max_x", operator: "lte", value: maxX },
+                    { id: `spatial-min_y-${lod}`, field: "min_y", operator: "gte", value: minY },
+                    { id: `spatial-max_y-${lod}`, field: "max_y", operator: "lte", value: maxY },
+                    { id: `spatial-min_z-${lod}`, field: "min_z", operator: "gte", value: minZ },
+                    { id: `spatial-max_z-${lod}`, field: "max_z", operator: "lte", value: maxZ },
+                ];
+
+                fetchLodLevel(queryId, lod, gridKey, combinedFilters, { minX, maxX, minY, maxY, minZ, maxZ });
+            }
+        }
+    });
+
+    useEffect(() => {
+        return () => {
+            activeControllersRef.current.forEach((ctrl) => ctrl.abort());
+            activeControllersRef.current.clear();
+            currentGridKeysRef.current.clear();
+
+            setLodGeometriesMap((prevMap) => {
+                prevMap.forEach((queryMap) => {
+                    queryMap.forEach((slot) => {
+                        if (slot.geometry) {
+                            slot.geometry.dispose();
+                        }
+                    });
+                });
+                return new Map();
+            });
+        };
+    }, []);
+
+    if (mode !== "binary" || lodGeometriesMap.size === 0) return null;
+
+    return (
+        <group>
+            {Array.from(lodGeometriesMap.entries()).flatMap(([queryId, queryMap]) =>
+                Array.from(queryMap.entries()).map(([lod, { gridKey, geometry, bounds }]) => (
+                    <group key={`${queryId}-lod${lod}-${gridKey}`}>
+                        {renderMode === "mesh" ? (
+                            <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}>
+                                <meshStandardMaterial
+                                    vertexColors={!!geometry.attributes.color}
+                                    side={THREE.DoubleSide}
+                                    wireframe={wireframe}
+                                    roughness={0.5}
+                                    metalness={0.1}
+                                />
+                            </mesh>
+                        ) : (
+                            <points geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}>
+                                <pointsMaterial
+                                    vertexColors={!!geometry.attributes.color}
+                                    size={Math.max(0.02, pointSize * (1 - lod * 0.05))}
+                                    sizeAttenuation
+                                />
+                            </points>
+                        )}
+
+                        {/* Spatial Chunk Bounding Cube Outer Wireframe Visualizer */}
+                        {bounds && (
+                            <group
+                                position={[
+                                    (bounds.minX + bounds.maxX) / 2,
+                                    (bounds.minY + bounds.maxY) / 2,
+                                    (bounds.minZ + bounds.maxZ) / 2,
+                                ]}
+                                rotation={[-Math.PI / 2, 0, 0]}
+                            >
+                                <BoxOutline
+                                    width={bounds.maxX - bounds.minX}
+                                    height={bounds.maxY - bounds.minY}
+                                    depth={bounds.maxZ - bounds.minZ}
+                                    color={getLodColor(lod)}
+                                />
+                            </group>
+                        )}
+                    </group>
+                ))
+            )}
+        </group>
+    );
+}
+
 export default function PLYPointCloud() {
     const {
         geometry,
@@ -907,6 +1184,7 @@ export default function PLYPointCloud() {
             <GeoThreeHeightmap />
             <PointCloudCenterMarkers />
             <DBCameraTrajectoryDisplay />
+            <DynamicCubicLODController />
 
             {/* Render dynamically streamed full pointcloud geometries */}
             {Array.from(loadedGeometries.entries()).map(([id, geom]) => (
