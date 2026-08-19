@@ -18,7 +18,7 @@ from sqlalchemy import select
 from pydantic import BaseModel, conlist
 
 from app.services.pointcloud import DatabasePointCloudStorageService
-from app.api.dependencies.pointcloud import get_pointcloud_service, pointcloud_filter_parser
+from app.api.dependencies.pointcloud import pointcloud_filter_parser
 from app.schemas.filter import FilterCriterion
 from app.core.config import settings
 from app.core.database import get_db_session
@@ -39,7 +39,7 @@ Retrieve a list of available point clouds.
 """
 @router.get("/", response_model=List[Union[PointCloudMetadataResponse, str]])
 async def list_pointclouds(
-    storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
+    storage_service: DatabasePointCloudStorageService = Depends()
 ):
     return await storage_service.list_pointclouds()
 
@@ -52,7 +52,7 @@ Supports flexible field filtering with comparison operators using field__operato
 async def stream_pointcloud_binary(
     lod: int = Query(..., ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
     filters: List[FilterCriterion] = Depends(pointcloud_filter_parser),
-    storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
+    storage_service: DatabasePointCloudStorageService = Depends()
 ):
     return await storage_service.stream_pointcloud_binary(
         lod=lod,
@@ -68,7 +68,7 @@ Supports flexible field filtering with comparison operators using field__operato
 async def get_pointcloud_stream_summary(
     lod: int = Query(default=0, ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
     filters: List[FilterCriterion] = Depends(pointcloud_filter_parser),
-    storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
+    storage_service: DatabasePointCloudStorageService = Depends()
 ):
     return await storage_service.get_pointcloud_stream_summary(
         lod=lod,
@@ -86,21 +86,10 @@ Retrieve a .ply point cloud file from database storage.
 async def get_pointcloud(
     filename_or_id: str,
     lod: int = Query(0, ge=0, le=10, description="Level of Detail pyramid level (0-10)"),
-    storage_service: DatabasePointCloudStorageService = Depends(get_pointcloud_service)
+    storage_service: DatabasePointCloudStorageService = Depends()
 ):
     return await storage_service.get_pointcloud(filename_or_id, lod=lod)
 
-
-"""
-Retrieve the EPT json URL for a given pointcloud.
-"""
-@router.get("/{identifier}/ept")
-async def get_ept_metadata(identifier: str):
-    ept_path = os.path.join(settings.ept_dir, identifier, "ept.json")
-    if not os.path.isfile(ept_path):
-        raise HTTPException(status_code=404, detail="EPT pointcloud not found.")
-    
-    return {"url": f"/ept/{identifier}/ept.json"}
 
 """
 Delete a pointcloud and all related files (e.g. the saved pointcloud in the filesystem and EPT metadata).
@@ -108,14 +97,11 @@ Delete a pointcloud and all related files (e.g. the saved pointcloud in the file
 @router.delete("/{identifier}")
 async def delete_pointcloud(
     identifier: str,
-    db: AsyncSession = Depends(get_db_session)
+    storage_service: DatabasePointCloudStorageService = Depends()
 ):
     import shutil
-    from app.services.pointcloud import DatabasePointCloudStorageService
-    
-    db_service = DatabasePointCloudStorageService(db_session=db)
 
-    deleted_db = await db_service.delete_pointcloud(identifier)
+    deleted_db = await storage_service.delete_pointcloud(identifier)
     
     ept_dir_path = os.path.join(settings.ept_dir, identifier)
     deleted_ept = False

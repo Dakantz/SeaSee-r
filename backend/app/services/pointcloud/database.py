@@ -5,11 +5,11 @@ import subprocess
 import uuid
 from typing import List, Optional
 from urllib.parse import unquote
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import async_session
+from app.core.database import async_session, get_db_session
 from app.repositories.pointcloud_repository import PointCloudRepository
 from app.services.pointcloud.exporters import BinaryStreamExporter, PLYStreamExporter
 from app.schemas.filter import FilterCriterion
@@ -17,7 +17,7 @@ from app.schemas.filter import FilterCriterion
 logger = logging.getLogger(__name__)
 
 class DatabasePointCloudStorageService:
-    def __init__(self, db_session: AsyncSession):
+    def __init__(self, db_session: AsyncSession = Depends(get_db_session)):
         self.db = db_session
         self.repository = PointCloudRepository(db_session)
         self.binary_exporter = BinaryStreamExporter(self.repository)

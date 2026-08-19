@@ -15,7 +15,6 @@ from app.core.config import settings
 from app.services.pointcloud import (
     DatabasePointCloudStorageService
 )
-from app.api.dependencies.pointcloud import get_pointcloud_service
 
 client = TestClient(app)
 
@@ -135,7 +134,7 @@ class TestPointCloudServices(TestCase):
 
 def test_dependency_injection():
     mock_db = MagicMock()
-    service = get_pointcloud_service(db=mock_db)
+    service = DatabasePointCloudStorageService(db_session=mock_db)
     assert isinstance(service, DatabasePointCloudStorageService)
 
 
@@ -147,7 +146,7 @@ def test_endpoint_get_pointcloud():
     mock_service = MagicMock()
     mock_service.get_pointcloud = AsyncMock(return_value=StreamingResponse(dummy_gen(), media_type="application/octet-stream"))
         
-    app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
+    app.dependency_overrides[DatabasePointCloudStorageService] = lambda: mock_service
     
     try:
         response = client.get("/pointclouds/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
@@ -231,7 +230,7 @@ def test_endpoint_stream_binary():
     mock_service = MagicMock()
     mock_service.stream_pointcloud_binary = AsyncMock(return_value=dummy_response)
 
-    app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
+    app.dependency_overrides[DatabasePointCloudStorageService] = lambda: mock_service
 
     pc_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
 
@@ -266,7 +265,7 @@ def test_endpoint_stream_binary_lod10():
     mock_service = MagicMock()
     mock_service.stream_pointcloud_binary = AsyncMock(return_value=dummy_response)
 
-    app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
+    app.dependency_overrides[DatabasePointCloudStorageService] = lambda: mock_service
 
     pc_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
 
@@ -308,7 +307,7 @@ def test_endpoint_stream_summary_success():
         }]
     })
 
-    app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
+    app.dependency_overrides[DatabasePointCloudStorageService] = lambda: mock_service
 
     pc_id = "e360394b-a241-49e5-bb66-97fee8bd85ef"
 

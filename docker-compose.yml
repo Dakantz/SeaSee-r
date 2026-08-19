@@ -84,7 +84,7 @@ services:
   # TUSD Resumable Upload Server
   tusd:
     image: tusproject/tusd:latest
-    container_name: seaseer-r-tusd
+    container_name: seasee-r-tusd
     ports:
       - "8080:8080"
     environment:
