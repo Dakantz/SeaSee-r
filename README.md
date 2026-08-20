@@ -15,3 +15,25 @@ To run the installation, execute the following command from the project root:
 ```bash
 ./install_all.sh
 ```
+
+## Running Instructions
+
+### Backend Services
+
+Build and launch the backend services (PostgreSQL with PostGIS/pgPointCloud, FastAPI, TUS server) via Docker:
+```bash
+cd backend
+docker-compose up -d --build
+```
+
+### Running the Dashboard Visualizer
+Navigate to `seaseer-dashboard`, install dependencies, and start the Vite dev server:
+```bash
+cd seaseer-dashboard
+npm install
+npm run generate-client
+npm run dev
+```
+Open `http://localhost:5173` in any WebGL2-enabled browser to access the visualizer interface.
+
+---

@@ -185,8 +185,8 @@ function CameraPositionControls() {
                 // Left click: Rotate around current camera position using quaternions
                 const rotateSpeed = 0.003;
 
-                // 1. Yaw rotation around global world Up-axis (0, 0, 1)
-                const up = _tmpVecUp.set(0, 0, 1);
+                // 1. Yaw rotation around local camera Up-axis
+                const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
                 _qYaw.setFromAxisAngle(up, -deltaX * rotateSpeed);
 
                 // 2. Pitch rotation around local camera Right-axis
@@ -195,7 +195,7 @@ function CameraPositionControls() {
 
                 // Apply pitch then yaw to camera quaternion
                 camera.quaternion.premultiply(_qPitch).premultiply(_qYaw).normalize();
-                camera.up.set(0, 0, 1);
+                // camera.up.set(0, 0, 1);
             } else if (dragButton.current === 2 || dragButton.current === 1) {
                 // Right or middle click: Pan camera position
                 const heightFactor = getHeightFactor(camera.position.z);
@@ -278,7 +278,7 @@ function CameraPositionControls() {
 
         camera.getWorldDirection(_tmpVecForward);
         const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
-        const up = _tmpVecUp.set(0, 0, 1);
+        const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
 
         if (keys["KeyW"]) {
             camera.position.addScaledVector(_tmpVecForward, moveSpeed);
@@ -602,7 +602,7 @@ function CameraFocusController() {
         if (!cameraViewTarget) return;
         const { position, quaternion, fov } = cameraViewTarget;
         const targetPos = new THREE.Vector3(...position);
-        
+
         let targetQuat: THREE.Quaternion;
         if (quaternion && quaternion.length === 4) {
             targetQuat = new THREE.Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
@@ -879,16 +879,6 @@ function DBCameraTrajectoryDisplay() {
     );
 }
 
-interface LodSlotData {
-    gridKey: string;
-    geometry: THREE.BufferGeometry;
-    bounds?: {
-        minX: number; maxX: number;
-        minY: number; maxY: number;
-        minZ: number; maxZ: number;
-    };
-}
-
 function getLodColor(lod: number): string {
     const colors: Record<number, string> = {
         0: "#ff0055", // Red/Pink (LOD 0 - highest detail)
@@ -927,6 +917,44 @@ function BoxOutline({ width, height, depth, color }: { width: number; height: nu
     );
 }
 
+interface ChunkSlotData {
+    key: string;
+    queryId: string;
+    lod: number;
+    i?: number;
+    j?: number;
+    k?: number;
+    bounds?: {
+        minX: number; maxX: number;
+        minY: number; maxY: number;
+        minZ: number; maxZ: number;
+    };
+    geometry?: THREE.BufferGeometry;
+    status: "loading" | "loaded" | "empty";
+    abortController?: AbortController;
+}
+
+interface FetchTask {
+    key: string;
+    queryId: string;
+    lod: number;
+    i?: number;
+    j?: number;
+    k?: number;
+    distSq: number;
+    filters: FilterRule[];
+    bounds?: {
+        minX: number; maxX: number;
+        minY: number; maxY: number;
+        minZ: number; maxZ: number;
+    };
+}
+
+const W0_BASE_CELL_WIDTH = 0.25;
+const MAX_CONCURRENT_FETCHES = 100;
+const MOVEMENT_THRESHOLD_SQ = 0.025;
+const SHOW_OUTLINES = false
+
 function DynamicCubicLODController() {
     const { camera } = useThree();
     const {
@@ -938,9 +966,11 @@ function DynamicCubicLODController() {
         pointSize,
     } = usePLYPointCloudContext();
 
-    const [lodGeometriesMap, setLodGeometriesMap] = useState<Map<string, Map<number, LodSlotData>>>(new Map());
-    const activeControllersRef = useRef<Map<string, AbortController>>(new Map());
-    const currentGridKeysRef = useRef<Map<string, string>>(new Map());
+    const [chunksMap, setChunksMap] = useState<Map<string, ChunkSlotData>>(new Map());
+    const activeFetchesRef = useRef<number>(0);
+    const pendingQueueRef = useRef<FetchTask[]>([]);
+    const activeKeysRef = useRef<Set<string>>(new Set());
+    const lastCamPosRef = useRef<THREE.Vector3>(new THREE.Vector3(NaN, NaN, NaN));
 
     const activeTargetQueries = useMemo(() => {
         if (mode !== "binary") return [];
@@ -966,185 +996,301 @@ function DynamicCubicLODController() {
         return targets;
     }, [mode, loadedGeometries, queries]);
 
-    const fetchLodLevel = useCallback(async (
-        queryId: string,
-        lod: number,
-        gridKey: string,
-        filters: FilterRule[],
-        bounds?: { minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number }
-    ) => {
-        const fetchId = `${queryId}_lod${lod}`;
+    const processQueue = useCallback(() => {
+        while (activeFetchesRef.current < MAX_CONCURRENT_FETCHES && pendingQueueRef.current.length > 0) {
+            const task = pendingQueueRef.current.shift();
+            if (!task) break;
 
-        if (activeControllersRef.current.has(fetchId)) {
-            activeControllersRef.current.get(fetchId)?.abort();
-            activeControllersRef.current.delete(fetchId);
-        }
+            if (!activeKeysRef.current.has(task.key)) continue;
 
-        const controller = new AbortController();
-        activeControllersRef.current.set(fetchId, controller);
-        currentGridKeysRef.current.set(fetchId, gridKey);
+            activeFetchesRef.current++;
+            const controller = new AbortController();
 
-        try {
-            const geom = await fetchBinaryGeometry(queryId, lod, controller.signal, filters);
-
-            if (controller.signal.aborted) {
-                geom.dispose();
-                return;
-            }
-
-            setLodGeometriesMap((prevMap) => {
+            setChunksMap((prevMap) => {
                 const newMap = new Map(prevMap);
-                let queryMap = newMap.get(queryId);
-                if (!queryMap) {
-                    queryMap = new Map();
-                    newMap.set(queryId, queryMap);
-                }
-
-                const existingSlot = queryMap.get(lod);
-                if (existingSlot?.geometry && existingSlot.geometry !== geom) {
-                    existingSlot.geometry.dispose();
-                }
-
-                queryMap.set(lod, { gridKey, geometry: geom, bounds });
+                newMap.set(task.key, {
+                    key: task.key,
+                    queryId: task.queryId,
+                    lod: task.lod,
+                    i: task.i,
+                    j: task.j,
+                    k: task.k,
+                    bounds: task.bounds,
+                    status: "loading",
+                    abortController: controller,
+                });
                 return newMap;
             });
-        } catch (err: unknown) {
-            if (controller.signal.aborted) return;
-        } finally {
-            if (activeControllersRef.current.get(fetchId) === controller) {
-                activeControllersRef.current.delete(fetchId);
-            }
+
+            fetchBinaryGeometry(task.queryId, task.lod, controller.signal, task.filters)
+                .then((geom) => {
+                    if (controller.signal.aborted) {
+                        geom.dispose();
+                        return;
+                    }
+                    setChunksMap((prevMap) => {
+                        const entry = prevMap.get(task.key);
+                        if (!entry || controller.signal.aborted) {
+                            geom.dispose();
+                            return prevMap;
+                        }
+                        const newMap = new Map(prevMap);
+                        newMap.set(task.key, {
+                            ...entry,
+                            geometry: geom,
+                            status: "loaded",
+                            abortController: undefined,
+                        });
+                        return newMap;
+                    });
+                })
+                .catch((_err) => {
+                    if (controller.signal.aborted) return;
+                    setChunksMap((prevMap) => {
+                        const entry = prevMap.get(task.key);
+                        if (!entry) return prevMap;
+                        const newMap = new Map(prevMap);
+                        newMap.set(task.key, {
+                            ...entry,
+                            status: "empty",
+                            abortController: undefined,
+                        });
+                        return newMap;
+                    });
+                })
+                .finally(() => {
+                    activeFetchesRef.current--;
+                    processQueue();
+                });
         }
-    }, [renderMode]);
-
-    useEffect(() => {
-        if (mode !== "binary") return;
-
-        activeTargetQueries.forEach(({ id, filters }) => {
-            const fetchId = `${id}_lod10`;
-            if (!currentGridKeysRef.current.has(fetchId)) {
-                fetchLodLevel(id, 10, "global", filters || []);
-            }
-        });
-    }, [activeTargetQueries, fetchLodLevel, mode]);
+    }, []);
 
     useFrame(() => {
         if (mode !== "binary" || activeTargetQueries.length === 0) return;
 
         const camPos = camera.position;
+
+        if (
+            !Number.isNaN(lastCamPosRef.current.x) &&
+            camPos.distanceToSquared(lastCamPosRef.current) < MOVEMENT_THRESHOLD_SQ
+        ) {
+            return;
+        }
+
+        lastCamPosRef.current.copy(camPos);
+
         const pcX = camPos.x;
         const pcY = camPos.y;
         const pcZ = camPos.z;
 
-        const baseRadius = 0.2; // R0 = 0.2m
+        const newActiveKeys = new Set<string>();
+        const newTasks: FetchTask[] = [];
 
         for (const { id: queryId, filters: baseFilters } of activeTargetQueries) {
+            // Global LOD 10 view
+            const globalKey = `${queryId}_lod10_global`;
+            newActiveKeys.add(globalKey);
+            if (!chunksMap.has(globalKey)) {
+                newTasks.push({
+                    key: globalKey,
+                    queryId,
+                    lod: 10,
+                    distSq: 0,
+                    filters: baseFilters || [],
+                });
+            }
+
+            // 3x3x3 cell neighborhood across spatial LOD levels (3x scaling factor so middle cube of LOD L overlaps 27 cubes of LOD L-1)
             for (let lod = 0; lod <= 9; lod++) {
-                const radius = baseRadius * Math.pow(2, lod);
-                const sideLength = radius * 2.0;
+                const wL = W0_BASE_CELL_WIDTH * Math.pow(3, lod);
 
-                const gridI = Math.floor(pcX / sideLength);
-                const gridJ = Math.floor(pcY / sideLength);
-                const gridK = Math.floor(pcZ / sideLength);
-                const gridKey = `${gridI}_${gridJ}_${gridK}`;
+                const centerI = Math.floor(pcX / wL);
+                const centerJ = Math.floor(pcY / wL);
+                const centerK = Math.floor(pcZ / wL);
 
-                const fetchId = `${queryId}_lod${lod}`;
-                const activeKey = currentGridKeysRef.current.get(fetchId);
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dz = -1; dz <= 1; dz++) {
+                            const i = centerI + dx;
+                            const j = centerJ + dy;
+                            const k = centerK + dz;
 
-                if (activeKey === gridKey) continue;
+                            const chunkKey = `${queryId}_lod${lod}_${i}_${j}_${k}`;
+                            newActiveKeys.add(chunkKey);
 
-                const centerX = (gridI + 0.5) * sideLength;
-                const centerY = (gridJ + 0.5) * sideLength;
-                const centerZ = (gridK + 0.5) * sideLength;
+                            if (chunksMap.has(chunkKey)) continue;
 
-                const minX = centerX - radius;
-                const maxX = centerX + radius;
-                const minY = centerY - radius;
-                const maxY = centerY + radius;
-                const minZ = centerZ - radius;
-                const maxZ = centerZ + radius;
+                            const minX = i * wL;
+                            const maxX = (i + 1) * wL;
+                            const minY = j * wL;
+                            const maxY = (j + 1) * wL;
+                            const minZ = k * wL;
+                            const maxZ = (k + 1) * wL;
 
-                const combinedFilters: FilterRule[] = [
-                    ...(baseFilters || []),
-                    { id: `spatial-min_x-${lod}`, field: "min_x", operator: "gte", value: minX },
-                    { id: `spatial-max_x-${lod}`, field: "max_x", operator: "lte", value: maxX },
-                    { id: `spatial-min_y-${lod}`, field: "min_y", operator: "gte", value: minY },
-                    { id: `spatial-max_y-${lod}`, field: "max_y", operator: "lte", value: maxY },
-                    { id: `spatial-min_z-${lod}`, field: "min_z", operator: "gte", value: minZ },
-                    { id: `spatial-max_z-${lod}`, field: "max_z", operator: "lte", value: maxZ },
-                ];
+                            const cellCenterX = (i + 0.5) * wL;
+                            const cellCenterY = (j + 0.5) * wL;
+                            const cellCenterZ = (k + 0.5) * wL;
 
-                fetchLodLevel(queryId, lod, gridKey, combinedFilters, { minX, maxX, minY, maxY, minZ, maxZ });
+                            const distSq =
+                                Math.pow(cellCenterX - pcX, 2) +
+                                Math.pow(cellCenterY - pcY, 2) +
+                                Math.pow(cellCenterZ - pcZ, 2);
+
+                            const combinedFilters: FilterRule[] = [
+                                ...(baseFilters || []),
+                                { id: `spatial-min_x-${lod}-${i}`, field: "min_x", operator: "gte", value: minX },
+                                { id: `spatial-max_x-${lod}-${i}`, field: "max_x", operator: "lte", value: maxX },
+                                { id: `spatial-min_y-${lod}-${j}`, field: "min_y", operator: "gte", value: minY },
+                                { id: `spatial-max_y-${lod}-${j}`, field: "max_y", operator: "lte", value: maxY },
+                                { id: `spatial-min_z-${lod}-${k}`, field: "min_z", operator: "gte", value: minZ },
+                                { id: `spatial-max_z-${lod}-${k}`, field: "max_z", operator: "lte", value: maxZ },
+                            ];
+
+                            newTasks.push({
+                                key: chunkKey,
+                                queryId,
+                                lod,
+                                i, j, k,
+                                distSq,
+                                filters: combinedFilters,
+                                bounds: { minX, maxX, minY, maxY, minZ, maxZ },
+                            });
+                        }
+                    }
+                }
             }
         }
+
+        activeKeysRef.current = newActiveKeys;
+
+        // Retain loaded chunks in memory until they are more than 3 times as far away as where they would be loaded
+        setChunksMap((prevMap) => {
+            let changed = false;
+            const newMap = new Map(prevMap);
+            for (const [key, entry] of prevMap.entries()) {
+                if (key.endsWith("_global")) continue;
+                if (newActiveKeys.has(key)) continue;
+
+                if (
+                    entry.i !== undefined &&
+                    entry.j !== undefined &&
+                    entry.k !== undefined &&
+                    entry.lod !== undefined
+                ) {
+                    const wL = W0_BASE_CELL_WIDTH * Math.pow(3, entry.lod);
+                    const camCenterI = Math.floor(pcX / wL);
+                    const camCenterJ = Math.floor(pcY / wL);
+                    const camCenterK = Math.floor(pcZ / wL);
+
+                    const dx = Math.abs(entry.i - camCenterI);
+                    const dy = Math.abs(entry.j - camCenterJ);
+                    const dz = Math.abs(entry.k - camCenterK);
+
+                    // Chunks are loaded when max(dx, dy, dz) <= 1 (3x3x3 grid).
+                    // Keep in memory until max(dx, dy, dz) > 3 (more than 3x as far as loading threshold).
+                    if (dx <= 3 && dy <= 3 && dz <= 3) {
+                        continue;
+                    }
+                }
+
+                if (entry.abortController) {
+                    entry.abortController.abort();
+                }
+                if (entry.geometry) {
+                    entry.geometry.dispose();
+                }
+                newMap.delete(key);
+                changed = true;
+            }
+            return changed ? newMap : prevMap;
+        });
+
+        // Filter and merge pending queue tasks
+        const existingQueuedKeys = new Set(pendingQueueRef.current.map((t) => t.key));
+        const filteredPending = pendingQueueRef.current.filter((t) => newActiveKeys.has(t.key));
+
+        for (const task of newTasks) {
+            if (!existingQueuedKeys.has(task.key)) {
+                filteredPending.push(task);
+            }
+        }
+
+        // Priority ordering: LOD 10 first down to LOD 0 last, then closest cell center first
+        filteredPending.sort((a, b) => {
+            if (b.lod !== a.lod) {
+                return b.lod - a.lod;
+            }
+            return a.distSq - b.distSq;
+        });
+
+        pendingQueueRef.current = filteredPending;
+        processQueue();
     });
 
     useEffect(() => {
         return () => {
-            activeControllersRef.current.forEach((ctrl) => ctrl.abort());
-            activeControllersRef.current.clear();
-            currentGridKeysRef.current.clear();
-
-            setLodGeometriesMap((prevMap) => {
-                prevMap.forEach((queryMap) => {
-                    queryMap.forEach((slot) => {
-                        if (slot.geometry) {
-                            slot.geometry.dispose();
-                        }
-                    });
+            pendingQueueRef.current = [];
+            activeKeysRef.current.clear();
+            setChunksMap((prevMap) => {
+                prevMap.forEach((entry) => {
+                    entry.abortController?.abort();
+                    entry.geometry?.dispose();
                 });
                 return new Map();
             });
         };
     }, []);
 
-    if (mode !== "binary" || lodGeometriesMap.size === 0) return null;
+    if (mode !== "binary" || chunksMap.size === 0) return null;
 
     return (
         <group>
-            {Array.from(lodGeometriesMap.entries()).flatMap(([queryId, queryMap]) =>
-                Array.from(queryMap.entries()).map(([lod, { gridKey, geometry, bounds }]) => (
-                    <group key={`${queryId}-lod${lod}-${gridKey}`}>
-                        {renderMode === "mesh" ? (
-                            <mesh geometry={geometry}>
-                                <meshStandardMaterial
-                                    vertexColors={!!geometry.attributes.color}
-                                    side={THREE.DoubleSide}
-                                    wireframe={wireframe}
-                                    roughness={0.5}
-                                    metalness={0.1}
-                                />
-                            </mesh>
-                        ) : (
-                            <points geometry={geometry}>
-                                <pointsMaterial
-                                    vertexColors={!!geometry.attributes.color}
-                                    size={Math.max(0.02, pointSize * (1 - lod * 0.05))}
-                                    sizeAttenuation
-                                />
-                            </points>
+            {Array.from(chunksMap.values()).map((chunk) => {
+                if (!chunk.geometry && (!SHOW_OUTLINES || !chunk.bounds)) return null;
+                return (
+                    <group key={chunk.key}>
+                        {chunk.geometry && (
+                            renderMode === "mesh" ? (
+                                <mesh geometry={chunk.geometry}>
+                                    <meshStandardMaterial
+                                        vertexColors={!!chunk.geometry.attributes.color}
+                                        side={THREE.DoubleSide}
+                                        wireframe={wireframe}
+                                        roughness={0.5}
+                                        metalness={0.1}
+                                    />
+                                </mesh>
+                            ) : (
+                                <points geometry={chunk.geometry}>
+                                    <pointsMaterial
+                                        vertexColors={!!chunk.geometry.attributes.color}
+                                        size={pointSize * 0.0025 * Math.pow(2, chunk.lod)}
+                                        sizeAttenuation
+                                    />
+                                </points>
+                            )
                         )}
 
                         {/* Spatial Chunk Bounding Cube Outer Wireframe Visualizer */}
-                        {bounds && (
+                        {SHOW_OUTLINES && chunk.bounds && (
                             <group
                                 position={[
-                                    (bounds.minX + bounds.maxX) / 2,
-                                    (bounds.minY + bounds.maxY) / 2,
-                                    (bounds.minZ + bounds.maxZ) / 2,
+                                    (chunk.bounds.minX + chunk.bounds.maxX) / 2,
+                                    (chunk.bounds.minY + chunk.bounds.maxY) / 2,
+                                    (chunk.bounds.minZ + chunk.bounds.maxZ) / 2,
                                 ]}
                             >
                                 <BoxOutline
-                                    width={bounds.maxX - bounds.minX}
-                                    height={bounds.maxY - bounds.minY}
-                                    depth={bounds.maxZ - bounds.minZ}
-                                    color={getLodColor(lod)}
+                                    width={chunk.bounds.maxX - chunk.bounds.minX}
+                                    height={chunk.bounds.maxY - chunk.bounds.minY}
+                                    depth={chunk.bounds.maxZ - chunk.bounds.minZ}
+                                    color={getLodColor(chunk.lod)}
                                 />
                             </group>
                         )}
                     </group>
-                ))
-            )}
+                );
+            })}
         </group>
     );
 }
