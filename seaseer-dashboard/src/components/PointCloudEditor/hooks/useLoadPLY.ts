@@ -58,7 +58,8 @@ export const useLoadPLY = (identifier: string, enabled: boolean) => {
                 mesh.position.sub(center);
 
                 const radius = geometry.boundingBox.getSize(new THREE.Vector3()).length() / 2;
-                viewer.scene.view.position.set(radius, radius, radius);
+                if (viewer.scene?.view?.up) viewer.scene.view.up.set(0, 0, 1);
+                viewer.scene.view.position.set(radius, -radius, radius);
                 viewer.scene.view.lookAt(new THREE.Vector3(0, 0, 0));
             }
 

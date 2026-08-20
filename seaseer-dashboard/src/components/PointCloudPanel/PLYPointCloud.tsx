@@ -75,7 +75,7 @@ if (MapHeightNode.prototype.loadHeightGeometry) {
 }
 
 const TARGET_X = 1622520.9730428709;
-const TARGET_Z = -5522707.795739262;
+const TARGET_Y = -5522707.795739262;
 
 function SceneLighting() {
     const {
@@ -106,20 +106,20 @@ function SceneLighting() {
             <ambientLight intensity={ambientLightIntensity} />
 
             {/* Target object for directional lights */}
-            <object3D ref={targetRef} position={[TARGET_X, 0, TARGET_Z]} />
+            <object3D ref={targetRef} position={[TARGET_X, TARGET_Y, 0]} />
 
             {/* Hemisphere light to create natural sky/ground vertical gradient */}
             <hemisphereLight
                 color="#ffffff"
                 groundColor="#334455"
                 intensity={hemisphereLightIntensity}
-                position={[TARGET_X, 10000, TARGET_Z]}
+                position={[TARGET_X, TARGET_Y, 10000]}
             />
 
             {/* Main directional key light angled from North-West to produce cartographic hillshading */}
             <directionalLight
                 ref={keyLightRef}
-                position={[TARGET_X - 5000, 8000, TARGET_Z - 5000]}
+                position={[TARGET_X - 5000, TARGET_Y + 5000, 8000]}
                 intensity={keyLightIntensity}
                 color="#ffffff"
             />
@@ -127,7 +127,7 @@ function SceneLighting() {
             {/* Secondary fill light angled from South-East to soften deep shadows */}
             <directionalLight
                 ref={fillLightRef}
-                position={[TARGET_X + 5000, 4000, TARGET_Z + 5000]}
+                position={[TARGET_X + 5000, TARGET_Y - 5000, 4000]}
                 intensity={fillLightIntensity}
                 color="#cce0ff"
             />
@@ -135,8 +135,8 @@ function SceneLighting() {
     );
 }
 
-function getHeightFactor(y: number): number {
-    return Math.max(0.1, Math.abs(y) / 1000);
+function getHeightFactor(z: number): number {
+    return Math.max(0.1, Math.abs(z) / 1000);
 }
 
 const _qYaw = new THREE.Quaternion();
@@ -159,7 +159,8 @@ function CameraPositionControls() {
     const initialized = useRef(false);
     useEffect(() => {
         if (!initialized.current) {
-            camera.lookAt(TARGET_X, 0, TARGET_Z);
+            camera.up.set(0, 0, 1);
+            camera.lookAt(TARGET_X, TARGET_Y, 0);
             initialized.current = true;
         }
     }, [camera]);
@@ -184,8 +185,8 @@ function CameraPositionControls() {
                 // Left click: Rotate around current camera position using quaternions
                 const rotateSpeed = 0.003;
 
-                // 1. Yaw rotation around local camera Up-axis
-                const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+                // 1. Yaw rotation around global world Up-axis (0, 0, 1)
+                const up = _tmpVecUp.set(0, 0, 1);
                 _qYaw.setFromAxisAngle(up, -deltaX * rotateSpeed);
 
                 // 2. Pitch rotation around local camera Right-axis
@@ -194,15 +195,16 @@ function CameraPositionControls() {
 
                 // Apply pitch then yaw to camera quaternion
                 camera.quaternion.premultiply(_qPitch).premultiply(_qYaw).normalize();
+                camera.up.set(0, 0, 1);
             } else if (dragButton.current === 2 || dragButton.current === 1) {
                 // Right or middle click: Pan camera position
-                const heightFactor = getHeightFactor(camera.position.y);
+                const heightFactor = getHeightFactor(camera.position.z);
                 const panSpeed = 2.0 * heightFactor;
                 const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
                 const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
 
-                right.y = 0;
-                up.y = 0;
+                right.z = 0;
+                up.z = 0;
                 if (right.lengthSq() > 0) right.normalize();
                 if (up.lengthSq() > 0) up.normalize();
 
@@ -218,7 +220,7 @@ function CameraPositionControls() {
 
         const onWheel = (e: WheelEvent) => {
             e.preventDefault();
-            const heightFactor = getHeightFactor(camera.position.y);
+            const heightFactor = getHeightFactor(camera.position.z);
             const zoomSpeed = 1.0 * heightFactor;
             camera.getWorldDirection(_tmpVecDir);
 
@@ -271,12 +273,12 @@ function CameraPositionControls() {
         if (!keys) return;
 
         const isShift = keys["ShiftLeft"];
-        const heightFactor = getHeightFactor(camera.position.y);
+        const heightFactor = getHeightFactor(camera.position.z);
         const moveSpeed = (isShift ? 3000 : 800) * heightFactor * delta;
 
         camera.getWorldDirection(_tmpVecForward);
         const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
-        const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+        const up = _tmpVecUp.set(0, 0, 1);
 
         if (keys["KeyW"]) {
             camera.position.addScaledVector(_tmpVecForward, moveSpeed);
@@ -383,6 +385,7 @@ function GeoThreeHeightmap() {
                 1,
                 UnitsUtils.EARTH_PERIMETER
             );
+            map.rotation.x = Math.PI / 2;
             return map;
         } catch (err) {
             console.error("Failed to initialize GeoThree MapView:", err);
@@ -470,7 +473,7 @@ function PointCloudCenterMarkers() {
         }
 
         queries.forEach((query, index) => {
-            const [cx, cy, cz] = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, 0, TARGET_Z];
+            const [cx, cy, cz] = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, TARGET_Y, 0];
 
             const isHovered = query.id === hoveredId;
 
@@ -505,7 +508,6 @@ function PointCloudCenterMarkers() {
         <instancedMesh
             ref={meshRef}
             args={[undefined, undefined, queries.length]}
-            rotation={[-Math.PI / 2, 0, 0]}
             onClick={(e) => {
                 e.stopPropagation();
                 if (e.instanceId !== undefined && queries[e.instanceId]) {
@@ -518,7 +520,7 @@ function PointCloudCenterMarkers() {
                 if (e.instanceId !== undefined && queries[e.instanceId]) {
                     const query = queries[e.instanceId];
                     handleLoadQuery(query);
-                    const center = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, 0, TARGET_Z];
+                    const center = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, TARGET_Y, 0];
                     focusCameraTarget(center);
                 }
             }}
@@ -567,12 +569,12 @@ function CameraFocusController() {
     } | null>(null);
 
     const startFocusAnimation = useCallback((targetCenter: THREE.Vector3, customOffset?: [number, number, number] | number) => {
-        let offsetVec = new THREE.Vector3(0, 150, 150);
+        let offsetVec = new THREE.Vector3(0, -150, 150);
         if (customOffset !== undefined) {
             if (Array.isArray(customOffset)) {
                 offsetVec = new THREE.Vector3(...customOffset);
             } else if (typeof customOffset === "number") {
-                offsetVec = new THREE.Vector3(0, customOffset, customOffset);
+                offsetVec = new THREE.Vector3(0, -customOffset, customOffset);
             }
         }
         const targetCamPos = targetCenter.clone().add(offsetVec);
@@ -591,9 +593,7 @@ function CameraFocusController() {
         if (!cameraTarget) return;
         const { x, y, z, offset } = cameraTarget;
         if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
-            const targetCenter = new THREE.Vector3(x, y, z).applyEuler(
-                new THREE.Euler(-Math.PI / 2, 0, 0)
-            );
+            const targetCenter = new THREE.Vector3(x, y, z);
             startFocusAnimation(targetCenter, offset);
         }
     }, [cameraTarget, startFocusAnimation]);
@@ -678,10 +678,12 @@ function CameraFocusController() {
             const easeT = 1 - Math.pow(1 - progress, 3);
 
             camera.position.lerpVectors(startPos, targetCamPos, easeT);
+            camera.up.set(0, 0, 1);
             camera.lookAt(targetCenter);
 
             if (progress >= 1) {
                 camera.position.copy(targetCamPos);
+                camera.up.set(0, 0, 1);
                 camera.lookAt(targetCenter);
                 animState.current = null;
             }
@@ -765,35 +767,32 @@ function DBCameraTrajectoryDisplay() {
             console.log("Clicked trajectory point filename:", sample.filename);
         }
 
-        // Group transformation: rotation [-Math.PI / 2, 0, 0] and position routePosition
-        const groupEuler = new THREE.Euler(-Math.PI / 2, 0, 0);
-        const groupQuat = new THREE.Quaternion().setFromEuler(groupEuler);
+        // Compute 3D camera position and orientation directly for native Z-up
         const routeOffset = new THREE.Vector3(...routePosition);
 
         // 1. Compute 3D camera position in world coordinates
         const localPos = new THREE.Vector3(sample.x, sample.y, sample.z);
-        const worldPos = localPos.clone().applyEuler(groupEuler).add(routeOffset);
+        const worldPos = localPos.clone().add(routeOffset);
 
         // 2. Compute 3D camera orientation quaternion in world coordinates
         let worldQuat: THREE.Quaternion;
         if (sample.rotation && Array.isArray(sample.rotation) && sample.rotation.length === 4) {
-            const localQuat = new THREE.Quaternion(
+            worldQuat = new THREE.Quaternion(
                 sample.rotation[0],
                 sample.rotation[1],
                 sample.rotation[2],
                 sample.rotation[3]
             );
-            worldQuat = groupQuat.clone().multiply(localQuat);
         } else if (sample.direction && Array.isArray(sample.direction) && sample.direction.length === 3) {
-            const localDir = new THREE.Vector3(sample.direction[0], sample.direction[1], sample.direction[2]).normalize();
-            const worldDir = localDir.clone().applyEuler(groupEuler).normalize();
+            const worldDir = new THREE.Vector3(sample.direction[0], sample.direction[1], sample.direction[2]).normalize();
 
             const tempCam = new THREE.PerspectiveCamera();
+            tempCam.up.set(0, 0, 1);
             tempCam.position.copy(worldPos);
             tempCam.lookAt(worldPos.clone().add(worldDir));
             worldQuat = tempCam.quaternion.clone();
         } else {
-            worldQuat = groupQuat.clone();
+            worldQuat = new THREE.Quaternion();
         }
 
         // 3. Compute camera vertical FOV (in degrees) from camera header focal length
@@ -848,7 +847,7 @@ function DBCameraTrajectoryDisplay() {
 
         headersByPc.forEach((headerIds, pcId) => {
             const position: [number, number, number] =
-                mode === "plyUrl" ? [TARGET_X, 0, TARGET_Z] : [0, 0, 0];
+                mode === "plyUrl" ? [TARGET_X, TARGET_Y, 0] : [0, 0, 0];
 
             routesToRender.push({
                 key: `${qId}-${pcId}`,
@@ -869,7 +868,6 @@ function DBCameraTrajectoryDisplay() {
                     url={route.url}
                     allowedHeaderIds={route.allowedHeaderIds}
                     position={route.position}
-                    rotation={[-Math.PI / 2, 0, 0]}
                     color={0x00ffcc}
                     lineWidth={3}
                     showPoints={true}
@@ -994,10 +992,6 @@ function DynamicCubicLODController() {
                 return;
             }
 
-            if (renderMode === "mesh") {
-                generateDelaunayTerrainMesh(geom, true);
-            }
-
             setLodGeometriesMap((prevMap) => {
                 const newMap = new Map(prevMap);
                 let queryMap = newMap.get(queryId);
@@ -1039,8 +1033,8 @@ function DynamicCubicLODController() {
 
         const camPos = camera.position;
         const pcX = camPos.x;
-        const pcY = -camPos.z;
-        const pcZ = camPos.y;
+        const pcY = camPos.y;
+        const pcZ = camPos.z;
 
         const baseRadius = 0.2; // R0 = 0.2m
 
@@ -1112,7 +1106,7 @@ function DynamicCubicLODController() {
                 Array.from(queryMap.entries()).map(([lod, { gridKey, geometry, bounds }]) => (
                     <group key={`${queryId}-lod${lod}-${gridKey}`}>
                         {renderMode === "mesh" ? (
-                            <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}>
+                            <mesh geometry={geometry}>
                                 <meshStandardMaterial
                                     vertexColors={!!geometry.attributes.color}
                                     side={THREE.DoubleSide}
@@ -1122,7 +1116,7 @@ function DynamicCubicLODController() {
                                 />
                             </mesh>
                         ) : (
-                            <points geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}>
+                            <points geometry={geometry}>
                                 <pointsMaterial
                                     vertexColors={!!geometry.attributes.color}
                                     size={Math.max(0.02, pointSize * (1 - lod * 0.05))}
@@ -1139,7 +1133,6 @@ function DynamicCubicLODController() {
                                     (bounds.minY + bounds.maxY) / 2,
                                     (bounds.minZ + bounds.maxZ) / 2,
                                 ]}
-                                rotation={[-Math.PI / 2, 0, 0]}
                             >
                                 <BoxOutline
                                     width={bounds.maxX - bounds.minX}
@@ -1190,7 +1183,7 @@ export default function PLYPointCloud() {
             {Array.from(loadedGeometries.entries()).map(([id, geom]) => (
                 <group key={id}>
                     {renderMode === "mesh" ? (
-                        <mesh geometry={geom} rotation={[-Math.PI / 2, 0, 0]}>
+                        <mesh geometry={geom}>
                             <meshStandardMaterial
                                 vertexColors={!!geom.attributes.color}
                                 side={THREE.DoubleSide}
@@ -1200,7 +1193,7 @@ export default function PLYPointCloud() {
                             />
                         </mesh>
                     ) : (
-                        <points geometry={geom} rotation={[-Math.PI / 2, 0, 0]}>
+                        <points geometry={geom}>
                             <pointsMaterial
                                 vertexColors={!!geom.attributes.color}
                                 size={pointSize}

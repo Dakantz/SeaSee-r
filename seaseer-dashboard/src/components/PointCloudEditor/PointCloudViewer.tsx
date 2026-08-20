@@ -56,7 +56,8 @@ const PointCloudScene: React.FC<PointCloudSceneProps> = ({ eptUrl, isPly = false
                             mesh.position.sub(center);
 
                             const radius = geometry.boundingBox.getSize(new THREE.Vector3()).length() / 2;
-                            camera.position.set(radius, radius, radius);
+                            camera.up.set(0, 0, 1);
+                            camera.position.set(radius, -radius, radius);
                             camera.lookAt(new THREE.Vector3(0, 0, 0));
                         }
                     }, undefined, (err: any) => {
@@ -84,7 +85,8 @@ const PointCloudScene: React.FC<PointCloudSceneProps> = ({ eptUrl, isPly = false
                     const box = pointcloud.boundingBox;
                     if (box) {
                         const center = box.getCenter(new THREE.Vector3());
-                        camera.position.set(center.x, center.y, center.z + 100);
+                        camera.up.set(0, 0, 1);
+                        camera.position.set(center.x, center.y - 100, center.z + 100);
                         camera.lookAt(center);
                     }
                 }
