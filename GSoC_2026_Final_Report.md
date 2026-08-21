@@ -37,7 +37,7 @@ The system is designed as an extensible platform to support mission path plannin
 
 ---
 
-## 3. What’s Left to Do (Planned Work till the end of  September 2026)
+## 3. What’s Left to Do (Planned Work till the end of September 2026)
 
 1. **Improve point cloud generation using video metadata**:
    - Improve point cloud generation by utilizing video metadata to align point clouds with camera trajectories. 
@@ -76,22 +76,19 @@ Looking beyond the GSoC 2026 roadmap, the architecture of SeaSee’r provides cl
 
 1. **Saving the point clouds inside of PostgreSQL**:
    - *Problem*: The point clouds should be saved inside PostgreSQL using PostGIS (`pgPointCloud`). 
-This is a requirement to allow for maximal flexibility when querying point cloud points.
-   - *Solution*: Using PDAL, I was able to create an ingestion pipeline that saves the pointcloud inside the database for multiple LODs.
+     This is a requirement to allow for maximal flexibility when querying point cloud points.
+   - *Solution*: Using PDAL, I was able to create an ingestion pipeline that saves the point cloud inside the database for multiple LODs.
    
 2. **High-Performance Binary Point Cloud Streaming**:
    - *Problem*: Providing the frontend with the point cloud data saved inside the database.
    - *Solution*: Developed a binary streaming endpoint (`/pointclouds/stream-binary`) that streams packed binary attribute buffers from PostGIS (`pgPointCloud`) straight into WebGL `BufferGeometry`.
-The number of points loaded is limited by Spacial filtering that limits the distance where points are loaded for each LOD scale.
+     The number of points loaded is limited by spatial filtering that limits the distance at which points are loaded for each LOD scale.
 
 3. **Resumable file uploads over unstable connections**:
-   - *Problem*: Uploading the big video- & metadata files should be resumable if the internet connection drops for a second.
-   - *Solution*: I implemented the TUS (Resumable Upload Protocol) to allow for a chunked interruptable file upload.
+   - *Problem*: Uploading large video and metadata files should be resumable if the internet connection drops temporarily.
+   - *Solution*: I implemented the TUS (Resumable Upload Protocol) to allow for a chunked, interruptible file upload.
 
 ### Key Learnings
 - **Full-Stack Development**: Gained extensive hands-on experience in modern full-stack web architecture, including FastAPI, Alembic, Pydantic, PostgreSQL, React, Three.js, and Docker.
 - **Spatial Databases & PostGIS**: Mastered PostGIS and `pgPointCloud` for spatial indexing and point cloud queries using functions like `PC_PatchMin`, `PC_PatchMax`, and `PC_Explode`.
 - **Map Tiles & Coordinate Reference Systems**: Deepened understanding of spatial coordinate transformations, working with systems such as EPSG:3857 (Web Mercator) and EPSG:3765 (HTRS96 / Croatia TM).
-
-
-
