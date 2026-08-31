@@ -261,7 +261,7 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
 
   const queries = externalQueries || internalQueries;
 
-  const [saveStatusMap, setSaveStatusMap] = useState<Record<string, string>>({});
+  const [saveStatusMap] = useState<Record<string, string>>({});
   const [localSummaryMap, setLocalSummaryMap] = useState<Record<string, QuerySummaryData>>({});
   const [summaryLoadingMap, setSummaryLoadingMap] = useState<Record<string, boolean>>({});
   const [summaryErrorMap, setSummaryErrorMap] = useState<Record<string, string | null>>({});

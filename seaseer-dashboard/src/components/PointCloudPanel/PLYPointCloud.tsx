@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { TransformControls } from "@react-three/drei";
 import * as THREE from "three";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
+import ViewportGizmoHelper from "./ViewportGizmoHelper";
 import { generateDelaunayTerrainMesh } from "./utils/delaunayTriangulation";
 import { TrajectoryRenderer } from "../RovRenderer/trajectoryRenderer";
 import type { PositionSample } from "../TelemetoryPanel/TelemetryPositionReader";
@@ -1120,6 +1121,8 @@ function PointCloudTransformItem({
     );
 }
 
+
+
 export default function PLYPointCloud() {
     const {
         geometry,
@@ -1143,6 +1146,7 @@ export default function PLYPointCloud() {
     return (
         <group>
             <CameraMovementSystem />
+            <ViewportGizmoHelper />
             <SceneLighting />
             <GeoThreeHeightmap />
             <PointCloudCenterMarkers />
