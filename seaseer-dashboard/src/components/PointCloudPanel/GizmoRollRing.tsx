@@ -1,4 +1,4 @@
-import { useState, useRef, type FC, type PointerEvent, type MouseEvent } from "react";
+import { useState, useRef, useEffect, type FC, type PointerEvent, type MouseEvent } from "react";
 import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 
@@ -17,6 +17,23 @@ const _forward = new THREE.Vector3();
 const _currentPos = new THREE.Vector3();
 const _targetPoint = new THREE.Vector3();
 const _upVec = new THREE.Vector3();
+const _worldUp = new THREE.Vector3(0, 0, 1);
+const _vCam = new THREE.Vector3();
+
+/**
+ * Calculates the roll angle (in radians) of the camera relative to global UP (0, 0, 1).
+ * Returns angle 0 when global UP projects straight up on screen.
+ * Returns null if camera view direction is parallel to global UP (singular projection).
+ */
+function getRollAngleFromCamera(camera: THREE.Camera): number | null {
+    camera.updateMatrixWorld(true);
+    _vCam.copy(_worldUp).transformDirection(camera.matrixWorldInverse);
+    const lenSq = _vCam.x * _vCam.x + _vCam.y * _vCam.y;
+    if (lenSq < 1e-6) {
+        return null;
+    }
+    return Math.atan2(_vCam.x, _vCam.y);
+}
 
 export const GizmoRollRing: FC<GizmoRollRingProps> = ({
     size = 156,
@@ -37,9 +54,30 @@ export const GizmoRollRing: FC<GizmoRollRingProps> = ({
 
     const [isDragging, setIsDragging] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
-    const [accumulatedAngle, setAccumulatedAngle] = useState(0);
+    const [rollAngle, setRollAngle] = useState(0);
 
+    const lastValidRollAngleRef = useRef<number>(0);
     const lastAngleRef = useRef<number | null>(null);
+
+    // Continuous update subscription so handle updates automatically when camera moves
+    useEffect(() => {
+        if (!camera) return;
+        let animId: number;
+
+        const updateFromCamera = () => {
+            const angle = getRollAngleFromCamera(camera);
+            if (angle !== null) {
+                lastValidRollAngleRef.current = angle;
+                setRollAngle((prev) => (Math.abs(prev - angle) > 1e-4 ? angle : prev));
+            } else {
+                setRollAngle(lastValidRollAngleRef.current);
+            }
+            animId = requestAnimationFrame(updateFromCamera);
+        };
+
+        animId = requestAnimationFrame(updateFromCamera);
+        return () => cancelAnimationFrame(animId);
+    }, [camera]);
 
     const center = size / 2;
     const radius = center - 8;
@@ -78,9 +116,9 @@ export const GizmoRollRing: FC<GizmoRollRingProps> = ({
         },
     ];
 
-    // Handle position: angle 0 corresponds to top (-PI/2)
-    const handleX = center + radius * Math.cos(accumulatedAngle - Math.PI / 2);
-    const handleY = center + radius * Math.sin(accumulatedAngle - Math.PI / 2);
+    // Handle position: angle 0 (camera upright) corresponds to top (-PI/2)
+    const handleX = center + radius * Math.cos(rollAngle - Math.PI / 2);
+    const handleY = center + radius * Math.sin(rollAngle - Math.PI / 2);
 
     const handlePointerDown = (e: PointerEvent<SVGCircleElement>) => {
         e.preventDefault();
@@ -115,12 +153,18 @@ export const GizmoRollRing: FC<GizmoRollRingProps> = ({
 
         lastAngleRef.current = currentAngle;
 
-        setAccumulatedAngle((prev) => (prev + delta) % (Math.PI * 2));
-
         if (camera) {
             camera.getWorldDirection(_viewDir);
             _rollQuat.setFromAxisAngle(_viewDir, -delta);
             camera.quaternion.premultiply(_rollQuat).normalize();
+            camera.updateMatrixWorld(true);
+
+            const newAngle = getRollAngleFromCamera(camera);
+            if (newAngle !== null) {
+                lastValidRollAngleRef.current = newAngle;
+                setRollAngle(newAngle);
+            }
+
             onCameraChange?.();
         }
     };
@@ -153,14 +197,16 @@ export const GizmoRollRing: FC<GizmoRollRingProps> = ({
 
             camera.up.copy(_upVec);
             camera.lookAt(_targetPoint);
+            camera.updateMatrixWorld(true);
             onCameraChange?.();
         }
 
-        setAccumulatedAngle(0);
+        setRollAngle(0);
+        lastValidRollAngleRef.current = 0;
     };
 
     // Roll angle in degrees for tooltip display
-    const deg = Math.round((accumulatedAngle * 180) / Math.PI);
+    const deg = Math.round((rollAngle * 180) / Math.PI);
     const signedDeg = deg > 0 ? `+${deg}` : `${deg}`;
     const showTooltip = isHovered || isDragging;
 

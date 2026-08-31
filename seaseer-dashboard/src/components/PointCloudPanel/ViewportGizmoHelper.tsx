@@ -139,6 +139,23 @@ export function ViewportGizmoHelper() {
 
     useFrame(({ gl, scene, camera }) => {
         if (gizmoRef.current) {
+            const container = gl.domElement.parentElement;
+            if (container) {
+                const width = container.clientWidth;
+                const height = container.clientHeight;
+                const pixelRatio = gl.getPixelRatio();
+                const targetW = Math.floor(width * pixelRatio);
+                const targetH = Math.floor(height * pixelRatio);
+
+                if (width > 0 && height > 0 && (gl.domElement.width !== targetW || gl.domElement.height !== targetH)) {
+                    gl.setSize(width, height, false);
+                    if (camera instanceof THREE.PerspectiveCamera) {
+                        camera.aspect = width / height;
+                        camera.updateProjectionMatrix();
+                    }
+                }
+            }
+
             gl.render(scene, camera);
             gizmoRef.current.cameraUpdate();
             gizmoRef.current.domUpdate();
