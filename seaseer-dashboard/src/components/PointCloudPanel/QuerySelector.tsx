@@ -263,9 +263,7 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
 
           {/* Card Controls & Status Bar */}
           <div className="query-selector__bottom-bar">
-            <span className={`query-selector__status-text ${saveStatus === "Error saving" ? "query-selector__status-text--error" : ""}`}>
-              {saveStatus ? saveStatus : "Auto-saved"}
-            </span>
+            <span className={`query-selector__status-text ${saveStatus === "Error saving" ? "query-selector__status-text--error" : ""}`}></span>
           </div>
         </>
       )}

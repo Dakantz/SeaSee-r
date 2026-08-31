@@ -437,20 +437,6 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
       }
     }
     onQueriesChange?.(updatedList);
-
-    // Auto-save feedback
-    triggerSaveFeedback(id, "Auto-saved");
-  };
-
-  const triggerSaveFeedback = (id: string, message: string) => {
-    setSaveStatusMap((prev) => ({ ...prev, [id]: message }));
-    setTimeout(() => {
-      setSaveStatusMap((prev) => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
-    }, 2000);
   };
 
   // Handler to delete a query

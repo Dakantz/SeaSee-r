@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import { generateDelaunayTerrainMesh } from "./utils/delaunayTriangulation";
 import { TrajectoryRenderer } from "../RovRenderer/trajectoryRenderer";
+import type { PositionSample } from "../TelemetoryPanel/TelemetryPositionReader";
 import { fetchBinaryGeometry } from "./utils/pointCloudLoader";
 import type { FilterRule } from "./utils/filterUtils";
 
@@ -12,12 +13,13 @@ export { CustomQueryManager, PointCloudList } from "./CustomQueryManager";
 export { CustomQueryManagerContainer, PointCloudListContainer } from "./CustomQueryManagerContainer";
 export type { CustomQuery, CustomQueryManagerProps, PointCloudItem, PointCloudListProps } from "./CustomQueryManager";
 import { getBoundingBoxCenter, type CustomQuery } from "./CustomQueryManager";
+import { CameraMovementSystem, TARGET_X, TARGET_Y } from "./utils/CameraMovementController";
 
 
 // @ts-expect-error - geo-three submodule
 import { MapView, DebugProvider, HeightDebugProvider, OpenStreetMapsProvider, OpenMapTilesProvider, MapTilerProvider, BingMapsProvider, BathymetryProvider, EmodnetProvider, EmodnetTileProvider, EmodnetWCSProvider, UnitsUtils, MapNodeGeometry, MapHeightNodeShader, MapHeightNode, MapNodeHeightGeometry, MapPlaneNode, CanvasUtils } from "../../../public/geo-three/build/geo-three.module.js";
 
-// Set skirt depth to 100.0 so the skirt extends down to height -100
+// Set skirt depth to 2000.0 so the skirt extends down to height -2000
 MapHeightNodeShader.geometry = new MapNodeGeometry(1.0, 1.0, MapHeightNodeShader.geometrySize, MapHeightNodeShader.geometrySize, true, 2000.0);
 
 if (MapHeightNode.prototype.loadHeightGeometry) {
@@ -74,9 +76,6 @@ if (MapHeightNode.prototype.loadHeightGeometry) {
         this.heightLoaded = true;
     };
 }
-
-const TARGET_X = 1622520.9730428709;
-const TARGET_Y = -5522707.795739262;
 
 function SceneLighting() {
     const {
@@ -136,186 +135,9 @@ function SceneLighting() {
     );
 }
 
-function getHeightFactor(z: number): number {
-    return Math.max(0.1, Math.abs(z) / 1000);
-}
-
-const _qYaw = new THREE.Quaternion();
-const _qPitch = new THREE.Quaternion();
-const _tmpVecForward = new THREE.Vector3();
-const _tmpVecRight = new THREE.Vector3();
-const _tmpVecUp = new THREE.Vector3();
-const _tmpVecDir = new THREE.Vector3();
-
 const _colorHovered = new THREE.Color("#ffaa00");
 const _colorDefault = new THREE.Color("#00e5ff");
 
-function CameraPositionControls() {
-    const { camera, gl } = useThree();
-    const { isGizmoDragging } = usePLYPointCloudContext();
-    const isGizmoDraggingRef = useRef(isGizmoDragging);
-    const isDragging = useRef(false);
-    const dragButton = useRef<number | null>(null);
-    const previousMouse = useRef({ x: 0, y: 0 });
-    const keysPressed = useRef<{ [key: string]: boolean }>({});
-
-    useEffect(() => {
-        isGizmoDraggingRef.current = isGizmoDragging;
-        if (isGizmoDragging) {
-            isDragging.current = false;
-            dragButton.current = null;
-        }
-    }, [isGizmoDragging]);
-
-    const initialized = useRef(false);
-    useEffect(() => {
-        if (!initialized.current) {
-            camera.up.set(0, 0, 1);
-            camera.lookAt(TARGET_X, TARGET_Y, 0);
-            initialized.current = true;
-        }
-    }, [camera]);
-
-    useEffect(() => {
-        const domElement = gl.domElement;
-
-        const onPointerDown = (e: PointerEvent) => {
-            if (isGizmoDraggingRef.current) return;
-            isDragging.current = true;
-            dragButton.current = e.button;
-            previousMouse.current = { x: e.clientX, y: e.clientY };
-        };
-
-        const onPointerMove = (e: PointerEvent) => {
-            if (isGizmoDraggingRef.current || !isDragging.current) return;
-
-            const deltaX = e.clientX - previousMouse.current.x;
-            const deltaY = e.clientY - previousMouse.current.y;
-            previousMouse.current = { x: e.clientX, y: e.clientY };
-
-            if (dragButton.current === 0) {
-                // Left click: Rotate around current camera position using quaternions
-                const rotateSpeed = 0.003;
-
-                // 1. Yaw rotation around local camera Up-axis
-                const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
-                _qYaw.setFromAxisAngle(up, -deltaX * rotateSpeed);
-
-                // 2. Pitch rotation around local camera Right-axis
-                const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
-                _qPitch.setFromAxisAngle(right, -deltaY * rotateSpeed);
-
-                // Apply pitch then yaw to camera quaternion
-                camera.quaternion.premultiply(_qPitch).premultiply(_qYaw).normalize();
-            } else if (dragButton.current === 2 || dragButton.current === 1) {
-                // Right or middle click: Pan camera position
-                const heightFactor = getHeightFactor(camera.position.z);
-                const panSpeed = 2.0 * heightFactor;
-                const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
-                const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
-
-                right.z = 0;
-                up.z = 0;
-                if (right.lengthSq() > 0) right.normalize();
-                if (up.lengthSq() > 0) up.normalize();
-
-                camera.position.addScaledVector(right, -deltaX * panSpeed);
-                camera.position.addScaledVector(up, deltaY * panSpeed);
-            }
-        };
-
-        const onPointerUp = () => {
-            isDragging.current = false;
-            dragButton.current = null;
-        };
-
-        const onWheel = (e: WheelEvent) => {
-            if (isGizmoDraggingRef.current) return;
-            e.preventDefault();
-            const heightFactor = getHeightFactor(camera.position.z);
-            const zoomSpeed = 1.0 * heightFactor;
-            camera.getWorldDirection(_tmpVecDir);
-
-            const moveDistance = -Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 100) * zoomSpeed;
-            camera.position.addScaledVector(_tmpVecDir, moveDistance);
-        };
-
-        const onContextMenu = (e: MouseEvent) => {
-            e.preventDefault();
-        };
-
-        const onKeyDown = (e: KeyboardEvent) => {
-            if (isGizmoDraggingRef.current) return;
-            keysPressed.current[e.code] = true;
-        };
-
-        const onKeyUp = (e: KeyboardEvent) => {
-            keysPressed.current[e.code] = false;
-        };
-
-        domElement.addEventListener("pointerdown", onPointerDown);
-        window.addEventListener("pointermove", onPointerMove);
-        window.addEventListener("pointerup", onPointerUp);
-        domElement.addEventListener("wheel", onWheel, { passive: false });
-        domElement.addEventListener("contextmenu", onContextMenu);
-        window.addEventListener("keydown", onKeyDown);
-        window.addEventListener("keyup", onKeyUp);
-
-        return () => {
-            domElement.removeEventListener("pointerdown", onPointerDown);
-            window.removeEventListener("pointermove", onPointerMove);
-            window.removeEventListener("pointerup", onPointerUp);
-            domElement.removeEventListener("wheel", onWheel);
-            domElement.removeEventListener("contextmenu", onContextMenu);
-            window.removeEventListener("keydown", onKeyDown);
-            window.removeEventListener("keyup", onKeyUp);
-        };
-    }, [camera, gl]);
-
-    useFrame((_, delta) => {
-        if (isGizmoDraggingRef.current) return;
-        if (
-            document.activeElement &&
-            (document.activeElement.tagName === "INPUT" ||
-                document.activeElement.tagName === "TEXTAREA" ||
-                document.activeElement.tagName === "SELECT")
-        ) {
-            return;
-        }
-
-        const keys = keysPressed.current;
-        if (!keys) return;
-
-        const isShift = keys["ShiftLeft"];
-        const heightFactor = getHeightFactor(camera.position.z);
-        const moveSpeed = (isShift ? 3000 : 800) * heightFactor * delta;
-
-        camera.getWorldDirection(_tmpVecForward);
-        const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
-        const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
-
-        if (keys["KeyW"]) {
-            camera.position.addScaledVector(_tmpVecForward, moveSpeed);
-        }
-        if (keys["KeyS"]) {
-            camera.position.addScaledVector(_tmpVecForward, -moveSpeed);
-        }
-        if (keys["KeyA"]) {
-            camera.position.addScaledVector(right, -moveSpeed);
-        }
-        if (keys["KeyD"]) {
-            camera.position.addScaledVector(right, moveSpeed);
-        }
-        if (keys["KeyE"]) {
-            camera.position.addScaledVector(up, moveSpeed);
-        }
-        if (keys["KeyQ"]) {
-            camera.position.addScaledVector(up, -moveSpeed);
-        }
-    });
-
-    return null;
-}
 
 function GeoThreeHeightmap() {
     const { showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider } = usePLYPointCloudContext();
@@ -557,183 +379,7 @@ function PointCloudCenterMarkers() {
     );
 }
 
-import type { PositionSample } from "../TelemetoryPanel/TelemetryPositionReader";
 
-function CameraFocusController() {
-    const { camera, gl } = useThree();
-    const { cameraTarget, cameraViewTarget } = usePLYPointCloudContext();
-
-    const animState = useRef<{
-        startTime: number;
-        duration: number;
-        startPos: THREE.Vector3;
-        targetCamPos: THREE.Vector3;
-        targetCenter: THREE.Vector3;
-    } | null>(null);
-
-    const viewAnimState = useRef<{
-        startTime: number;
-        duration: number;
-        startPos: THREE.Vector3;
-        targetPos: THREE.Vector3;
-        startQuat: THREE.Quaternion;
-        targetQuat: THREE.Quaternion;
-        startFov: number;
-        targetFov: number;
-    } | null>(null);
-
-    const startFocusAnimation = useCallback((targetCenter: THREE.Vector3, customOffset?: [number, number, number] | number) => {
-        let offsetVec = new THREE.Vector3(0, -150, 150);
-        if (customOffset !== undefined) {
-            if (Array.isArray(customOffset)) {
-                offsetVec = new THREE.Vector3(...customOffset);
-            } else if (typeof customOffset === "number") {
-                offsetVec = new THREE.Vector3(0, -customOffset, customOffset);
-            }
-        }
-        const targetCamPos = targetCenter.clone().add(offsetVec);
-
-        viewAnimState.current = null;
-        animState.current = {
-            startTime: performance.now() / 1000,
-            duration: 0.6,
-            startPos: camera.position.clone(),
-            targetCamPos: targetCamPos,
-            targetCenter: targetCenter.clone(),
-        };
-    }, [camera]);
-
-    useEffect(() => {
-        if (!cameraTarget) return;
-        const { x, y, z, offset } = cameraTarget;
-        if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
-            const targetCenter = new THREE.Vector3(x, y, z);
-            startFocusAnimation(targetCenter, offset);
-        }
-    }, [cameraTarget, startFocusAnimation]);
-
-    useEffect(() => {
-        if (!cameraViewTarget) return;
-        const { position, quaternion, fov } = cameraViewTarget;
-        const targetPos = new THREE.Vector3(...position);
-
-        let targetQuat: THREE.Quaternion;
-        if (quaternion && quaternion.length === 4) {
-            targetQuat = new THREE.Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
-        } else {
-            targetQuat = camera.quaternion.clone();
-        }
-
-        const perspCam = camera as THREE.PerspectiveCamera;
-        const startFov = perspCam.fov ?? 60;
-        const targetFov = fov ?? startFov;
-
-        animState.current = null;
-        viewAnimState.current = {
-            startTime: performance.now() / 1000,
-            duration: 0.6,
-            startPos: camera.position.clone(),
-            targetPos,
-            startQuat: camera.quaternion.clone(),
-            targetQuat,
-            startFov,
-            targetFov,
-        };
-    }, [cameraViewTarget, camera]);
-
-    useEffect(() => {
-        const domElement = gl.domElement;
-
-        const stopAnimation = () => {
-            if (animState.current) {
-                animState.current = null;
-            }
-            if (viewAnimState.current) {
-                viewAnimState.current = null;
-            }
-        };
-
-        const onKeyDown = (e: KeyboardEvent) => {
-            if (
-                document.activeElement &&
-                (document.activeElement.tagName === "INPUT" ||
-                    document.activeElement.tagName === "TEXTAREA" ||
-                    document.activeElement.tagName === "SELECT")
-            ) {
-                return;
-            }
-            const navKeys = [
-                "KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE"
-            ];
-            if (navKeys.includes(e.code)) {
-                stopAnimation();
-            }
-        };
-
-        domElement.addEventListener("pointerdown", stopAnimation);
-        domElement.addEventListener("wheel", stopAnimation, { passive: true });
-        domElement.addEventListener("touchstart", stopAnimation, { passive: true });
-        window.addEventListener("keydown", onKeyDown);
-
-        return () => {
-            domElement.removeEventListener("pointerdown", stopAnimation);
-            domElement.removeEventListener("wheel", stopAnimation);
-            domElement.removeEventListener("touchstart", stopAnimation);
-            window.removeEventListener("keydown", onKeyDown);
-        };
-    }, [gl]);
-
-    useFrame(() => {
-        if (animState.current) {
-            const { startTime, duration, startPos, targetCamPos, targetCenter } = animState.current;
-            const now = performance.now() / 1000;
-            const elapsed = now - startTime;
-            const progress = Math.min(1, elapsed / duration);
-            const easeT = 1 - Math.pow(1 - progress, 3);
-
-            camera.position.lerpVectors(startPos, targetCamPos, easeT);
-            camera.up.set(0, 0, 1);
-            camera.lookAt(targetCenter);
-
-            if (progress >= 1) {
-                camera.position.copy(targetCamPos);
-                camera.up.set(0, 0, 1);
-                camera.lookAt(targetCenter);
-                animState.current = null;
-            }
-            return;
-        }
-
-        if (viewAnimState.current) {
-            const { startTime, duration, startPos, targetPos, startQuat, targetQuat, startFov, targetFov } = viewAnimState.current;
-            const now = performance.now() / 1000;
-            const elapsed = now - startTime;
-            const progress = Math.min(1, elapsed / duration);
-            const easeT = 1 - Math.pow(1 - progress, 3);
-
-            camera.position.lerpVectors(startPos, targetPos, easeT);
-            camera.quaternion.slerpQuaternions(startQuat, targetQuat, easeT);
-
-            const perspCam = camera as THREE.PerspectiveCamera;
-            if (perspCam.fov !== undefined && startFov !== targetFov) {
-                perspCam.fov = THREE.MathUtils.lerp(startFov, targetFov, easeT);
-                perspCam.updateProjectionMatrix();
-            }
-
-            if (progress >= 1) {
-                camera.position.copy(targetPos);
-                camera.quaternion.copy(targetQuat);
-                if (perspCam.fov !== undefined && targetFov) {
-                    perspCam.fov = targetFov;
-                    perspCam.updateProjectionMatrix();
-                }
-                viewAnimState.current = null;
-            }
-        }
-    });
-
-    return null;
-}
 
 function DBCameraTrajectoryDisplay() {
     const {
@@ -970,7 +616,7 @@ interface FetchTask {
 const W0_BASE_CELL_WIDTH = 0.25;
 const MAX_CONCURRENT_FETCHES = 100;
 const MOVEMENT_THRESHOLD_SQ = 0.025;
-const SHOW_OUTLINES = false
+const SHOW_OUTLINES = true
 
 function DynamicCubicLODController() {
     const { camera } = useThree();
@@ -1481,11 +1127,7 @@ export default function PLYPointCloud() {
         wireframe,
         pointSize,
         loadedGeometries,
-        editingPointcloudId,
-        identifier,
     } = usePLYPointCloudContext();
-
-    const lodTargetId = editingPointcloudId || identifier || "binary-lod";
 
     useEffect(() => {
         if (renderMode === "mesh") {
@@ -1500,16 +1142,13 @@ export default function PLYPointCloud() {
 
     return (
         <group>
-            <CameraPositionControls />
-            <CameraFocusController />
+            <CameraMovementSystem />
             <SceneLighting />
             <GeoThreeHeightmap />
             <PointCloudCenterMarkers />
             <DBCameraTrajectoryDisplay />
 
-            <PointCloudTransformItem id={lodTargetId}>
-                <DynamicCubicLODController />
-            </PointCloudTransformItem>
+            <DynamicCubicLODController />
 
             {/* Render dynamically streamed full pointcloud geometries with transform controls */}
             {Array.from(loadedGeometries.entries()).map(([id, geom]) => (
