@@ -75,8 +75,17 @@ export function ViewportGizmoHelper() {
         };
         window.addEventListener("resize", handleResize);
 
+        const resizeObserver = new ResizeObserver(() => {
+            gizmo.domUpdate();
+        });
+        resizeObserver.observe(container);
+        if (gl.domElement && gl.domElement !== container) {
+            resizeObserver.observe(gl.domElement);
+        }
+
         return () => {
             window.removeEventListener("resize", handleResize);
+            resizeObserver.disconnect();
             if (gizmoDom) {
                 gizmoDom.removeEventListener("pointerdown", handleCaptureDown, true);
             }
@@ -98,7 +107,7 @@ export function ViewportGizmoHelper() {
         overlayDiv.style.top = "0";
         overlayDiv.style.right = "0";
         overlayDiv.style.pointerEvents = "none";
-        overlayDiv.style.zIndex = "1001";
+        overlayDiv.style.zIndex = "1010";
         container.appendChild(overlayDiv);
 
         const root = createRoot(overlayDiv);
@@ -132,6 +141,7 @@ export function ViewportGizmoHelper() {
         if (gizmoRef.current) {
             gl.render(scene, camera);
             gizmoRef.current.cameraUpdate();
+            gizmoRef.current.domUpdate();
             gizmoRef.current.render();
         }
     }, 1);

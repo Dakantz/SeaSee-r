@@ -18,9 +18,22 @@
     position: relative;
 }
 
+.pointcloud-panel canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
 /* ==========================================================================
    Viewport Gizmo Camera Roll Ring
    ========================================================================== */
+.gizmo-roll-ring-overlay-host {
+    position: absolute;
+    top: 0;
+    right: 0;
+    pointer-events: none;
+    z-index: 1010;
+}
+
 .gizmo-roll-ring-container {
     position: absolute;
     top: 0;
@@ -29,7 +42,7 @@
     height: 156px;
     margin: 11px 11px 0 0;
     pointer-events: none;
-    z-index: 1001;
+    z-index: 1010;
     user-select: none;
 }
 

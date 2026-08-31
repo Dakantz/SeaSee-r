@@ -617,7 +617,7 @@ interface FetchTask {
 const W0_BASE_CELL_WIDTH = 0.25;
 const MAX_CONCURRENT_FETCHES = 100;
 const MOVEMENT_THRESHOLD_SQ = 0.025;
-const SHOW_OUTLINES = true
+const SHOW_OUTLINES = false
 
 function DynamicCubicLODController() {
     const { camera } = useThree();
