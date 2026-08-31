@@ -83,6 +83,15 @@ export interface PLYPointCloudContextType {
     summaryMap: Record<string, QuerySummaryData>;
     setSummaryMap: React.Dispatch<React.SetStateAction<Record<string, QuerySummaryData>>>;
     fetchQuerySummary: (queryId: string, filters?: FilterRule[], lod?: number) => Promise<QuerySummaryData | null>;
+
+    // Pointcloud Transform Edit State
+    editingPointcloudId: string | null;
+    setEditingPointcloudId: (id: string | null) => void;
+    gizmoMode: "translate" | "rotate" | "scale" | null;
+    setGizmoMode: (mode: "translate" | "rotate" | "scale" | null) => void;
+    updatePointcloudTransform: (id: string, matrix: number[]) => Promise<void>;
+    isGizmoDragging: boolean;
+    setIsGizmoDragging: (dragging: boolean) => void;
 }
 
 const DEFAULT_HARDCODED_IDENTIFIER = "";
@@ -164,6 +173,10 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [cameraTarget, setCameraTarget] = useState<{ x: number; y: number; z: number; offset?: [number, number, number] | number; timestamp: number } | null>(null);
     const [cameraViewTarget, setCameraViewTargetState] = useState<CameraViewTarget | null>(null);
 
+    const [editingPointcloudId, setEditingPointcloudId] = useState<string | null>(null);
+    const [gizmoMode, setGizmoMode] = useState<"translate" | "rotate" | "scale" | null>(null);
+    const [isGizmoDragging, setIsGizmoDragging] = useState<boolean>(false);
+
     const setCameraView = useCallback((view: Omit<CameraViewTarget, "timestamp">) => {
         setCameraViewTargetState({
             ...view,
@@ -201,6 +214,97 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [hoveredId, setHoveredId] = useState<string | null>(null);
     const [loadedGeometries, setLoadedGeometries] = useState<Map<string, THREE.BufferGeometry>>(new Map());
     const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
+
+    const updatePointcloudTransform = useCallback(async (id: string, matrix: number[]) => {
+        try {
+            const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+            const targetUuids = new Set<string>();
+
+            if (uuidRegex.test(id)) {
+                targetUuids.add(id);
+            } else {
+                // Look up in summaryMap for connected pointclouds
+                const summary = summaryMap[id];
+                if (summary?.connected_pointclouds) {
+                    for (const pc of summary.connected_pointclouds) {
+                        if (pc.id && uuidRegex.test(pc.id)) {
+                            targetUuids.add(pc.id);
+                        }
+                    }
+                }
+
+                // Look up in query filters
+                const query = queries.find((q) => q.id === id);
+                const filterPcId = query?.filters?.find((f) => f.field === "pointcloud_id")?.value;
+                if (filterPcId && uuidRegex.test(String(filterPcId))) {
+                    targetUuids.add(String(filterPcId));
+                }
+            }
+
+            if (targetUuids.size === 0) {
+                // Check catalog as fallback
+                for (const pc of catalog) {
+                    if (pc.id && uuidRegex.test(pc.id)) {
+                        targetUuids.add(pc.id);
+                    }
+                }
+                // Check summaryMap values as fallback
+                for (const currSummary of Object.values(summaryMap)) {
+                    if (currSummary?.connected_pointclouds) {
+                        for (const pc of currSummary.connected_pointclouds) {
+                            if (pc.id && uuidRegex.test(pc.id)) {
+                                targetUuids.add(pc.id);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (targetUuids.size === 0) {
+                console.error("Could not resolve any valid pointcloud UUID for id", id);
+                return;
+            }
+
+            // Dispatch PATCH for each target pointcloud UUID
+            for (const pcUuid of targetUuids) {
+                const res = await fetch(`${API_BASE_URL}/pointclouds/${pcUuid}/transform`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ matrix }),
+                });
+                if (!res.ok) {
+                    console.error("Failed to update transform matrix for pointcloud UUID", pcUuid, res.status, res.statusText);
+                } else {
+                    console.log("Successfully updated transform matrix for pointcloud UUID", pcUuid);
+                }
+            }
+
+            // Update summaryMap in context
+            setSummaryMap((prev) => {
+                const next = { ...prev };
+                for (const [key, currSummary] of Object.entries(next)) {
+                    if (!currSummary?.connected_pointclouds) continue;
+                    const updatedConnected = currSummary.connected_pointclouds.map((pc) =>
+                        targetUuids.has(pc.id) ? { ...pc, transform_matrix: matrix } : pc
+                    );
+                    next[key] = {
+                        ...currSummary,
+                        connected_pointclouds: updatedConnected,
+                    };
+                }
+                return next;
+            });
+
+            // Update catalog in context
+            setCatalog((prev) =>
+                prev.map((pc) => (targetUuids.has(pc.id) ? { ...pc, transform_matrix: matrix } : pc))
+            );
+        } catch (e) {
+            console.error("Error updating transform matrix:", e);
+        }
+    }, [summaryMap, queries, catalog]);
 
     // AbortControllers map to manage in-flight progressive LOD loads per pointcloud/query
     const activeControllersRef = React.useRef<Map<string, AbortController>>(new Map());
@@ -498,6 +602,13 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 summaryMap,
                 setSummaryMap,
                 fetchQuerySummary,
+                editingPointcloudId,
+                setEditingPointcloudId,
+                gizmoMode,
+                setGizmoMode,
+                updatePointcloudTransform,
+                isGizmoDragging,
+                setIsGizmoDragging,
             }}
         >
             {children}

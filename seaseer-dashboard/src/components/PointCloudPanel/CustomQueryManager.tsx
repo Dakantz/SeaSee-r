@@ -270,6 +270,11 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
   let contextSetSummaryMap: React.Dispatch<React.SetStateAction<Record<string, QuerySummaryData>>> | undefined;
   let contextHoveredId: string | null | undefined;
   let contextHoverPointcloud: ((id: string | null) => void) | undefined;
+  let editingPointcloudId: string | null = null;
+  let setEditingPointcloudId: ((id: string | null) => void) | undefined;
+  let gizmoMode: "translate" | "rotate" | "scale" | null = null;
+  let setGizmoMode: ((mode: "translate" | "rotate" | "scale" | null) => void) | undefined;
+
   try {
     const ctx = usePLYPointCloudContext();
     if (ctx) {
@@ -277,6 +282,10 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
       contextSetSummaryMap = ctx.setSummaryMap;
       contextHoveredId = ctx.hoveredId;
       contextHoverPointcloud = ctx.hoverPointcloud;
+      editingPointcloudId = ctx.editingPointcloudId;
+      setEditingPointcloudId = ctx.setEditingPointcloudId;
+      gizmoMode = ctx.gizmoMode;
+      setGizmoMode = ctx.setGizmoMode;
     }
   } catch {
     // Outside PLYPointCloudContext
@@ -516,6 +525,76 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
           + New Query
         </button>
       </div>
+
+      {editingPointcloudId && (
+        <div style={{
+          background: 'rgba(30, 41, 59, 0.95)',
+          border: '1px solid #3b82f6',
+          borderRadius: '6px',
+          padding: '10px 12px',
+          marginBottom: '12px',
+          color: '#f8fafc',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: '#60a5fa' }}>
+              ✏️ Gizmo Controls (Transforming Active)
+            </span>
+            <button
+              type="button"
+              onClick={() => { setEditingPointcloudId?.(null); setGizmoMode?.(null); }}
+              style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '13px' }}
+              title="Stop editing transform"
+            >
+              ✕
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button
+              type="button"
+              onClick={() => setGizmoMode?.('translate')}
+              style={{
+                flex: 1, padding: '4px 6px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
+                backgroundColor: gizmoMode === 'translate' ? '#2563eb' : '#334155', color: 'white'
+              }}
+            >
+              Move
+            </button>
+            <button
+              type="button"
+              onClick={() => setGizmoMode?.('rotate')}
+              style={{
+                flex: 1, padding: '4px 6px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
+                backgroundColor: gizmoMode === 'rotate' ? '#2563eb' : '#334155', color: 'white'
+              }}
+            >
+              Rotate
+            </button>
+            <button
+              type="button"
+              onClick={() => setGizmoMode?.('scale')}
+              style={{
+                flex: 1, padding: '4px 6px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
+                backgroundColor: gizmoMode === 'scale' ? '#2563eb' : '#334155', color: 'white'
+              }}
+            >
+              Scale
+            </button>
+            <button
+              type="button"
+              onClick={() => setGizmoMode?.(null)}
+              style={{
+                flex: 1, padding: '4px 6px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
+                backgroundColor: gizmoMode === null ? '#991b1b' : '#334155', color: 'white'
+              }}
+            >
+              Off
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Query Cards List */}
       {queries.length === 0 ? (

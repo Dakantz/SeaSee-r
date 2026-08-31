@@ -89,8 +89,9 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
 
   // Determine actual number of points loaded from 3D context loadedGeometries
   let loadedPoints = propLoadedPointCount ?? 0;
+  let ctx: ReturnType<typeof usePLYPointCloudContext> | null = null;
   try {
-    const ctx = usePLYPointCloudContext();
+    ctx = usePLYPointCloudContext();
     if (ctx && ctx.loadedGeometries && propLoadedPointCount === undefined) {
       const geom = ctx.loadedGeometries.get(query.id);
       if (geom?.attributes?.position) {
@@ -157,6 +158,37 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
             className="query-selector__btn--focus"
           >
             🎯 Focus
+          </button>
+
+          <button
+            type="button"
+            title={ctx?.editingPointcloudId === query.id ? "Stop editing transform" : "Edit spatial transform (Move/Rotate/Scale)"}
+            onClick={() => {
+              if (!ctx) return;
+              if (ctx.editingPointcloudId === query.id) {
+                ctx.setEditingPointcloudId(null);
+                ctx.setGizmoMode(null);
+              } else {
+                ctx.setEditingPointcloudId(query.id);
+                ctx.setGizmoMode("translate");
+              }
+            }}
+            style={{
+              padding: '4px 8px',
+              borderRadius: '4px',
+              border: '1px solid #475569',
+              backgroundColor: ctx?.editingPointcloudId === query.id ? '#2563eb' : '#1e293b',
+              color: 'white',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.2s',
+            }}
+          >
+            ✏️ {ctx?.editingPointcloudId === query.id ? "Editing" : "Edit"}
           </button>
 
           {isLoadedStream || isLoadingStream ? (

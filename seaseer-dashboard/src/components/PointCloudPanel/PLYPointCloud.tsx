@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
+import { TransformControls } from "@react-three/drei";
 import * as THREE from "three";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import { generateDelaunayTerrainMesh } from "./utils/delaunayTriangulation";
@@ -151,10 +152,20 @@ const _colorDefault = new THREE.Color("#00e5ff");
 
 function CameraPositionControls() {
     const { camera, gl } = useThree();
+    const { isGizmoDragging } = usePLYPointCloudContext();
+    const isGizmoDraggingRef = useRef(isGizmoDragging);
     const isDragging = useRef(false);
     const dragButton = useRef<number | null>(null);
     const previousMouse = useRef({ x: 0, y: 0 });
     const keysPressed = useRef<{ [key: string]: boolean }>({});
+
+    useEffect(() => {
+        isGizmoDraggingRef.current = isGizmoDragging;
+        if (isGizmoDragging) {
+            isDragging.current = false;
+            dragButton.current = null;
+        }
+    }, [isGizmoDragging]);
 
     const initialized = useRef(false);
     useEffect(() => {
@@ -169,13 +180,14 @@ function CameraPositionControls() {
         const domElement = gl.domElement;
 
         const onPointerDown = (e: PointerEvent) => {
+            if (isGizmoDraggingRef.current) return;
             isDragging.current = true;
             dragButton.current = e.button;
             previousMouse.current = { x: e.clientX, y: e.clientY };
         };
 
         const onPointerMove = (e: PointerEvent) => {
-            if (!isDragging.current) return;
+            if (isGizmoDraggingRef.current || !isDragging.current) return;
 
             const deltaX = e.clientX - previousMouse.current.x;
             const deltaY = e.clientY - previousMouse.current.y;
@@ -195,7 +207,6 @@ function CameraPositionControls() {
 
                 // Apply pitch then yaw to camera quaternion
                 camera.quaternion.premultiply(_qPitch).premultiply(_qYaw).normalize();
-                // camera.up.set(0, 0, 1);
             } else if (dragButton.current === 2 || dragButton.current === 1) {
                 // Right or middle click: Pan camera position
                 const heightFactor = getHeightFactor(camera.position.z);
@@ -219,6 +230,7 @@ function CameraPositionControls() {
         };
 
         const onWheel = (e: WheelEvent) => {
+            if (isGizmoDraggingRef.current) return;
             e.preventDefault();
             const heightFactor = getHeightFactor(camera.position.z);
             const zoomSpeed = 1.0 * heightFactor;
@@ -233,6 +245,7 @@ function CameraPositionControls() {
         };
 
         const onKeyDown = (e: KeyboardEvent) => {
+            if (isGizmoDraggingRef.current) return;
             keysPressed.current[e.code] = true;
         };
 
@@ -260,6 +273,7 @@ function CameraPositionControls() {
     }, [camera, gl]);
 
     useFrame((_, delta) => {
+        if (isGizmoDraggingRef.current) return;
         if (
             document.activeElement &&
             (document.activeElement.tagName === "INPUT" ||
@@ -822,6 +836,7 @@ function DBCameraTrajectoryDisplay() {
 
     const routesToRender: Array<{
         key: string;
+        pcId: string;
         url: string;
         allowedHeaderIds: Set<string>;
         position: [number, number, number];
@@ -851,6 +866,7 @@ function DBCameraTrajectoryDisplay() {
 
             routesToRender.push({
                 key: `${qId}-${pcId}`,
+                pcId,
                 url: `${apiBaseUrl}/pointclouds/${pcId}/camera-routes`,
                 allowedHeaderIds: headerIds,
                 position,
@@ -863,17 +879,18 @@ function DBCameraTrajectoryDisplay() {
     return (
         <group>
             {routesToRender.map((route) => (
-                <TrajectoryRenderer
-                    key={route.key}
-                    url={route.url}
-                    allowedHeaderIds={route.allowedHeaderIds}
-                    position={route.position}
-                    color={0x00ffcc}
-                    lineWidth={3}
-                    showPoints={true}
-                    pointSize={1.5}
-                    onPointClick={(sample) => handlePointClick(sample, route.position)}
-                />
+                <PointCloudTransformItem key={route.key} id={route.pcId}>
+                    <TrajectoryRenderer
+                        url={route.url}
+                        allowedHeaderIds={route.allowedHeaderIds}
+                        position={route.position}
+                        color={0x00ffcc}
+                        lineWidth={3}
+                        showPoints={true}
+                        pointSize={1.5}
+                        onPointClick={(sample) => handlePointClick(sample, route.position)}
+                    />
+                </PointCloudTransformItem>
             ))}
         </group>
     );
@@ -1295,6 +1312,168 @@ function DynamicCubicLODController() {
     );
 }
 
+function PointCloudTransformItem({
+    id,
+    children,
+}: {
+    id: string;
+    children: React.ReactNode;
+}) {
+    const {
+        editingPointcloudId,
+        gizmoMode,
+        updatePointcloudTransform,
+        summaryMap,
+        queries,
+        catalog,
+        setIsGizmoDragging,
+    } = usePLYPointCloudContext();
+
+    const [pivotObj, setPivotObj] = useState<THREE.Group | null>(null);
+
+    const isEditing = useMemo(() => {
+        if (!editingPointcloudId || !gizmoMode) return false;
+        if (editingPointcloudId === id) return true;
+
+        const summary = summaryMap[editingPointcloudId];
+        if (summary?.connected_pointclouds?.some((pc) => pc.id === id)) {
+            return true;
+        }
+
+        const query = queries.find((q) => q.id === editingPointcloudId);
+        const filterPcId = query?.filters?.find((f) => f.field === "pointcloud_id")?.value;
+        if (filterPcId && String(filterPcId) === id) {
+            return true;
+        }
+
+        return false;
+    }, [editingPointcloudId, gizmoMode, id, summaryMap, queries]);
+
+    // Use the saved center coordinates stored inside querysummary
+    const center = useMemo<[number, number, number]>(() => {
+        const keysToCheck = [id, editingPointcloudId].filter(Boolean) as string[];
+
+        for (const key of keysToCheck) {
+            const summary = summaryMap[key];
+            if (!summary) continue;
+
+            // Check saved centerpoint or center on summary
+            if (summary.centerpoint && Array.isArray(summary.centerpoint) && summary.centerpoint.length === 3) {
+                return [Number(summary.centerpoint[0]), Number(summary.centerpoint[1]), Number(summary.centerpoint[2])];
+            }
+            if (summary.center && Array.isArray(summary.center) && summary.center.length === 3) {
+                return [Number(summary.center[0]), Number(summary.center[1]), Number(summary.center[2])];
+            }
+
+            // Check saved connected_pointclouds metadata entries for center or centerpoint
+            if (summary.connected_pointclouds) {
+                for (const meta of summary.connected_pointclouds) {
+                    if (meta.center && Array.isArray(meta.center) && meta.center.length === 3) {
+                        return [Number(meta.center[0]), Number(meta.center[1]), Number(meta.center[2])];
+                    }
+                    if (meta.centerpoint && Array.isArray(meta.centerpoint) && meta.centerpoint.length === 3) {
+                        return [Number(meta.centerpoint[0]), Number(meta.centerpoint[1]), Number(meta.centerpoint[2])];
+                    }
+                }
+            }
+        }
+
+        return [0, 0, 0];
+    }, [id, editingPointcloudId, summaryMap]);
+
+    // Apply saved initial transform matrix from metadata onto pivot group
+    useEffect(() => {
+        if (!pivotObj) return;
+        let matrixArr: number[] | undefined;
+
+        // 1. First check summaryMap for key === id or key === editingPointcloudId
+        const keysToCheck = [id, editingPointcloudId].filter(Boolean) as string[];
+
+        for (const key of keysToCheck) {
+            const summary = summaryMap[key];
+            if (summary?.connected_pointclouds) {
+                for (const pc of summary.connected_pointclouds) {
+                    if (pc?.transform_matrix && pc.transform_matrix.length === 16) {
+                        matrixArr = pc.transform_matrix;
+                        break;
+                    }
+                }
+            }
+            if (matrixArr) break;
+        }
+
+        // 2. Fallback: check all summaryMap entries for pc.id === id
+        if (!matrixArr) {
+            for (const currSummary of Object.values(summaryMap)) {
+                if (currSummary?.connected_pointclouds) {
+                    const pc = currSummary.connected_pointclouds.find(
+                        (p) => p.id === id || p.id === editingPointcloudId
+                    );
+                    if (pc?.transform_matrix && pc.transform_matrix.length === 16) {
+                        matrixArr = pc.transform_matrix;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback: check catalog
+        if (!matrixArr && catalog) {
+            for (const pc of catalog) {
+                if (pc.transform_matrix && pc.transform_matrix.length === 16) {
+                    matrixArr = pc.transform_matrix;
+                    break;
+                }
+            }
+        }
+
+        if (matrixArr && matrixArr.length === 16) {
+            const mat = new THREE.Matrix4().fromArray(matrixArr);
+            mat.decompose(pivotObj.position, pivotObj.quaternion, pivotObj.scale);
+            pivotObj.updateMatrix();
+        }
+    }, [id, editingPointcloudId, summaryMap, catalog, pivotObj]);
+
+    const handleObjectChange = useCallback(() => {
+        if (!pivotObj) return;
+        pivotObj.updateMatrix();
+    }, [pivotObj]);
+
+    const handleMouseUp = useCallback(() => {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const targetId = uuidRegex.test(id) ? id : (editingPointcloudId || id);
+        if (!pivotObj || !targetId) return;
+        pivotObj.updateMatrix();
+        const matrixArray = pivotObj.matrix.toArray();
+        updatePointcloudTransform(targetId, matrixArray);
+    }, [id, editingPointcloudId, pivotObj, updatePointcloudTransform]);
+
+    const [cx, cy, cz] = center;
+
+    return (
+        <group>
+            <group position={[cx, cy, cz]} ref={setPivotObj}>
+                <group position={[-cx, -cy, -cz]}>
+                    {children}
+                </group>
+            </group>
+
+            {isEditing && pivotObj && (
+                <TransformControls
+                    object={pivotObj}
+                    mode={gizmoMode!}
+                    onMouseDown={() => setIsGizmoDragging(true)}
+                    onMouseUp={() => {
+                        setIsGizmoDragging(false);
+                        handleMouseUp();
+                    }}
+                    onObjectChange={handleObjectChange}
+                />
+            )}
+        </group>
+    );
+}
+
 export default function PLYPointCloud() {
     const {
         geometry,
@@ -1302,7 +1481,11 @@ export default function PLYPointCloud() {
         wireframe,
         pointSize,
         loadedGeometries,
+        editingPointcloudId,
+        identifier,
     } = usePLYPointCloudContext();
+
+    const lodTargetId = editingPointcloudId || identifier || "binary-lod";
 
     useEffect(() => {
         if (renderMode === "mesh") {
@@ -1323,11 +1506,14 @@ export default function PLYPointCloud() {
             <GeoThreeHeightmap />
             <PointCloudCenterMarkers />
             <DBCameraTrajectoryDisplay />
-            <DynamicCubicLODController />
 
-            {/* Render dynamically streamed full pointcloud geometries */}
+            <PointCloudTransformItem id={lodTargetId}>
+                <DynamicCubicLODController />
+            </PointCloudTransformItem>
+
+            {/* Render dynamically streamed full pointcloud geometries with transform controls */}
             {Array.from(loadedGeometries.entries()).map(([id, geom]) => (
-                <group key={id}>
+                <PointCloudTransformItem key={id} id={id}>
                     {renderMode === "mesh" ? (
                         <mesh geometry={geom}>
                             <meshStandardMaterial
@@ -1347,7 +1533,7 @@ export default function PLYPointCloud() {
                             />
                         </points>
                     )}
-                </group>
+                </PointCloudTransformItem>
             ))}
         </group>
     );

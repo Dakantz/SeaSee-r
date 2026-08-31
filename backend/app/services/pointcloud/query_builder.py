@@ -215,7 +215,7 @@ class PointCloudQueryBuilder:
                 WHERE {patch_where_sql}
             ) AS exploded{point_where_clause};
         """
-        logger.info(f"Binary stream query: {sql}")
+        # logger.info(f"Binary stream query: {sql}")
         return sql, bind_params, expanding_params
 
     @classmethod
@@ -257,7 +257,7 @@ class PointCloudQueryBuilder:
             {video_join_clause}
             WHERE {patch_where_sql};
         """
-        logger.info(f"Summary query: {summary_sql}")
-        logger.info(f"Distinct IDs query: {distinct_ids_sql}")
+        # logger.info(f"Summary query: {summary_sql}")
+        # logger.info(f"Distinct IDs query: {distinct_ids_sql}")
         return summary_sql, distinct_ids_sql, bind_params, expanding_params
 
