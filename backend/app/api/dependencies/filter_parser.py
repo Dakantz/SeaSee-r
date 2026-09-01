@@ -1,3 +1,4 @@
+import uuid
 from typing import Set, List, Optional, Any, Dict
 from fastapi import Request, HTTPException
 
@@ -83,6 +84,19 @@ class QueryFilterParser:
                 )
 
             parsed_val = self._parse_value(operator, raw_val)
+
+            if field in ("pointcloud_id", "id"):
+                vals = parsed_val if isinstance(parsed_val, list) else [parsed_val]
+                for v in vals:
+                    item_str = str(v).strip()
+                    if item_str:
+                        try:
+                            uuid.UUID(item_str)
+                        except ValueError:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"Invalid UUID format for field '{field}': '{item_str}'"
+                            )
 
             if operator == "in":
                 if field in in_filters_map:

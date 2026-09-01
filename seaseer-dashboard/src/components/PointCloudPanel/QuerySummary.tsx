@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import type { CustomQuery, QuerySummaryData, ConnectedPointCloudMetadata } from "./CustomQueryManager";
 import PointProgressBar from "./PointProgressBar";
+import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import type { FilterRule } from "./utils/filterUtils.ts";
 
 export interface QuerySummaryProps {
@@ -23,8 +24,29 @@ const ConnectedMetadataCard: React.FC<{
   meta: ConnectedPointCloudMetadata;
   cameraHeaders?: QuerySummaryData["connected_camera_headers"];
   defaultExpanded?: boolean;
-}> = ({ meta, cameraHeaders = [], defaultExpanded = false }) => {
+  queryId?: string;
+  queryFilters?: FilterRule[];
+  onRefreshSummary?: (queryId: string, filters?: FilterRule[]) => void;
+}> = ({ meta, cameraHeaders = [], defaultExpanded = false, queryId, queryFilters, onRefreshSummary }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(defaultExpanded);
+
+  let ctx: ReturnType<typeof usePLYPointCloudContext> | null = null;
+  try {
+    ctx = usePLYPointCloudContext();
+  } catch {
+    // Context unavailable
+  }
+
+  const handleResetPointcloudTransform = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const IDENTITY_MATRIX = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    if (ctx?.updatePointcloudTransform && meta.id) {
+      await ctx.updatePointcloudTransform(meta.id, IDENTITY_MATRIX);
+    }
+    if (queryId && onRefreshSummary) {
+      onRefreshSummary(queryId, queryFilters);
+    }
+  };
 
   const hasBounds =
     meta.min_x !== null &&
@@ -203,7 +225,17 @@ const ConnectedMetadataCard: React.FC<{
           {/* Transform Matrix 4x4 */}
           {meta.transform_matrix && meta.transform_matrix.length === 16 && (
             <div className="query-summary__matrix-section">
-              <span className="query-summary__connected-field-label">Transform Matrix (4x4):</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <span className="query-summary__connected-field-label">Transform Matrix (4x4):</span>
+                <button
+                  type="button"
+                  title={`Reset transform matrix for pointcloud ${meta.id} to identity matrix`}
+                  onClick={handleResetPointcloudTransform}
+                  className="query-summary__btn--reset-matrix"
+                >
+                  ↺ Reset Matrix
+                </button>
+              </div>
               <div className="query-summary__matrix-grid">
                 {meta.transform_matrix.map((val, idx) => (
                   <span key={idx} className="query-summary__matrix-cell">
@@ -308,6 +340,9 @@ export const QuerySummary: React.FC<QuerySummaryProps> = ({
                       meta={meta}
                       cameraHeaders={matchingCameraHeaders}
                       defaultExpanded={false}
+                      queryId={query.id}
+                      queryFilters={query.filters}
+                      onRefreshSummary={onRefreshSummary}
                     />
                   );
                 })}

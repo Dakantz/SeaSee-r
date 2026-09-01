@@ -23,8 +23,6 @@ export interface CameraViewTarget {
 }
 
 export interface PLYPointCloudContextType {
-    mode: "binary" | "plyFile" | "plyUrl";
-    setMode: (mode: "binary" | "plyFile" | "plyUrl") => void;
     renderMode: "points" | "mesh";
     setRenderMode: (mode: "points" | "mesh") => void;
     wireframe: boolean;
@@ -77,10 +75,6 @@ export interface PLYPointCloudContextType {
     focusCameraTarget: (target: [number, number, number] | { x: number; y: number; z: number }, offset?: [number, number, number] | number) => void;
     cameraViewTarget: CameraViewTarget | null;
     setCameraView: (view: Omit<CameraViewTarget, "timestamp">) => void;
-    loadedGeometries: Map<string, THREE.BufferGeometry>;
-    loadingIds: Set<string>;
-    isStreamLoaded: (queryId: string) => boolean;
-    isStreamLoading: (queryId: string) => boolean;
     unloadPointCloud: (id: string) => void;
     summaryMap: Record<string, QuerySummaryData>;
     setSummaryMap: React.Dispatch<React.SetStateAction<Record<string, QuerySummaryData>>>;
@@ -112,52 +106,8 @@ export const usePLYPointCloudContext = () => {
     }
     return context;
 };
-/**
- * Helper function to check if an active key (in loadedGeometries or loadingIds)
- * matches a target queryId or pointcloudId.
- */
-const isKeyMatch = (
-    activeKey: string,
-    targetId: string,
-    queries: CustomQuery[],
-    summaryMap: Record<string, QuerySummaryData>
-): boolean => {
-    if (!activeKey || !targetId) return false;
-    if (activeKey === targetId) return true;
-
-    // Check if activeKey is a query ID that targets targetId (as a pointcloud_id)
-    const activeQuery = queries.find((q) => q.id === activeKey);
-    if (activeQuery) {
-        const pcIdRule = activeQuery.filters?.find(
-            (f) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator)
-        )?.value;
-        if (pcIdRule && String(pcIdRule) === targetId) return true;
-
-        const summary = summaryMap[activeQuery.id];
-        if (summary?.connected_pointclouds?.some((pc) => pc.id === targetId)) {
-            return true;
-        }
-    }
-
-    // Check if targetId is a query ID that targets activeKey (as a pointcloud_id)
-    const targetQuery = queries.find((q) => q.id === targetId);
-    if (targetQuery) {
-        const pcIdRule = targetQuery.filters?.find(
-            (f) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator)
-        )?.value;
-        if (pcIdRule && String(pcIdRule) === activeKey) return true;
-
-        const summary = summaryMap[targetQuery.id];
-        if (summary?.connected_pointclouds?.some((pc) => pc.id === activeKey)) {
-            return true;
-        }
-    }
-
-    return false;
-};
 
 export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [mode, setMode] = useState<"binary" | "plyFile" | "plyUrl">("binary");
     const [renderMode, setRenderMode] = useState<"points" | "mesh">("points");
     const [wireframe, setWireframe] = useState<boolean>(true);
     const [pointSize, setPointSize] = useState<number>(0.1);
@@ -225,8 +175,6 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [catalog, setCatalog] = useState<PointCloudMetadataResponse[]>([]);
     const [isFetchingCatalog, setIsFetchingCatalog] = useState<boolean>(false);
     const [hoveredId, setHoveredId] = useState<string | null>(null);
-    const [loadedGeometries, setLoadedGeometries] = useState<Map<string, THREE.BufferGeometry>>(new Map());
-    const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
 
     const updatePointcloudTransform = useCallback(async (id: string, matrix: number[]) => {
         try {
@@ -257,17 +205,17 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
             }
 
             if (targetUuids.size === 0) {
-                // Check catalog as fallback
+                // Check catalog for a pointcloud matching id
                 for (const pc of catalog) {
-                    if (pc.id && uuidRegex.test(pc.id)) {
+                    if (pc.id === id && uuidRegex.test(pc.id)) {
                         targetUuids.add(pc.id);
                     }
                 }
-                // Check summaryMap values as fallback
+                // Check summaryMap values for a pointcloud matching id
                 for (const currSummary of Object.values(summaryMap)) {
                     if (currSummary?.connected_pointclouds) {
                         for (const pc of currSummary.connected_pointclouds) {
-                            if (pc.id && uuidRegex.test(pc.id)) {
+                            if (pc.id === id && uuidRegex.test(pc.id)) {
                                 targetUuids.add(pc.id);
                             }
                         }
@@ -322,28 +270,6 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     // AbortControllers map to manage in-flight progressive LOD loads per pointcloud/query
     const activeControllersRef = React.useRef<Map<string, AbortController>>(new Map());
 
-    const isStreamLoaded = useCallback((queryId: string): boolean => {
-        if (!queryId) return false;
-        if (loadedGeometries.has(queryId)) return true;
-        for (const loadedKey of loadedGeometries.keys()) {
-            if (isKeyMatch(loadedKey, queryId, queries, summaryMap)) {
-                return true;
-            }
-        }
-        return false;
-    }, [loadedGeometries, queries, summaryMap]);
-
-    const isStreamLoading = useCallback((queryId: string): boolean => {
-        if (!queryId) return false;
-        if (loadingIds.has(queryId)) return true;
-        for (const loadingKey of loadingIds) {
-            if (isKeyMatch(loadingKey, queryId, queries, summaryMap)) {
-                return true;
-            }
-        }
-        return false;
-    }, [loadingIds, queries, summaryMap]);
-
     const fetchQuerySummary = useCallback(async (queryId: string, filters?: FilterRule[], lod = 0) => {
         try {
             const data = await fetchPointCloudSummary({ lod, filters });
@@ -363,10 +289,6 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     ) => {
         if (!queryId.trim()) return;
 
-        if (isStreamLoading(queryId)) {
-            return;
-        }
-
         if (!summaryMap[queryId]) {
             fetchQuerySummary(queryId, filters);
         }
@@ -383,7 +305,6 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
 
         setIsLoading(true);
         setError(null);
-        setLoadingIds((prev) => new Set(prev).add(queryId));
 
         try {
             await loadProgressivePointCloud({
@@ -394,17 +315,12 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 signal: controller.signal,
                 onLodLoaded: (currentLod, newGeom) => {
                     if (controller.signal.aborted) return;
-                    setLoadedGeometries((prev) => {
-                        const next = new Map(prev);
-                        const oldGeom = next.get(queryId);
-                        if (oldGeom && oldGeom !== newGeom) {
-                            if (!(oldGeom as any)._disposed) {
-                                (oldGeom as any)._disposed = true;
-                                oldGeom.dispose();
-                            }
+                    setGeometry((oldGeom) => {
+                        if (oldGeom && oldGeom !== newGeom && !(oldGeom as any)._disposed) {
+                            (oldGeom as any)._disposed = true;
+                            oldGeom.dispose();
                         }
-                        next.set(queryId, newGeom);
-                        return next;
+                        return newGeom;
                     });
                     const count = newGeom.attributes.position ? newGeom.attributes.position.count : 0;
                     setPointCount(count);
@@ -424,15 +340,10 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
             if (activeControllersRef.current.get(queryId) === controller) {
                 activeControllersRef.current.delete(queryId);
             }
-            setLoadingIds((prev) => {
-                const next = new Set(prev);
-                next.delete(queryId);
-                setIsLoading(next.size > 0);
-                return next;
-            });
+            setIsLoading(false);
             setPointCloudLoading(queryId, false);
         }
-    }, [fetchQuerySummary, isStreamLoading, summaryMap]);
+    }, [fetchQuerySummary, summaryMap]);
 
     const selectPointcloud = useCallback((id: string | null) => {
         if (id) {
@@ -512,6 +423,14 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         fetchCatalog();
     }, [fetchCatalog]);
 
+    useEffect(() => {
+        queries.forEach((q) => {
+            if (q.id && !summaryMap[q.id]) {
+                fetchQuerySummary(q.id, q.filters);
+            }
+        });
+    }, [queries, summaryMap, fetchQuerySummary]);
+
     const unloadPointCloud = useCallback((id: string) => {
         if (activeControllersRef.current.has(id)) {
             activeControllersRef.current.get(id)?.abort();
@@ -521,42 +440,19 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
 
         setHoveredId((prev) => (prev === id ? null : prev));
 
-        setLoadingIds((prev) => {
-            const next = new Set(prev);
-            next.delete(id);
-            return next;
-        });
-
-        setLoadedGeometries((prev) => {
-            const next = new Map(prev);
-            const existing = next.get(id);
-            if (existing) {
-                if (!(existing as any)._disposed) {
-                    (existing as any)._disposed = true;
-                    existing.dispose();
-                }
-                next.delete(id);
+        setGeometry((prevGeom) => {
+            if (prevGeom && !(prevGeom as any)._disposed) {
+                (prevGeom as any)._disposed = true;
+                prevGeom.dispose();
             }
-
-            if (next.size === 0) {
-                setGeometry((prevGeom) => {
-                    if (prevGeom && !(prevGeom as any)._disposed) {
-                        (prevGeom as any)._disposed = true;
-                        prevGeom.dispose();
-                    }
-                    return null;
-                });
-            }
-
-            return next;
+            return null;
         });
+        setIsLoading(false);
     }, []);
 
     return (
         <PLYPointCloudContext.Provider
             value={{
-                mode,
-                setMode,
                 renderMode,
                 setRenderMode,
                 wireframe,
@@ -607,10 +503,6 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 focusCameraTarget,
                 cameraViewTarget,
                 setCameraView,
-                loadedGeometries,
-                loadingIds,
-                isStreamLoaded,
-                isStreamLoading,
                 unloadPointCloud,
                 summaryMap,
                 setSummaryMap,

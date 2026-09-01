@@ -247,7 +247,7 @@ export class CameraMovementController {
 
         const isShift = this.keysPressed["ShiftLeft"];
         const heightFactor = getHeightFactor(this.camera.position.z);
-        const moveSpeed = (isShift ? 3000 : 800) * heightFactor * delta;
+        const moveSpeed = (isShift ? 2000 : 200) * heightFactor * delta;
 
         this.camera.getWorldDirection(_tmpVecForward);
         const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(this.camera.quaternion);

@@ -87,28 +87,17 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
     onToggleExpand?.(nextState);
   };
 
-  // Determine actual number of points loaded from 3D context loadedGeometries
-  let loadedPoints = propLoadedPointCount ?? 0;
   let ctx: ReturnType<typeof usePLYPointCloudContext> | null = null;
   try {
     ctx = usePLYPointCloudContext();
-    if (ctx && ctx.loadedGeometries && propLoadedPointCount === undefined) {
-      const geom = ctx.loadedGeometries.get(query.id);
-      if (geom?.attributes?.position) {
-        loadedPoints = geom.attributes.position.count;
-      } else if (summary?.connected_pointclouds) {
-        let count = 0;
-        for (const pc of summary.connected_pointclouds) {
-          const pcGeom = ctx.loadedGeometries.get(pc.id);
-          if (pcGeom?.attributes?.position) {
-            count += pcGeom.attributes.position.count;
-          }
-        }
-        if (count > 0) loadedPoints = count;
-      }
-    }
   } catch {
     // Context unavailable
+  }
+
+  // Determine actual number of points loaded from 3D context
+  let loadedPoints = propLoadedPointCount ?? 0;
+  if (ctx && propLoadedPointCount === undefined && ctx.pointCount) {
+    loadedPoints = ctx.pointCount;
   }
 
   return (

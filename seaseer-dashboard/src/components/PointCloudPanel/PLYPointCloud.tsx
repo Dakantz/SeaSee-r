@@ -13,7 +13,8 @@ import type { FilterRule } from "./utils/filterUtils";
 export { CustomQueryManager, PointCloudList } from "./CustomQueryManager";
 export { CustomQueryManagerContainer, PointCloudListContainer } from "./CustomQueryManagerContainer";
 export type { CustomQuery, CustomQueryManagerProps, PointCloudItem, PointCloudListProps } from "./CustomQueryManager";
-import { getBoundingBoxCenter, type CustomQuery } from "./CustomQueryManager";
+import { getBoundingBoxCenter, type CustomQuery, type QuerySummaryData, type ConnectedPointCloudMetadata } from "./CustomQueryManager";
+import type { PointCloudMetadataResponse } from "../../client";
 import { CameraMovementSystem, TARGET_X, TARGET_Y } from "./utils/CameraMovementController";
 
 
@@ -293,7 +294,6 @@ function PointCloudCenterMarkers() {
         selectPointcloud,
         hoverPointcloud,
         focusCameraTarget,
-        startProgressiveStream,
     } = usePLYPointCloudContext();
 
     const meshRef = useRef<THREE.InstancedMesh>(null);
@@ -336,9 +336,6 @@ function PointCloudCenterMarkers() {
 
     const handleLoadQuery = (query: CustomQuery) => {
         selectPointcloud(query.id);
-        if (startProgressiveStream) {
-            startProgressiveStream(query.id, 10, 0, query.filters);
-        }
     };
 
     return (
@@ -382,29 +379,105 @@ function PointCloudCenterMarkers() {
 
 
 
+function getPointCloudTransform(
+    queryId: string,
+    summaryMap?: Record<string, QuerySummaryData>,
+    catalog?: PointCloudMetadataResponse[]
+): { matrixArr?: number[]; center: [number, number, number] } {
+    let matrixArr: number[] | undefined;
+    let center: [number, number, number] = [0, 0, 0];
+
+    if (!queryId) return { matrixArr, center };
+
+    // Single source of truth: Array of ConnectedPointCloudMetadata
+    const metadataList: ConnectedPointCloudMetadata[] = [];
+
+    if (summaryMap) {
+        // Collect from direct summaryMap[queryId]
+        const summary = summaryMap[queryId];
+        if (summary?.connected_pointclouds) {
+            metadataList.push(...summary.connected_pointclouds);
+        }
+
+        // Collect from all summaries in summaryMap
+        for (const currSummary of Object.values(summaryMap)) {
+            if (currSummary?.connected_pointclouds) {
+                for (const pc of currSummary.connected_pointclouds) {
+                    if (pc && !metadataList.some((m) => m.id === pc.id)) {
+                        metadataList.push(pc);
+                    }
+                }
+            }
+        }
+    }
+
+    if (catalog) {
+        for (const pc of catalog) {
+            if (pc && !metadataList.some((m) => m.id === pc.id)) {
+                metadataList.push(pc as ConnectedPointCloudMetadata);
+            }
+        }
+    }
+
+    // 1. Check for exact match by pointcloud ID in ConnectedPointCloudMetadata[]
+    const match = metadataList.find((m) => m.id === queryId);
+    if (match) {
+        if (match.transform_matrix && match.transform_matrix.length === 16) {
+            matrixArr = match.transform_matrix;
+        }
+        if (match.center && Array.isArray(match.center) && match.center.length === 3) {
+            center = [Number(match.center[0]), Number(match.center[1]), Number(match.center[2])];
+        } else if (match.centerpoint && Array.isArray(match.centerpoint) && match.centerpoint.length === 3) {
+            center = [Number(match.centerpoint[0]), Number(match.centerpoint[1]), Number(match.centerpoint[2])];
+        }
+    }
+
+    // 2. If no exact ID match (e.g. queryId is a query container ID), fallback to first item with valid matrix
+    if (!matrixArr && metadataList.length > 0) {
+        for (const pc of metadataList) {
+            if (pc.transform_matrix && pc.transform_matrix.length === 16) {
+                matrixArr = pc.transform_matrix;
+                break;
+            }
+        }
+    }
+
+    // 3. Fallback center from metadataList if center is still [0,0,0]
+    if (center[0] === 0 && center[1] === 0 && center[2] === 0 && metadataList.length > 0) {
+        for (const pc of metadataList) {
+            if (pc.center && Array.isArray(pc.center) && pc.center.length === 3) {
+                center = [Number(pc.center[0]), Number(pc.center[1]), Number(pc.center[2])];
+                break;
+            }
+            if (pc.centerpoint && Array.isArray(pc.centerpoint) && pc.centerpoint.length === 3) {
+                center = [Number(pc.centerpoint[0]), Number(pc.centerpoint[1]), Number(pc.centerpoint[2])];
+                break;
+            }
+        }
+    }
+
+    // 4. Final fallback center from summary root
+    if (center[0] === 0 && center[1] === 0 && center[2] === 0 && summaryMap?.[queryId]) {
+        const summary = summaryMap[queryId];
+        if (summary.centerpoint && Array.isArray(summary.centerpoint) && summary.centerpoint.length === 3) {
+            center = [Number(summary.centerpoint[0]), Number(summary.centerpoint[1]), Number(summary.centerpoint[2])];
+        } else if (summary.center && Array.isArray(summary.center) && summary.center.length === 3) {
+            center = [Number(summary.center[0]), Number(summary.center[1]), Number(summary.center[2])];
+        }
+    }
+
+    return { matrixArr, center };
+}
+
 function DBCameraTrajectoryDisplay() {
     const {
         showCameraTrajectories,
-        loadedGeometries,
-        loadingIds,
+        queries,
         summaryMap,
-        mode,
+        catalog,
         setCameraView,
         setIsCameraUpFixed,
     } = usePLYPointCloudContext();
-
-    const displayedKeys = useMemo(() => {
-        const keys = new Set<string>();
-        for (const id of loadedGeometries.keys()) {
-            if (id) keys.add(id);
-        }
-        if (loadingIds) {
-            for (const id of loadingIds) {
-                if (id) keys.add(id);
-            }
-        }
-        return Array.from(keys);
-    }, [loadedGeometries, loadingIds]);
 
     const headerMap = useMemo(() => {
         const map = new Map<string, { id: string; focal?: number | null; width?: number | null; height?: number | null }>();
@@ -422,65 +495,88 @@ function DBCameraTrajectoryDisplay() {
         return map;
     }, [summaryMap]);
 
-    const handlePointClick = useCallback((sample: PositionSample, routePosition: [number, number, number]) => {
-        if (!sample) return;
+    const handlePointClick = useCallback(
+        (sample: PositionSample, routePosition: [number, number, number], pcId?: string) => {
+            if (!sample) return;
 
-        if (sample.filename) {
-            console.log("Clicked trajectory point filename:", sample.filename);
-        }
+            if (sample.filename) {
+                console.log("Clicked trajectory point filename:", sample.filename);
+            }
 
-        setIsCameraUpFixed(false);
+            setIsCameraUpFixed(false);
 
-        // Compute 3D camera position and orientation directly for native Z-up
-        const routeOffset = new THREE.Vector3(...routePosition);
+            // Compute 3D camera position and orientation directly for native Z-up
+            const routeOffset = new THREE.Vector3(...routePosition);
 
-        // 1. Compute 3D camera position in world coordinates
-        const localPos = new THREE.Vector3(sample.x, sample.y, sample.z);
-        const worldPos = localPos.clone().add(routeOffset);
+            // 1. Compute 3D camera position in world coordinates
+            const localPos = new THREE.Vector3(sample.x, sample.y, sample.z);
+            const worldPos = localPos.clone().add(routeOffset);
 
-        // 2. Compute 3D camera orientation quaternion in world coordinates
-        let worldQuat: THREE.Quaternion;
-        if (sample.rotation && Array.isArray(sample.rotation) && sample.rotation.length === 4) {
-            worldQuat = new THREE.Quaternion(
-                sample.rotation[0],
-                sample.rotation[1],
-                sample.rotation[2],
-                sample.rotation[3]
-            );
-        } else if (sample.direction && Array.isArray(sample.direction) && sample.direction.length === 3) {
-            const worldDir = new THREE.Vector3(sample.direction[0], sample.direction[1], sample.direction[2]).normalize();
+            // 2. Compute 3D camera orientation quaternion in world coordinates
+            let worldQuat: THREE.Quaternion;
+            if (sample.rotation && Array.isArray(sample.rotation) && sample.rotation.length === 4) {
+                worldQuat = new THREE.Quaternion(
+                    sample.rotation[0],
+                    sample.rotation[1],
+                    sample.rotation[2],
+                    sample.rotation[3]
+                );
+            } else if (sample.direction && Array.isArray(sample.direction) && sample.direction.length === 3) {
+                const worldDir = new THREE.Vector3(sample.direction[0], sample.direction[1], sample.direction[2]).normalize();
 
-            const tempCam = new THREE.PerspectiveCamera();
-            tempCam.up.set(0, 0, 1);
-            tempCam.position.copy(worldPos);
-            tempCam.lookAt(worldPos.clone().add(worldDir));
-            worldQuat = tempCam.quaternion.clone();
-        } else {
-            worldQuat = new THREE.Quaternion();
-        }
+                const tempCam = new THREE.PerspectiveCamera();
+                tempCam.up.set(0, 0, 1);
+                tempCam.position.copy(worldPos);
+                tempCam.lookAt(worldPos.clone().add(worldDir));
+                worldQuat = tempCam.quaternion.clone();
+            } else {
+                worldQuat = new THREE.Quaternion();
+            }
 
-        // 3. Compute camera vertical FOV (in degrees) from camera header focal length
-        let fovDeg: number | undefined = undefined;
-        if (sample.cameraHeaderId && headerMap.has(sample.cameraHeaderId)) {
-            const header = headerMap.get(sample.cameraHeaderId);
-            if (header && typeof header.focal === "number" && header.width && header.height) {
-                const maxDim = Math.max(header.width, header.height);
-                const focalPixels = header.focal * maxDim;
-                if (focalPixels > 0) {
-                    const fovRad = 2 * Math.atan((header.height / 2) / focalPixels);
-                    fovDeg = fovRad * (180 / Math.PI);
+            // 3. Retrieve point cloud transformation matrix (full world matrix M_world)
+            const targetId = pcId || "";
+            const { matrixArr } = getPointCloudTransform(targetId, summaryMap, catalog);
+
+            // Apply transformation matrix to position & quaternion before moving camera
+            if (matrixArr && matrixArr.length === 16) {
+                const matWorld = new THREE.Matrix4().fromArray(matrixArr);
+
+                // Transform position: p_world = M_world * p_local
+                worldPos.applyMatrix4(matWorld);
+
+                // Transform orientation quaternion
+                const transformPos = new THREE.Vector3();
+                const transformQuat = new THREE.Quaternion();
+                const transformScale = new THREE.Vector3();
+                matWorld.decompose(transformPos, transformQuat, transformScale);
+
+                worldQuat.premultiply(transformQuat);
+            }
+
+            // 4. Compute camera vertical FOV (in degrees) from camera header focal length
+            let fovDeg: number | undefined = undefined;
+            if (sample.cameraHeaderId && headerMap.has(sample.cameraHeaderId)) {
+                const header = headerMap.get(sample.cameraHeaderId);
+                if (header && typeof header.focal === "number" && header.width && header.height) {
+                    const maxDim = Math.max(header.width, header.height);
+                    const focalPixels = header.focal * maxDim;
+                    if (focalPixels > 0) {
+                        const fovRad = 2 * Math.atan((header.height / 2) / focalPixels);
+                        fovDeg = fovRad * (180 / Math.PI);
+                    }
                 }
             }
-        }
 
-        setCameraView({
-            position: [worldPos.x, worldPos.y, worldPos.z],
-            quaternion: [worldQuat.x, worldQuat.y, worldQuat.z, worldQuat.w],
-            fov: fovDeg,
-        });
-    }, [headerMap, setCameraView, setIsCameraUpFixed]);
+            setCameraView({
+                position: [worldPos.x, worldPos.y, worldPos.z],
+                quaternion: [worldQuat.x, worldQuat.y, worldQuat.z, worldQuat.w],
+                fov: fovDeg,
+            });
+        },
+        [headerMap, setCameraView, setIsCameraUpFixed, summaryMap, catalog]
+    );
 
-    if (!showCameraTrajectories || displayedKeys.length === 0) return null;
+    if (!showCameraTrajectories || queries.length === 0) return null;
 
     const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -492,10 +588,33 @@ function DBCameraTrajectoryDisplay() {
         position: [number, number, number];
     }> = [];
 
-    for (const qId of displayedKeys) {
+    const seenRouteKeys = new Set<string>();
+
+    for (const query of queries) {
+        const qId = query.id;
+        if (!qId) continue;
         const summary = summaryMap?.[qId];
         const connectedHeaders = summary?.connected_camera_headers;
         if (!connectedHeaders || connectedHeaders.length === 0) {
+            const query = queries.find((q) => q.id === qId);
+            const pcIdRule = query?.filters?.find(
+                (f) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator)
+            )?.value;
+            const pcId = pcIdRule ? String(pcIdRule) : (qId.includes("-") && qId.length >= 32 ? qId : null);
+
+            if (pcId) {
+                const rKey = `${qId}-${pcId}`;
+                if (!seenRouteKeys.has(rKey)) {
+                    seenRouteKeys.add(rKey);
+                    routesToRender.push({
+                        key: rKey,
+                        pcId,
+                        url: `${apiBaseUrl}/pointclouds/${pcId}/camera-routes`,
+                        allowedHeaderIds: new Set<string>(),
+                        position: [0, 0, 0],
+                    });
+                }
+            }
             continue;
         }
 
@@ -511,16 +630,17 @@ function DBCameraTrajectoryDisplay() {
         }
 
         headersByPc.forEach((headerIds, pcId) => {
-            const position: [number, number, number] =
-                mode === "plyUrl" ? [TARGET_X, TARGET_Y, 0] : [0, 0, 0];
-
-            routesToRender.push({
-                key: `${qId}-${pcId}`,
-                pcId,
-                url: `${apiBaseUrl}/pointclouds/${pcId}/camera-routes`,
-                allowedHeaderIds: headerIds,
-                position,
-            });
+            const rKey = `${qId}-${pcId}`;
+            if (!seenRouteKeys.has(rKey)) {
+                seenRouteKeys.add(rKey);
+                routesToRender.push({
+                    key: rKey,
+                    pcId,
+                    url: `${apiBaseUrl}/pointclouds/${pcId}/camera-routes`,
+                    allowedHeaderIds: headerIds,
+                    position: [0, 0, 0],
+                });
+            }
         });
     }
 
@@ -538,7 +658,7 @@ function DBCameraTrajectoryDisplay() {
                         lineWidth={3}
                         showPoints={true}
                         pointSize={1.5}
-                        onPointClick={(sample) => handlePointClick(sample, route.position)}
+                        onPointClick={(sample) => handlePointClick(sample, route.position, route.pcId)}
                     />
                 </PointCloudTransformItem>
             ))}
@@ -625,8 +745,8 @@ function DynamicCubicLODController() {
     const { camera } = useThree();
     const {
         queries,
-        loadedGeometries,
-        mode,
+        summaryMap,
+        catalog,
         renderMode,
         wireframe,
         pointSize,
@@ -640,28 +760,36 @@ function DynamicCubicLODController() {
     const lastCamPosRef = useRef<THREE.Vector3>(new THREE.Vector3(NaN, NaN, NaN));
 
     const activeTargetQueries = useMemo(() => {
-        if (mode !== "binary") return [];
-        const targets: Array<{ id: string; filters?: FilterRule[] }> = [];
-        const targetIds = new Set<string>();
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        return queries.flatMap((q) => {
+            const summary = summaryMap[q.id];
+            if (summary?.connected_pointclouds && summary.connected_pointclouds.length > 0) {
+                return summary.connected_pointclouds.map((pc) => {
+                    const baseFilters = q.filters || [];
+                    const hasPcFilter = baseFilters.some((f) => f.field === "pointcloud_id" && String(f.value) === pc.id);
+                    const filters = hasPcFilter
+                        ? baseFilters
+                        : [
+                            ...baseFilters,
+                            { id: `filter-pc-${pc.id}`, field: "pointcloud_id", operator: "eq" as const, value: pc.id }
+                        ];
+                    return { id: pc.id, queryId: pc.id, filters };
+                });
+            }
 
-        for (const id of loadedGeometries.keys()) {
-            if (id) targetIds.add(id);
-        }
-        for (const q of queries) {
-            if (q.id) targetIds.add(q.id);
-        }
-
-        for (const id of targetIds) {
-            const matchedQuery = queries.find((q) => q.id === id);
-            targets.push({
-                id,
-                filters: matchedQuery?.filters || [
-                    { id: `filter-${id}`, field: "pointcloud_id", operator: "eq", value: id }
-                ]
-            });
-        }
-        return targets;
-    }, [mode, loadedGeometries, queries]);
+            if (q.filters && q.filters.length > 0) {
+                return [{ id: q.id, queryId: q.id, filters: q.filters }];
+            }
+            if (uuidRegex.test(q.id)) {
+                return [{
+                    id: q.id,
+                    queryId: q.id,
+                    filters: [{ id: `filter-${q.id}`, field: "pointcloud_id", operator: "eq" as const, value: q.id }]
+                }];
+            }
+            return [{ id: q.id, queryId: q.id, filters: [] }];
+        });
+    }, [queries, summaryMap]);
 
     const processQueue = useCallback(() => {
         while (activeFetchesRef.current < MAX_CONCURRENT_FETCHES && pendingQueueRef.current.length > 0) {
@@ -694,6 +822,9 @@ function DynamicCubicLODController() {
                     if (controller.signal.aborted) {
                         geom.dispose();
                         return;
+                    }
+                    if (renderMode === "mesh") {
+                        generateDelaunayTerrainMesh(geom, true);
                     }
                     setChunksMap((prevMap) => {
                         const entry = prevMap.get(task.key);
@@ -733,7 +864,7 @@ function DynamicCubicLODController() {
     }, []);
 
     useFrame(() => {
-        if (mode !== "binary" || activeTargetQueries.length === 0) return;
+        if (activeTargetQueries.length === 0) return;
 
         const camPos = camera.position;
 
@@ -746,14 +877,26 @@ function DynamicCubicLODController() {
 
         lastCamPosRef.current.copy(camPos);
 
-        const pcX = camPos.x;
-        const pcY = camPos.y;
-        const pcZ = camPos.z;
-
         const newActiveKeys = new Set<string>();
         const newTasks: FetchTask[] = [];
 
         for (const { id: queryId, filters: baseFilters } of activeTargetQueries) {
+            // Transform world camera position to local pointcloud space if transform_matrix exists: p_local = M_world^-1 * p_world
+            const { matrixArr } = getPointCloudTransform(queryId, summaryMap, catalog);
+            let pcX = camPos.x;
+            let pcY = camPos.y;
+            let pcZ = camPos.z;
+
+            if (matrixArr && matrixArr.length === 16) {
+                const matWorld = new THREE.Matrix4().fromArray(matrixArr);
+                const invMatWorld = matWorld.clone().invert();
+
+                const localCamPos = camPos.clone().applyMatrix4(invMatWorld);
+                pcX = localCamPos.x;
+                pcY = localCamPos.y;
+                pcZ = localCamPos.z;
+            }
+
             // Global LOD 10 view
             const globalKey = `${queryId}_lod10_global`;
             newActiveKeys.add(globalKey);
@@ -844,6 +987,21 @@ function DynamicCubicLODController() {
                     entry.k !== undefined &&
                     entry.lod !== undefined
                 ) {
+                    const { matrixArr } = getPointCloudTransform(entry.queryId, summaryMap, catalog);
+                    let pcX = camPos.x;
+                    let pcY = camPos.y;
+                    let pcZ = camPos.z;
+
+                    if (matrixArr && matrixArr.length === 16) {
+                        const matWorld = new THREE.Matrix4().fromArray(matrixArr);
+                        const invMatWorld = matWorld.clone().invert();
+
+                        const localCamPos = camPos.clone().applyMatrix4(invMatWorld);
+                        pcX = localCamPos.x;
+                        pcY = localCamPos.y;
+                        pcZ = localCamPos.z;
+                    }
+
                     const wL = W0_BASE_CELL_WIDTH * Math.pow(3, entry.lod);
                     const camCenterI = Math.floor(pcX / wL);
                     const camCenterJ = Math.floor(pcY / wL);
@@ -895,6 +1053,16 @@ function DynamicCubicLODController() {
     });
 
     useEffect(() => {
+        if (renderMode === "mesh") {
+            chunksMap.forEach((chunk) => {
+                if (chunk.geometry) {
+                    generateDelaunayTerrainMesh(chunk.geometry, true);
+                }
+            });
+        }
+    }, [renderMode, chunksMap]);
+
+    useEffect(() => {
         return () => {
             pendingQueueRef.current = [];
             activeKeysRef.current.clear();
@@ -908,56 +1076,72 @@ function DynamicCubicLODController() {
         };
     }, []);
 
-    if (mode !== "binary" || chunksMap.size === 0) return null;
+    // Group chunks by queryId for rendering under a single PointCloudTransformItem per pointcloud
+    const chunksByQuery = useMemo(() => {
+        const map = new Map<string, ChunkSlotData[]>();
+        for (const chunk of chunksMap.values()) {
+            if (!chunk.geometry && (!showOutlines || !chunk.bounds)) continue;
+            if (!map.has(chunk.queryId)) {
+                map.set(chunk.queryId, []);
+            }
+            map.get(chunk.queryId)!.push(chunk);
+        }
+        return map;
+    }, [chunksMap, showOutlines]);
+
+    if (chunksByQuery.size === 0) return null;
 
     return (
         <group>
-            {Array.from(chunksMap.values()).map((chunk) => {
-                if (!chunk.geometry && (!showOutlines || !chunk.bounds)) return null;
-                return (
-                    <group key={chunk.key}>
-                        {chunk.geometry && (
-                            renderMode === "mesh" ? (
-                                <mesh geometry={chunk.geometry}>
-                                    <meshStandardMaterial
-                                        vertexColors={!!chunk.geometry.attributes.color}
-                                        side={THREE.DoubleSide}
-                                        wireframe={wireframe}
-                                        roughness={0.5}
-                                        metalness={0.1}
-                                    />
-                                </mesh>
-                            ) : (
-                                <points geometry={chunk.geometry}>
-                                    <pointsMaterial
-                                        vertexColors={!!chunk.geometry.attributes.color}
-                                        size={pointSize * 0.0025 * Math.pow(2, chunk.lod)}
-                                        sizeAttenuation
-                                    />
-                                </points>
-                            )
-                        )}
+            {Array.from(chunksByQuery.entries()).map(([queryId, chunks]) => (
+                <PointCloudTransformItem key={queryId} id={queryId}>
+                    <group>
+                        {chunks.map((chunk) => (
+                            <group key={chunk.key}>
+                                {chunk.geometry && (
+                                    renderMode === "mesh" ? (
+                                        <mesh geometry={chunk.geometry}>
+                                            <meshStandardMaterial
+                                                vertexColors={!!chunk.geometry.attributes.color}
+                                                side={THREE.DoubleSide}
+                                                wireframe={wireframe}
+                                                roughness={0.5}
+                                                metalness={0.1}
+                                            />
+                                        </mesh>
+                                    ) : (
+                                        <points geometry={chunk.geometry}>
+                                            <pointsMaterial
+                                                vertexColors={!!chunk.geometry.attributes.color}
+                                                size={pointSize * 0.25}
+                                                sizeAttenuation
+                                            />
+                                        </points>
+                                    )
+                                )}
 
-                        {/* Spatial Chunk Bounding Cube Outer Wireframe Visualizer */}
-                        {showOutlines && chunk.bounds && (
-                            <group
-                                position={[
-                                    (chunk.bounds.minX + chunk.bounds.maxX) / 2,
-                                    (chunk.bounds.minY + chunk.bounds.maxY) / 2,
-                                    (chunk.bounds.minZ + chunk.bounds.maxZ) / 2,
-                                ]}
-                            >
-                                <BoxOutline
-                                    width={chunk.bounds.maxX - chunk.bounds.minX}
-                                    height={chunk.bounds.maxY - chunk.bounds.minY}
-                                    depth={chunk.bounds.maxZ - chunk.bounds.minZ}
-                                    color={getLodColor(chunk.lod)}
-                                />
+                                {/* Spatial Chunk Bounding Cube Outer Wireframe Visualizer */}
+                                {showOutlines && chunk.bounds && (
+                                    <group
+                                        position={[
+                                            (chunk.bounds.minX + chunk.bounds.maxX) / 2,
+                                            (chunk.bounds.minY + chunk.bounds.maxY) / 2,
+                                            (chunk.bounds.minZ + chunk.bounds.maxZ) / 2,
+                                        ]}
+                                    >
+                                        <BoxOutline
+                                            width={chunk.bounds.maxX - chunk.bounds.minX}
+                                            height={chunk.bounds.maxY - chunk.bounds.minY}
+                                            depth={chunk.bounds.maxZ - chunk.bounds.minZ}
+                                            color={getLodColor(chunk.lod)}
+                                        />
+                                    </group>
+                                )}
                             </group>
-                        )}
+                        ))}
                     </group>
-                );
-            })}
+                </PointCloudTransformItem>
+            ))}
         </group>
     );
 }
@@ -999,90 +1183,29 @@ function PointCloudTransformItem({
         return false;
     }, [editingPointcloudId, gizmoMode, id, summaryMap, queries]);
 
-    // Use the saved center coordinates stored inside querysummary
-    const center = useMemo<[number, number, number]>(() => {
-        const keysToCheck = [id, editingPointcloudId].filter(Boolean) as string[];
+    // Retrieve saved transform_matrix (M_world) and center offset via getPointCloudTransform
+    const { matrixArr, center } = useMemo(() => {
+        return getPointCloudTransform(id, summaryMap, catalog);
+    }, [id, summaryMap, catalog]);
 
-        for (const key of keysToCheck) {
-            const summary = summaryMap[key];
-            if (!summary) continue;
-
-            // Check saved centerpoint or center on summary
-            if (summary.centerpoint && Array.isArray(summary.centerpoint) && summary.centerpoint.length === 3) {
-                return [Number(summary.centerpoint[0]), Number(summary.centerpoint[1]), Number(summary.centerpoint[2])];
-            }
-            if (summary.center && Array.isArray(summary.center) && summary.center.length === 3) {
-                return [Number(summary.center[0]), Number(summary.center[1]), Number(summary.center[2])];
-            }
-
-            // Check saved connected_pointclouds metadata entries for center or centerpoint
-            if (summary.connected_pointclouds) {
-                for (const meta of summary.connected_pointclouds) {
-                    if (meta.center && Array.isArray(meta.center) && meta.center.length === 3) {
-                        return [Number(meta.center[0]), Number(meta.center[1]), Number(meta.center[2])];
-                    }
-                    if (meta.centerpoint && Array.isArray(meta.centerpoint) && meta.centerpoint.length === 3) {
-                        return [Number(meta.centerpoint[0]), Number(meta.centerpoint[1]), Number(meta.centerpoint[2])];
-                    }
-                }
-            }
-        }
-
-        return [0, 0, 0];
-    }, [id, editingPointcloudId, summaryMap]);
+    const [cx, cy, cz] = center;
 
     // Apply saved initial transform matrix from metadata onto pivot group
+    // Formula: M_pivot = T(-c) * M_world * T(c)
     useEffect(() => {
         if (!pivotObj) return;
-        let matrixArr: number[] | undefined;
 
-        // 1. First check summaryMap for key === id or key === editingPointcloudId
-        const keysToCheck = [id, editingPointcloudId].filter(Boolean) as string[];
+        const matWorld = (matrixArr && matrixArr.length === 16)
+            ? new THREE.Matrix4().fromArray(matrixArr)
+            : new THREE.Matrix4().identity();
 
-        for (const key of keysToCheck) {
-            const summary = summaryMap[key];
-            if (summary?.connected_pointclouds) {
-                for (const pc of summary.connected_pointclouds) {
-                    if (pc?.transform_matrix && pc.transform_matrix.length === 16) {
-                        matrixArr = pc.transform_matrix;
-                        break;
-                    }
-                }
-            }
-            if (matrixArr) break;
-        }
+        const Tc = new THREE.Matrix4().makeTranslation(cx, cy, cz);
+        const T_neg_c = new THREE.Matrix4().makeTranslation(-cx, -cy, -cz);
+        const matPivot = T_neg_c.clone().multiply(matWorld).multiply(Tc);
 
-        // 2. Fallback: check all summaryMap entries for pc.id === id
-        if (!matrixArr) {
-            for (const currSummary of Object.values(summaryMap)) {
-                if (currSummary?.connected_pointclouds) {
-                    const pc = currSummary.connected_pointclouds.find(
-                        (p) => p.id === id || p.id === editingPointcloudId
-                    );
-                    if (pc?.transform_matrix && pc.transform_matrix.length === 16) {
-                        matrixArr = pc.transform_matrix;
-                        break;
-                    }
-                }
-            }
-        }
-
-        // 3. Fallback: check catalog
-        if (!matrixArr && catalog) {
-            for (const pc of catalog) {
-                if (pc.transform_matrix && pc.transform_matrix.length === 16) {
-                    matrixArr = pc.transform_matrix;
-                    break;
-                }
-            }
-        }
-
-        if (matrixArr && matrixArr.length === 16) {
-            const mat = new THREE.Matrix4().fromArray(matrixArr);
-            mat.decompose(pivotObj.position, pivotObj.quaternion, pivotObj.scale);
-            pivotObj.updateMatrix();
-        }
-    }, [id, editingPointcloudId, summaryMap, catalog, pivotObj]);
+        matPivot.decompose(pivotObj.position, pivotObj.quaternion, pivotObj.scale);
+        pivotObj.updateMatrix();
+    }, [matrixArr, cx, cy, cz, pivotObj]);
 
     const handleObjectChange = useCallback(() => {
         if (!pivotObj) return;
@@ -1090,21 +1213,28 @@ function PointCloudTransformItem({
     }, [pivotObj]);
 
     const handleMouseUp = useCallback(() => {
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        const targetId = uuidRegex.test(id) ? id : (editingPointcloudId || id);
+        const targetId = id;
         if (!pivotObj || !targetId) return;
         pivotObj.updateMatrix();
-        const matrixArray = pivotObj.matrix.toArray();
-        updatePointcloudTransform(targetId, matrixArray);
-    }, [id, editingPointcloudId, pivotObj, updatePointcloudTransform]);
 
-    const [cx, cy, cz] = center;
+        // Convert pivot delta matrix (matPivot) back to full world matrix (matWorld):
+        // Formula: M_world = T(c) * M_pivot * T(-c)
+        const matPivot = pivotObj.matrix;
+        const Tc = new THREE.Matrix4().makeTranslation(cx, cy, cz);
+        const T_neg_c = new THREE.Matrix4().makeTranslation(-cx, -cy, -cz);
+        const matWorld = Tc.clone().multiply(matPivot).multiply(T_neg_c);
+
+        const matrixArray = matWorld.toArray();
+        updatePointcloudTransform(targetId, matrixArray);
+    }, [id, pivotObj, cx, cy, cz, updatePointcloudTransform]);
 
     return (
         <group>
-            <group position={[cx, cy, cz]} ref={setPivotObj}>
-                <group position={[-cx, -cy, -cz]}>
-                    {children}
+            <group position={[cx, cy, cz]}>
+                <group ref={setPivotObj}>
+                    <group position={[-cx, -cy, -cz]}>
+                        {children}
+                    </group>
                 </group>
             </group>
 
@@ -1127,25 +1257,6 @@ function PointCloudTransformItem({
 
 
 export default function PLYPointCloud() {
-    const {
-        geometry,
-        renderMode,
-        wireframe,
-        pointSize,
-        loadedGeometries,
-    } = usePLYPointCloudContext();
-
-    useEffect(() => {
-        if (renderMode === "mesh") {
-            if (geometry) {
-                generateDelaunayTerrainMesh(geometry, true);
-            }
-            loadedGeometries.forEach((geom) => {
-                generateDelaunayTerrainMesh(geom, true);
-            });
-        }
-    }, [geometry, loadedGeometries, renderMode]);
-
     return (
         <group>
             <CameraMovementSystem />
@@ -1156,31 +1267,6 @@ export default function PLYPointCloud() {
             <DBCameraTrajectoryDisplay />
 
             <DynamicCubicLODController />
-
-            {/* Render dynamically streamed full pointcloud geometries with transform controls */}
-            {Array.from(loadedGeometries.entries()).map(([id, geom]) => (
-                <PointCloudTransformItem key={id} id={id}>
-                    {renderMode === "mesh" ? (
-                        <mesh geometry={geom}>
-                            <meshStandardMaterial
-                                vertexColors={!!geom.attributes.color}
-                                side={THREE.DoubleSide}
-                                wireframe={wireframe}
-                                roughness={0.5}
-                                metalness={0.1}
-                            />
-                        </mesh>
-                    ) : (
-                        <points geometry={geom}>
-                            <pointsMaterial
-                                vertexColors={!!geom.attributes.color}
-                                size={pointSize}
-                                sizeAttenuation
-                            />
-                        </points>
-                    )}
-                </PointCloudTransformItem>
-            ))}
         </group>
     );
 }
