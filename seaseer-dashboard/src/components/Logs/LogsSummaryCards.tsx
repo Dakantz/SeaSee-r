@@ -54,7 +54,7 @@ export const LogsSummaryCards: React.FC<LogsSummaryCardsProps> = ({
                     <span className="logs-kpi-value">{formatDistance(summary.totalDistanceMeters)}</span>
                 </div>
                 <div className="logs-kpi-subtext">
-                    Extents: {summary.extentX.toFixed(1)}m × {summary.extentY.toFixed(1)}m
+                    Displacement: {summary.netDisplacementMeters.toFixed(1)}m (net)
                 </div>
             </div>
 
@@ -120,7 +120,7 @@ export const LogsSummaryCards: React.FC<LogsSummaryCardsProps> = ({
                     </span>
                 </div>
                 <div className="logs-kpi-subtext">
-                    {summary.totalPoints.toLocaleString()} spatial points
+                    Volume: {summary.boundingVolumeM3.toFixed(1)} m³ ({summary.extentX.toFixed(1)}m × {summary.extentY.toFixed(1)}m)
                 </div>
             </div>
 

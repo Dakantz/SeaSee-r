@@ -1,5 +1,6 @@
 import { useLogsData } from "./useLogsData";
 import { LogsHeader } from "./LogsHeader";
+import { LogsMapPicker } from "./LogsMapPicker";
 import { LogsSummaryCards } from "./LogsSummaryCards";
 import { LogsCharts } from "./LogsCharts";
 import { Logs3DViewer } from "./Logs3DViewer";
@@ -26,9 +27,27 @@ export default function LogsPage() {
         refetch,
     } = useLogsData();
 
+    if (!selectedMapId) {
+        return (
+            <div className="logs-page-root">
+                {error && (
+                    <div className="logs-alert-banner">
+                        <FiAlertCircle size={18} />
+                        <span>{error}</span>
+                    </div>
+                )}
+                <LogsMapPicker
+                    maps={maps}
+                    onSelectMap={selectMap}
+                    loading={loadingMaps}
+                    onRefresh={refetch}
+                />
+            </div>
+        );
+    }
+
     return (
         <div className="logs-page-root">
-            {/* Header / Map Selector */}
             <LogsHeader
                 maps={maps}
                 selectedMapId={selectedMapId}
@@ -38,7 +57,6 @@ export default function LogsPage() {
                 onRefresh={refetch}
             />
 
-            {/* Error Notification */}
             {error && (
                 <div className="logs-alert-banner">
                     <FiAlertCircle size={18} />
@@ -46,7 +64,6 @@ export default function LogsPage() {
                 </div>
             )}
 
-            {/* Main Content Area */}
             <div className="logs-content-scroll">
                 <LogsSummaryCards summary={summary} activePoint={activePoint} />
 

@@ -53,4 +53,6 @@ export interface MissionSummary {
     extentX: number;
     extentY: number;
     extentZ: number;
+    boundingVolumeM3: number;
+    netDisplacementMeters: number;
 }

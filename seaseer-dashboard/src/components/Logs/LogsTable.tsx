@@ -57,7 +57,8 @@ export const LogsTable: React.FC<LogsTableProps> = ({
                         top: Math.max(0, rowTop - headerHeight + 10),
                         behavior: "smooth",
                     });
-                } else if (rowBottom > containerBottom) {
+                }
+                else if (rowBottom > containerBottom) {
                     container.scrollTo({
                         top: rowBottom - containerHeight,
                         behavior: "smooth",

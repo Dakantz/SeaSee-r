@@ -35,6 +35,15 @@ export const LogsHeader: React.FC<LogsHeaderProps> = ({
             </div>
 
             <div className="logs-header-right">
+                <button
+                    className="logs-all-datasets-btn"
+                    onClick={() => onSelectMap("")}
+                    title="Back to All Datasets Map Picker"
+                >
+                    <FiLayers size={13} />
+                    <span>All Datasets</span>
+                </button>
+
                 <div className="logs-map-selector-wrapper">
                     <label htmlFor="map-select" className="logs-selector-label">
                         <FiMapPin size={13} /> Active Map:

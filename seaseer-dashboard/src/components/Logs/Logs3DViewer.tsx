@@ -18,7 +18,6 @@ interface Logs3DViewerProps {
     onHoverIndex?: (index: number | null) => void;
 }
 
-// 3D Trajectory Spline & Waypoints Component
 function TrajectoryScene({
     points,
     activeIndex,
@@ -35,7 +34,6 @@ function TrajectoryScene({
     const { size } = useThree();
     const lineGroupRef = useRef<THREE.Group>(null);
 
-    // Build Line2 geometry
     const lineObject = useMemo(() => {
         if (!points || points.length < 2) return null;
 
@@ -60,7 +58,6 @@ function TrajectoryScene({
         return line;
     }, [points, size.width, size.height]);
 
-    // Active ROV marker position
     const activePoint = activeIndex !== null && points[activeIndex] ? points[activeIndex] : null;
     const hoveredPoint = hoveredIndex !== null && hoveredIndex !== activeIndex && points[hoveredIndex] ? points[hoveredIndex] : null;
 
@@ -68,7 +65,6 @@ function TrajectoryScene({
         <group ref={lineGroupRef}>
             {lineObject && <primitive object={lineObject} />}
 
-            {/* Waypoint Clickable Nodes (Skip activePoint to prevent double rendering) */}
             {points.map((p, idx) => {
                 if (idx === activeIndex) return null; // Avoid duplicate active mesh
                 const isHovered = idx === hoveredIndex;
@@ -102,7 +98,6 @@ function TrajectoryScene({
                 );
             })}
 
-            {/* Single Crisp Active Position Indicator / ROV Marker */}
             {activePoint && (
                 <group position={[activePoint.x, activePoint.y, activePoint.z]}>
                     <mesh>
@@ -114,7 +109,6 @@ function TrajectoryScene({
                         />
                     </mesh>
 
-                    {/* Directional Beacon / Frustum Pointer */}
                     {activePoint.direction && (
                         <mesh
                             position={[
@@ -128,7 +122,6 @@ function TrajectoryScene({
                         </mesh>
                     )}
 
-                    {/* Surrounding Glowing Ring */}
                     <Billboard>
                         <mesh>
                             <ringGeometry args={[0.9, 1.15, 32]} />
@@ -138,7 +131,6 @@ function TrajectoryScene({
                 </group>
             )}
 
-            {/* Hovered Ring (Only when hovering a non-active node) */}
             {hoveredPoint && (
                 <group position={[hoveredPoint.x, hoveredPoint.y, hoveredPoint.z]}>
                     <Billboard>
@@ -153,7 +145,6 @@ function TrajectoryScene({
     );
 }
 
-// Natural Camera Initial Placement Only (Runs once on mount)
 function CameraSetup({
     center,
     extents,
@@ -258,7 +249,6 @@ export const Logs3DViewer: React.FC<Logs3DViewerProps> = ({
                         extents={extents}
                     />
 
-                    {/* Interactive Trajectory Path & Single Active ROV Marker */}
                     <TrajectoryScene
                         points={points}
                         activeIndex={activeIndex}
@@ -273,7 +263,6 @@ export const Logs3DViewer: React.FC<Logs3DViewerProps> = ({
                         enableDamping={false}
                     />
 
-                    {/* Grid Floor */}
                     <gridHelper
                         args={[extents * 2, 20, 0x334155, 0x1e293b]}
                         position={[center[0], center[1], Math.min(...(points.length > 0 ? points.map((p) => p.z) : [0])) - 0.5]}

@@ -45,13 +45,15 @@ export function useLogsData() {
             setMaps(parsedMaps);
 
             if (parsedMaps.length > 0) {
-                const matched = mapParam
-                    ? parsedMaps.find((m) => m.id === mapParam || m.name === mapParam)
-                    : null;
-                const activeId = matched ? matched.id : parsedMaps[0].id;
-                setSelectedMapId(activeId);
-                if (mapParam !== activeId) {
-                    setSearchParams({ map: activeId }, { replace: true });
+                if (mapParam) {
+                    const matched = parsedMaps.find((m) => m.id === mapParam || m.name === mapParam);
+                    if (matched) {
+                        setSelectedMapId(matched.id);
+                    } else {
+                        setSelectedMapId(null);
+                    }
+                } else {
+                    setSelectedMapId(null);
                 }
             } else {
                 setSelectedMapId(null);
@@ -69,9 +71,14 @@ export function useLogsData() {
     }, [fetchMaps]);
 
     const selectMap = useCallback(
-        (id: string) => {
-            setSelectedMapId(id);
-            setSearchParams({ map: id });
+        (id: string | null) => {
+            if (id) {
+                setSelectedMapId(id);
+                setSearchParams({ map: id });
+            } else {
+                setSelectedMapId(null);
+                setSearchParams({});
+            }
             setActiveIndex(null);
             setHoveredIndex(null);
         },
@@ -232,6 +239,8 @@ export function useLogsData() {
                 extentX: (activeMap.max_x ?? 0) - (activeMap.min_x ?? 0),
                 extentY: (activeMap.max_y ?? 0) - (activeMap.min_y ?? 0),
                 extentZ: (activeMap.max_z ?? 0) - (activeMap.min_z ?? 0),
+                boundingVolumeM3: 0,
+                netDisplacementMeters: 0,
             };
         }
 
@@ -247,6 +256,17 @@ export function useLogsData() {
 
         const firstP = telemetryPoints[0];
         const lastP = telemetryPoints[telemetryPoints.length - 1];
+
+        const extentX = Math.abs((activeMap.max_x ?? 0) - (activeMap.min_x ?? 0));
+        const extentY = Math.abs((activeMap.max_y ?? 0) - (activeMap.min_y ?? 0));
+        const extentZ = Math.abs((activeMap.max_z ?? 0) - (activeMap.min_z ?? 0));
+        const boundingVolumeM3 = extentX * extentY * extentZ;
+
+        const netDisplacementMeters = Math.sqrt(
+            Math.pow(lastP.x - firstP.x, 2) +
+            Math.pow(lastP.y - firstP.y, 2) +
+            Math.pow(lastP.z - firstP.z, 2)
+        );
 
         return {
             mapId: activeMap.id,
@@ -266,9 +286,11 @@ export function useLogsData() {
             avgDepth,
             avgSpeed,
             maxSpeed,
-            extentX: Math.abs((activeMap.max_x ?? 0) - (activeMap.min_x ?? 0)),
-            extentY: Math.abs((activeMap.max_y ?? 0) - (activeMap.min_y ?? 0)),
-            extentZ: Math.abs((activeMap.max_z ?? 0) - (activeMap.min_z ?? 0)),
+            extentX,
+            extentY,
+            extentZ,
+            boundingVolumeM3,
+            netDisplacementMeters,
         };
     }, [activeMap, telemetryPoints]);
 

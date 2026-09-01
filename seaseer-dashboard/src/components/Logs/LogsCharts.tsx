@@ -20,7 +20,6 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
     const [chartMode, setChartMode] = useState<"depth" | "altitude" | "speed" | "distance">("depth");
     const containerRef = useRef<HTMLDivElement>(null);
 
-    // Compute chart dimensions and bounding scales
     const chartData = useMemo(() => {
         if (!points || points.length === 0) return null;
 
@@ -60,14 +59,12 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
         };
     }, [points]);
 
-    // Dimensions
     const svgWidth = 1000;
     const svgHeight = 280;
     const padding = { top: 25, right: 35, bottom: 45, left: 65 };
     const innerWidth = svgWidth - padding.left - padding.right;
     const innerHeight = svgHeight - padding.top - padding.bottom;
 
-    // Coordinate mapping helper
     const getCoords = useCallback(
         (point: ComputedTelemetryPoint) => {
             if (!chartData) return { x: 0, y: 0 };
@@ -101,7 +98,6 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
         [chartData, chartMode, innerWidth, innerHeight, padding.left, padding.top]
     );
 
-    // SVG Path Generator
     const { linePath, areaPath, activeCoord, hoveredCoord } = useMemo(() => {
         if (!points || points.length === 0 || !chartData) {
             return { linePath: "", areaPath: "", activeCoord: null, hoveredCoord: null };
@@ -115,7 +111,6 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             lPath += ` L ${validCoords[i].x.toFixed(2)} ${validCoords[i].y.toFixed(2)}`;
         }
 
-        // Fill down to bottom for altitude/speed/distance, or up to top/bottom for depth
         const baselineY = padding.top + innerHeight;
         const aPath = `${lPath} L ${validCoords[validCoords.length - 1].x.toFixed(2)} ${baselineY} L ${validCoords[0].x.toFixed(2)} ${baselineY} Z`;
 
@@ -125,7 +120,6 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
         return { linePath: lPath, areaPath: aPath, activeCoord: aCoord, hoveredCoord: hCoord };
     }, [points, chartData, getCoords, padding.top, innerHeight, activeIndex, hoveredIndex]);
 
-    // Handle mouse movement over chart
     const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
         if (!points || points.length === 0 || !chartData) return;
         const rect = e.currentTarget.getBoundingClientRect();
@@ -237,7 +231,6 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             </linearGradient>
                         </defs>
 
-                        {/* Background Grid Lines & Y-Axis Labels */}
                         {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
                             const y = padding.top + (1 - ratio) * innerHeight;
                             let label = "";
@@ -273,7 +266,6 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             );
                         })}
 
-                        {/* X-Axis Time Labels & Vertical Grid Lines */}
                         {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
                             const x = padding.left + ratio * innerWidth;
                             const y = padding.top + innerHeight + 20;
@@ -298,7 +290,6 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             );
                         })}
 
-                        {/* Chart Area Fill */}
                         {areaPath && (
                             <path
                                 d={areaPath}
@@ -314,7 +305,6 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             />
                         )}
 
-                        {/* Main Path Stroke */}
                         {linePath && (
                             <path
                                 d={linePath}
@@ -334,7 +324,6 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             />
                         )}
 
-                        {/* Active / Hover Cursor Line */}
                         {(hoveredCoord || activeCoord) && (
                             <line
                                 x1={(hoveredCoord || activeCoord)!.x}
@@ -345,7 +334,6 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             />
                         )}
 
-                        {/* Active / Focused Coordinate Point */}
                         {activeCoord && Number.isFinite(activeCoord.x) && Number.isFinite(activeCoord.y) && (
                             <circle
                                 cx={activeCoord.x}
@@ -355,7 +343,6 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             />
                         )}
 
-                        {/* Hovered Coordinate Point (Only if different from active) */}
                         {hoveredCoord && hoveredIndex !== activeIndex && Number.isFinite(hoveredCoord.x) && Number.isFinite(hoveredCoord.y) && (
                             <circle
                                 cx={hoveredCoord.x}
