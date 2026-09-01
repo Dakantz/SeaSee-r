@@ -8,6 +8,9 @@ export interface GizmoRollRingProps {
     onCameraChange?: () => void;
     className?: string;
     camera?: THREE.Camera;
+    isFixedUp?: boolean;
+    onToggleFixedUp?: () => void;
+    setIsCameraUpFixed?: (fixed: boolean) => void;
 }
 
 // Module-scoped temporary THREE objects to avoid GC thrashing on mouse move
@@ -41,6 +44,9 @@ export const GizmoRollRing: FC<GizmoRollRingProps> = ({
     onCameraChange,
     className = "",
     camera: propCamera,
+    isFixedUp = false,
+    onToggleFixedUp,
+    setIsCameraUpFixed,
 }) => {
     let threeCamera: THREE.Camera | undefined;
     try {
@@ -124,6 +130,10 @@ export const GizmoRollRing: FC<GizmoRollRingProps> = ({
         e.preventDefault();
         e.stopPropagation();
 
+        if (isFixedUp) {
+            setIsCameraUpFixed?.(false);
+        }
+
         const target = e.currentTarget;
         target.setPointerCapture(e.pointerId);
 
@@ -141,6 +151,9 @@ export const GizmoRollRing: FC<GizmoRollRingProps> = ({
         e.preventDefault();
         e.stopPropagation();
 
+        if (isFixedUp) {
+            setIsCameraUpFixed?.(false);
+        }
         const rect = e.currentTarget.getBoundingClientRect();
         const centerX = rect.left + rect.width / 2;
         const centerY = rect.top + rect.height / 2;
@@ -183,6 +196,8 @@ export const GizmoRollRing: FC<GizmoRollRingProps> = ({
     const handleDoubleClick = (e: MouseEvent<SVGCircleElement>) => {
         e.preventDefault();
         e.stopPropagation();
+
+        onToggleFixedUp?.();
 
         if (camera) {
             camera.getWorldDirection(_forward);
@@ -241,7 +256,7 @@ export const GizmoRollRing: FC<GizmoRollRingProps> = ({
 
                 {/* Interaction & visual track */}
                 <circle
-                    className={`gizmo-roll-ring-track ${isDragging ? "gizmo-roll-ring-track--active" : ""}`}
+                    className={`gizmo-roll-ring-track ${isDragging ? "gizmo-roll-ring-track--active" : ""} ${isFixedUp ? "gizmo-roll-ring-track--fixed" : ""}`.trim()}
                     cx={center}
                     cy={center}
                     r={radius}
@@ -255,7 +270,9 @@ export const GizmoRollRing: FC<GizmoRollRingProps> = ({
                     onMouseLeave={() => setIsHovered(false)}
                     onDoubleClick={handleDoubleClick}
                 >
-                    <title>Drag to rotate camera view axis • Double click to reset roll</title>
+                    <title>
+                        {`Drag to rotate camera view axis • Double click to toggle +Z camera UP mode (${isFixedUp ? "Fixed +Z" : "Free rotate"})`}
+                    </title>
                 </circle>
 
                 {/* Indicator handle dot */}
@@ -263,7 +280,7 @@ export const GizmoRollRing: FC<GizmoRollRingProps> = ({
                     cx={handleX}
                     cy={handleY}
                     r="4"
-                    fill="#00e5ff"
+                    fill={isFixedUp ? "#00ff66" : "#00e5ff"}
                     stroke="#ffffff"
                     strokeWidth="1.5"
                     style={{ pointerEvents: "none" }}
@@ -273,7 +290,7 @@ export const GizmoRollRing: FC<GizmoRollRingProps> = ({
             {/* Hover / drag tooltip */}
             {showTooltip && (
                 <div className="gizmo-roll-ring-tooltip" style={{ display: "block" }}>
-                    Roll: {signedDeg}° (Double-click to reset)
+                    Roll: {signedDeg}° {isFixedUp ? "(Fixed +Z Up)" : "(Free Rotate)"}
                 </div>
             )}
         </div>

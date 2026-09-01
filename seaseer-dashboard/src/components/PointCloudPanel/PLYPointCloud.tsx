@@ -390,6 +390,7 @@ function DBCameraTrajectoryDisplay() {
         summaryMap,
         mode,
         setCameraView,
+        setIsCameraUpFixed,
     } = usePLYPointCloudContext();
 
     const displayedKeys = useMemo(() => {
@@ -427,6 +428,8 @@ function DBCameraTrajectoryDisplay() {
         if (sample.filename) {
             console.log("Clicked trajectory point filename:", sample.filename);
         }
+
+        setIsCameraUpFixed(false);
 
         // Compute 3D camera position and orientation directly for native Z-up
         const routeOffset = new THREE.Vector3(...routePosition);
@@ -475,7 +478,7 @@ function DBCameraTrajectoryDisplay() {
             quaternion: [worldQuat.x, worldQuat.y, worldQuat.z, worldQuat.w],
             fov: fovDeg,
         });
-    }, [headerMap, setCameraView]);
+    }, [headerMap, setCameraView, setIsCameraUpFixed]);
 
     if (!showCameraTrajectories || displayedKeys.length === 0) return null;
 

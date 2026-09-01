@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 import { useThree, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { ViewportGizmo } from "three-viewport-gizmo";
@@ -11,8 +11,9 @@ const TARGET_Y = -5522707.795739262;
 
 export function ViewportGizmoHelper() {
     const { camera, gl } = useThree();
-    const { setIsGizmoDragging, cameraTarget } = usePLYPointCloudContext();
+    const { setIsGizmoDragging, cameraTarget, isCameraUpFixed, setIsCameraUpFixed, toggleCameraUpFixed } = usePLYPointCloudContext();
     const gizmoRef = useRef<ViewportGizmo | null>(null);
+    const overlayRootRef = useRef<Root | null>(null);
 
     useEffect(() => {
         if (!camera || !gl) return;
@@ -27,9 +28,7 @@ export function ViewportGizmoHelper() {
             offset: {
                 top: 25,
                 right: 25,
-            },
-            y: { label: "Z" },
-            z: { label: "Y" },
+            }
         });
 
         gizmo.target.set(TARGET_X, TARGET_Y, 0);
@@ -96,7 +95,7 @@ export function ViewportGizmoHelper() {
         };
     }, [camera, gl, setIsGizmoDragging]);
 
-    // Declarative GizmoRollRing Overlay via ReactDOM createRoot on fixed 2D DOM container
+    // Declarative GizmoRollRing Overlay via persistent ReactDOM Root container
     useEffect(() => {
         if (!gl || !camera) return;
         const container = gl.domElement.parentElement || document.body;
@@ -111,21 +110,31 @@ export function ViewportGizmoHelper() {
         container.appendChild(overlayDiv);
 
         const root = createRoot(overlayDiv);
-        root.render(
-            <GizmoRollRing
-                camera={camera}
-                onDragStateChange={setIsGizmoDragging}
-                onCameraChange={() => gizmoRef.current?.cameraUpdate()}
-            />
-        );
+        overlayRootRef.current = root;
 
         return () => {
             setTimeout(() => {
                 root.unmount();
                 overlayDiv.remove();
+                overlayRootRef.current = null;
             }, 0);
         };
-    }, [camera, gl, setIsGizmoDragging]);
+    }, [camera, gl]);
+
+    // Update GizmoRollRing render in-place without unmounting/remounting DOM nodes
+    useEffect(() => {
+        if (!overlayRootRef.current || !camera) return;
+        overlayRootRef.current.render(
+            <GizmoRollRing
+                camera={camera}
+                isFixedUp={isCameraUpFixed}
+                onToggleFixedUp={toggleCameraUpFixed}
+                setIsCameraUpFixed={setIsCameraUpFixed}
+                onDragStateChange={setIsGizmoDragging}
+                onCameraChange={() => gizmoRef.current?.cameraUpdate()}
+            />
+        );
+    }, [camera, isCameraUpFixed, toggleCameraUpFixed, setIsCameraUpFixed, setIsGizmoDragging]);
 
     useEffect(() => {
         if (gizmoRef.current) {

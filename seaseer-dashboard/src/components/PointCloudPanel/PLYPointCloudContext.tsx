@@ -84,6 +84,11 @@ export interface PLYPointCloudContextType {
     setSummaryMap: React.Dispatch<React.SetStateAction<Record<string, QuerySummaryData>>>;
     fetchQuerySummary: (queryId: string, filters?: FilterRule[], lod?: number) => Promise<QuerySummaryData | null>;
 
+    // Camera UP position lock state
+    isCameraUpFixed: boolean;
+    setIsCameraUpFixed: React.Dispatch<React.SetStateAction<boolean>>;
+    toggleCameraUpFixed: () => void;
+
     // Pointcloud Transform Edit State
     editingPointcloudId: string | null;
     setEditingPointcloudId: (id: string | null) => void;
@@ -176,6 +181,11 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [editingPointcloudId, setEditingPointcloudId] = useState<string | null>(null);
     const [gizmoMode, setGizmoMode] = useState<"translate" | "rotate" | "scale" | null>(null);
     const [isGizmoDragging, setIsGizmoDragging] = useState<boolean>(false);
+    const [isCameraUpFixed, setIsCameraUpFixed] = useState<boolean>(true);
+
+    const toggleCameraUpFixed = useCallback(() => {
+        setIsCameraUpFixed((prev) => !prev);
+    }, []);
 
     const setCameraView = useCallback((view: Omit<CameraViewTarget, "timestamp">) => {
         setCameraViewTargetState({
@@ -609,6 +619,9 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 updatePointcloudTransform,
                 isGizmoDragging,
                 setIsGizmoDragging,
+                isCameraUpFixed,
+                setIsCameraUpFixed,
+                toggleCameraUpFixed,
             }}
         >
             {children}

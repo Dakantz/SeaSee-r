@@ -16,6 +16,7 @@ const _tmpVecForward = new THREE.Vector3();
 const _tmpVecRight = new THREE.Vector3();
 const _tmpVecUp = new THREE.Vector3();
 const _tmpVecDir = new THREE.Vector3();
+const _tmpQuat = new THREE.Quaternion();
 
 export interface FocusTarget {
     x: number;
@@ -26,6 +27,7 @@ export interface FocusTarget {
 }
 
 export class CameraMovementController {
+    public isFixedUp: boolean = false;
     private camera: THREE.Camera;
     private domElement: HTMLElement | null = null;
     private getIsGizmoDragging: () => boolean;
@@ -290,16 +292,35 @@ export class CameraMovementController {
             // Left click: Rotate around current camera position using quaternions
             const rotateSpeed = 0.003;
 
-            // 1. Yaw rotation around local camera Up-axis
-            const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(this.camera.quaternion).normalize();
-            _qYaw.setFromAxisAngle(up, -deltaX * rotateSpeed);
+            if (this.isFixedUp) {
+                // Fixed +Z Up mode: Yaw around global +Z axis, Pitch around local Right axis
+                const worldUp = _tmpVecUp.set(0, 0, 1);
+                _qYaw.setFromAxisAngle(worldUp, -deltaX * rotateSpeed);
 
-            // 2. Pitch rotation around local camera Right-axis
-            const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(this.camera.quaternion).normalize();
-            _qPitch.setFromAxisAngle(right, -deltaY * rotateSpeed);
+                const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(this.camera.quaternion).normalize();
+                _qPitch.setFromAxisAngle(right, -deltaY * rotateSpeed);
 
-            // Apply pitch then yaw to camera quaternion
-            this.camera.quaternion.premultiply(_qPitch).premultiply(_qYaw).normalize();
+                const candidateQuat = _tmpQuat.copy(this.camera.quaternion).premultiply(_qPitch).premultiply(_qYaw).normalize();
+                const candidateUpZ = _tmpVecUp.set(0, 1, 0).applyQuaternion(candidateQuat).z;
+
+                if (candidateUpZ >= 0.001) {
+                    this.camera.quaternion.copy(candidateQuat);
+                } else {
+                    const yawOnlyQuat = _tmpQuat.copy(this.camera.quaternion).premultiply(_qYaw).normalize();
+                    if (_tmpVecUp.set(0, 1, 0).applyQuaternion(yawOnlyQuat).z >= 0.001) {
+                        this.camera.quaternion.copy(yawOnlyQuat);
+                    }
+                }
+            } else {
+                // Free rotating mode (default): Yaw around local camera Up-axis
+                const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(this.camera.quaternion).normalize();
+                _qYaw.setFromAxisAngle(up, -deltaX * rotateSpeed);
+
+                const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(this.camera.quaternion).normalize();
+                _qPitch.setFromAxisAngle(right, -deltaY * rotateSpeed);
+
+                this.camera.quaternion.premultiply(_qPitch).premultiply(_qYaw).normalize();
+            }
         } else if (this.dragButton === 2 || this.dragButton === 1) {
             // Right or middle click: Pan camera position
             const heightFactor = getHeightFactor(this.camera.position.z);
@@ -371,13 +392,19 @@ export class CameraMovementController {
  */
 export function CameraMovementSystem() {
     const { camera, gl } = useThree();
-    const { isGizmoDragging, cameraTarget, cameraViewTarget } = usePLYPointCloudContext();
+    const { isGizmoDragging, cameraTarget, cameraViewTarget, isCameraUpFixed } = usePLYPointCloudContext();
 
     const controllerRef = useRef<CameraMovementController | null>(null);
 
     if (!controllerRef.current) {
         controllerRef.current = new CameraMovementController(camera, () => isGizmoDragging);
     }
+
+    useEffect(() => {
+        if (controllerRef.current) {
+            controllerRef.current.isFixedUp = isCameraUpFixed;
+        }
+    }, [isCameraUpFixed]);
 
     useEffect(() => {
         controllerRef.current?.updateIsGizmoDraggingGetter(() => isGizmoDragging);

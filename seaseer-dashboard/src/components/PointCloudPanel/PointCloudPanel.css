@@ -74,6 +74,11 @@
     cursor: grabbing !important;
 }
 
+.gizmo-roll-ring-track--fixed {
+    stroke: rgba(0, 255, 102, 0.6);
+    filter: drop-shadow(0 0 6px rgba(0, 255, 102, 0.5));
+}
+
 .gizmo-roll-ring-notch {
     pointer-events: none;
     stroke: rgba(255, 255, 255, 0.4);
