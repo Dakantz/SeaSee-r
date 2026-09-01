@@ -17,6 +17,7 @@ function App() {
             <Toolbar />
             <Routes>
                 <Route path="/" element={<Workspace />} />
+                <Route path="/logs" element={<LogsPage />} />
                 <Route path="/example-diagnostics" element={<ExampleDiagnostics />} />
                 <Route path="/video-upload-test" element={<VideoUploadTestPage />} />
                 <Route path="/pointcloud-upload-test" element={<PointCloudUploadTestPage />} />
