@@ -620,7 +620,6 @@ interface FetchTask {
 const W0_BASE_CELL_WIDTH = 0.25;
 const MAX_CONCURRENT_FETCHES = 100;
 const MOVEMENT_THRESHOLD_SQ = 0.025;
-const SHOW_OUTLINES = false
 
 function DynamicCubicLODController() {
     const { camera } = useThree();
@@ -631,6 +630,7 @@ function DynamicCubicLODController() {
         renderMode,
         wireframe,
         pointSize,
+        showOutlines,
     } = usePLYPointCloudContext();
 
     const [chunksMap, setChunksMap] = useState<Map<string, ChunkSlotData>>(new Map());
@@ -913,7 +913,7 @@ function DynamicCubicLODController() {
     return (
         <group>
             {Array.from(chunksMap.values()).map((chunk) => {
-                if (!chunk.geometry && (!SHOW_OUTLINES || !chunk.bounds)) return null;
+                if (!chunk.geometry && (!showOutlines || !chunk.bounds)) return null;
                 return (
                     <group key={chunk.key}>
                         {chunk.geometry && (
@@ -939,7 +939,7 @@ function DynamicCubicLODController() {
                         )}
 
                         {/* Spatial Chunk Bounding Cube Outer Wireframe Visualizer */}
-                        {SHOW_OUTLINES && chunk.bounds && (
+                        {showOutlines && chunk.bounds && (
                             <group
                                 position={[
                                     (chunk.bounds.minX + chunk.bounds.maxX) / 2,

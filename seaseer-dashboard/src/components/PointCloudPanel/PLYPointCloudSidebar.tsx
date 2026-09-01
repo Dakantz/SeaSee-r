@@ -29,6 +29,8 @@ export interface PLYPointCloudSidebarProps {
     setHemisphereLightIntensity?: (val: number) => void;
     ambientLightIntensity?: number;
     setAmbientLightIntensity?: (val: number) => void;
+    showOutlines?: boolean;
+    setShowOutlines?: (show: boolean) => void;
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -66,6 +68,8 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const setHemisphereLightIntensity = props.setHemisphereLightIntensity ?? contextState?.setHemisphereLightIntensity ?? (() => {});
     const ambientLightIntensity = props.ambientLightIntensity ?? contextState?.ambientLightIntensity ?? 0.4;
     const setAmbientLightIntensity = props.setAmbientLightIntensity ?? contextState?.setAmbientLightIntensity ?? (() => {});
+    const showOutlines = props.showOutlines ?? contextState?.showOutlines ?? false;
+    const setShowOutlines = props.setShowOutlines ?? contextState?.setShowOutlines ?? (() => {});
 
     const [datasets, setDatasets] = useState<PointCloudMetadataResponse[]>([]);
     const [searchQuery, setSearchQuery] = useState<string>("");
@@ -216,6 +220,16 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                         />
                     </div>
                 )}
+
+                <label className="pointcloud-sidebar__checkbox-label" style={{ marginTop: "8px" }}>
+                    <input
+                        type="checkbox"
+                        checked={showOutlines}
+                        onChange={(e) => setShowOutlines(e.target.checked)}
+                        className="pointcloud-sidebar__checkbox"
+                    />
+                    Show Chunk Outlines
+                </label>
 
                 {/* Geo-Three Heightmap Controls */}
                 <div className="pointcloud-sidebar__dashed-divider">
