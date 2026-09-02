@@ -6,9 +6,10 @@ This document records the performance benchmark for rendering 3D point clouds wi
 ## Test Parameters
 - **Test Target:** Point cloud rendering without Three.js instancing
 - **Component File:** `PLYPointCloud.tsx`
-- **Start Camera Position:** `(10, -100, 10)`
-- **End Camera Position:** `(10, 100, -10)`
+- **Total Pointcloud pointcount\*:** `98,441,860 pts`
 - **Target Duration:** 30 seconds
+
+\* Not all points are rendered. Based on distance to camera different LODs are used.
 
 ## Benchmark Results
 
