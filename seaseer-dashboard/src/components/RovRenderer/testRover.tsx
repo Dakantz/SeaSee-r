@@ -128,14 +128,15 @@ export default function TestRover() {
 
             <Canvas
                 camera={{
-                    position: [0, 30, 120],
+                    position: [0, -120, 30],
+                    up: [0, 0, 1],
                     fov: 50,
                 }}
             >
                 <ambientLight intensity={1.5} />
 
                 <directionalLight
-                    position={[5, 10, 5]}
+                    position={[5, -5, 10]}
                     intensity={2}
                 />
 

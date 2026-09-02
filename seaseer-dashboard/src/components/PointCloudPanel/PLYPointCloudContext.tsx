@@ -15,6 +15,13 @@ export interface AddCustomQueryPayload {
     filters?: FilterRule[];
 }
 
+export interface CameraViewTarget {
+    position: [number, number, number];
+    quaternion?: [number, number, number, number];
+    fov?: number;
+    timestamp: number;
+}
+
 export interface PLYPointCloudContextType {
     mode: "binary" | "plyFile" | "plyUrl";
     setMode: (mode: "binary" | "plyFile" | "plyUrl") => void;
@@ -66,6 +73,8 @@ export interface PLYPointCloudContextType {
     hoverPointcloud: (id: string | null) => void;
     cameraTarget: { x: number; y: number; z: number; offset?: [number, number, number] | number; timestamp: number } | null;
     focusCameraTarget: (target: [number, number, number] | { x: number; y: number; z: number }, offset?: [number, number, number] | number) => void;
+    cameraViewTarget: CameraViewTarget | null;
+    setCameraView: (view: Omit<CameraViewTarget, "timestamp">) => void;
     loadedGeometries: Map<string, THREE.BufferGeometry>;
     loadingIds: Set<string>;
     isStreamLoaded: (queryId: string) => boolean;
@@ -153,6 +162,14 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [showCameraTrajectories, setShowCameraTrajectories] = useState<boolean>(true);
     const [summaryMap, setSummaryMap] = useState<Record<string, QuerySummaryData>>({});
     const [cameraTarget, setCameraTarget] = useState<{ x: number; y: number; z: number; offset?: [number, number, number] | number; timestamp: number } | null>(null);
+    const [cameraViewTarget, setCameraViewTargetState] = useState<CameraViewTarget | null>(null);
+
+    const setCameraView = useCallback((view: Omit<CameraViewTarget, "timestamp">) => {
+        setCameraViewTargetState({
+            ...view,
+            timestamp: Date.now(),
+        });
+    }, []);
 
     // Custom Queries state persisted to localStorage
     const [queries, setQueries] = useState<CustomQuery[]>(() => {
@@ -471,6 +488,8 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 hoverPointcloud,
                 cameraTarget,
                 focusCameraTarget,
+                cameraViewTarget,
+                setCameraView,
                 loadedGeometries,
                 loadingIds,
                 isStreamLoaded,

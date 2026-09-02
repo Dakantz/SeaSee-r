@@ -50,7 +50,7 @@ Retrieves all camera metadata headers linked to the specified point cloud datase
 
 ### 2. `GET /pointclouds/{identifier}/camera-routes`
 
-Retrieves all camera frames for all camera headers linked to the specified point cloud dataset, ordered by frame `timestamp` ascending.
+Retrieves all camera frames for all camera headers linked to the specified point cloud dataset, ordered by frame `timestamp` ascending, and secondarily by `filename` ascending when timestamps are equal.
 
 - **Path**: `/pointclouds/{identifier}/camera-routes`
 - **HTTP Method**: `GET`
@@ -70,6 +70,7 @@ Retrieves all camera frames for all camera headers linked to the specified point
     "timestamp": 1690000000000,
     "position": [-12.34, 5.67, 102.89],
     "direction": [0.0, 0.7071, -0.7071],
+    "rotation": [0.0, 0.7071, 0.0, 0.7071],
     "relative_time": 0.0,
     "filename": "frame_0001.jpg"
   },
@@ -79,6 +80,7 @@ Retrieves all camera frames for all camera headers linked to the specified point
     "timestamp": 1690000033000,
     "position": [-12.10, 5.80, 102.95],
     "direction": [0.01, 0.7070, -0.7071],
+    "rotation": [0.0, 0.7071, 0.0, 0.7071],
     "relative_time": 0.033,
     "filename": "frame_0002.jpg"
   }
@@ -130,6 +132,7 @@ The camera data model and point cloud metadata are linked to video recordings:
 │ • timestamp (BigInt)    │
 │ • position (Geometry)   │ ◄── PostGIS POINTZ (3D Position)
 │ • direction (Geometry)  │ ◄── PostGIS POINTZ (3D Direction)
+│ • rotation (ARRAY Float)│ ◄── Three.js Unit Quaternion [x, y, z, w]
 │ • relative_time (Float) │
 │ • filename (String)     │
 └─────────────────────────┘

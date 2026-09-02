@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import { generateDelaunayTerrainMesh } from "./utils/delaunayTriangulation";
 import { TrajectoryRenderer } from "../RovRenderer/trajectoryRenderer";
+import { fetchBinaryGeometry } from "./utils/pointCloudLoader";
+import type { FilterRule } from "./utils/filterUtils";
 
 export { CustomQueryManager, PointCloudList } from "./CustomQueryManager";
 export { CustomQueryManagerContainer, PointCloudListContainer } from "./CustomQueryManagerContainer";
@@ -73,7 +75,7 @@ if (MapHeightNode.prototype.loadHeightGeometry) {
 }
 
 const TARGET_X = 1622520.9730428709;
-const TARGET_Z = -5522707.795739262;
+const TARGET_Y = -5522707.795739262;
 
 function SceneLighting() {
     const {
@@ -104,20 +106,20 @@ function SceneLighting() {
             <ambientLight intensity={ambientLightIntensity} />
 
             {/* Target object for directional lights */}
-            <object3D ref={targetRef} position={[TARGET_X, 0, TARGET_Z]} />
+            <object3D ref={targetRef} position={[TARGET_X, TARGET_Y, 0]} />
 
             {/* Hemisphere light to create natural sky/ground vertical gradient */}
             <hemisphereLight
                 color="#ffffff"
                 groundColor="#334455"
                 intensity={hemisphereLightIntensity}
-                position={[TARGET_X, 10000, TARGET_Z]}
+                position={[TARGET_X, TARGET_Y, 10000]}
             />
 
             {/* Main directional key light angled from North-West to produce cartographic hillshading */}
             <directionalLight
                 ref={keyLightRef}
-                position={[TARGET_X - 5000, 8000, TARGET_Z - 5000]}
+                position={[TARGET_X - 5000, TARGET_Y + 5000, 8000]}
                 intensity={keyLightIntensity}
                 color="#ffffff"
             />
@@ -125,7 +127,7 @@ function SceneLighting() {
             {/* Secondary fill light angled from South-East to soften deep shadows */}
             <directionalLight
                 ref={fillLightRef}
-                position={[TARGET_X + 5000, 4000, TARGET_Z + 5000]}
+                position={[TARGET_X + 5000, TARGET_Y - 5000, 4000]}
                 intensity={fillLightIntensity}
                 color="#cce0ff"
             />
@@ -133,12 +135,12 @@ function SceneLighting() {
     );
 }
 
-function getHeightFactor(y: number): number {
-    return y > 0
-        ? Math.max(0.1, y / 1000)
-        : Math.max(0.0001, 0.1 * Math.exp(y / 1000));
+function getHeightFactor(z: number): number {
+    return Math.max(0.1, Math.abs(z) / 1000);
 }
 
+const _qYaw = new THREE.Quaternion();
+const _qPitch = new THREE.Quaternion();
 const _tmpVecForward = new THREE.Vector3();
 const _tmpVecRight = new THREE.Vector3();
 const _tmpVecUp = new THREE.Vector3();
@@ -152,14 +154,13 @@ function CameraPositionControls() {
     const isDragging = useRef(false);
     const dragButton = useRef<number | null>(null);
     const previousMouse = useRef({ x: 0, y: 0 });
-    const euler = useRef(new THREE.Euler(0, 0, 0, "YXZ"));
     const keysPressed = useRef<{ [key: string]: boolean }>({});
 
     const initialized = useRef(false);
     useEffect(() => {
         if (!initialized.current) {
-            camera.lookAt(TARGET_X, 0, TARGET_Z);
-            euler.current.setFromQuaternion(camera.quaternion, "YXZ");
+            camera.up.set(0, 0, 1);
+            camera.lookAt(TARGET_X, TARGET_Y, 0);
             initialized.current = true;
         }
     }, [camera]);
@@ -171,7 +172,6 @@ function CameraPositionControls() {
             isDragging.current = true;
             dragButton.current = e.button;
             previousMouse.current = { x: e.clientX, y: e.clientY };
-            euler.current.setFromQuaternion(camera.quaternion, "YXZ");
         };
 
         const onPointerMove = (e: PointerEvent) => {
@@ -182,24 +182,29 @@ function CameraPositionControls() {
             previousMouse.current = { x: e.clientX, y: e.clientY };
 
             if (dragButton.current === 0) {
-                // Left click: Rotate around current camera position
+                // Left click: Rotate around current camera position using quaternions
                 const rotateSpeed = 0.003;
-                euler.current.y -= deltaX * rotateSpeed;
-                euler.current.x -= deltaY * rotateSpeed;
 
-                const maxPitch = Math.PI / 2 - 0.01;
-                euler.current.x = Math.max(-maxPitch, Math.min(maxPitch, euler.current.x));
+                // 1. Yaw rotation around local camera Up-axis
+                const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+                _qYaw.setFromAxisAngle(up, -deltaX * rotateSpeed);
 
-                camera.quaternion.setFromEuler(euler.current);
+                // 2. Pitch rotation around local camera Right-axis
+                const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+                _qPitch.setFromAxisAngle(right, -deltaY * rotateSpeed);
+
+                // Apply pitch then yaw to camera quaternion
+                camera.quaternion.premultiply(_qPitch).premultiply(_qYaw).normalize();
+                // camera.up.set(0, 0, 1);
             } else if (dragButton.current === 2 || dragButton.current === 1) {
                 // Right or middle click: Pan camera position
-                const heightFactor = getHeightFactor(camera.position.y);
+                const heightFactor = getHeightFactor(camera.position.z);
                 const panSpeed = 2.0 * heightFactor;
                 const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
                 const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
 
-                right.y = 0;
-                up.y = 0;
+                right.z = 0;
+                up.z = 0;
                 if (right.lengthSq() > 0) right.normalize();
                 if (up.lengthSq() > 0) up.normalize();
 
@@ -215,7 +220,7 @@ function CameraPositionControls() {
 
         const onWheel = (e: WheelEvent) => {
             e.preventDefault();
-            const heightFactor = getHeightFactor(camera.position.y);
+            const heightFactor = getHeightFactor(camera.position.z);
             const zoomSpeed = 1.0 * heightFactor;
             camera.getWorldDirection(_tmpVecDir);
 
@@ -268,11 +273,12 @@ function CameraPositionControls() {
         if (!keys) return;
 
         const isShift = keys["ShiftLeft"];
-        const heightFactor = getHeightFactor(camera.position.y);
+        const heightFactor = getHeightFactor(camera.position.z);
         const moveSpeed = (isShift ? 3000 : 800) * heightFactor * delta;
 
         camera.getWorldDirection(_tmpVecForward);
         const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+        const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
 
         if (keys["KeyW"]) {
             camera.position.addScaledVector(_tmpVecForward, moveSpeed);
@@ -287,10 +293,10 @@ function CameraPositionControls() {
             camera.position.addScaledVector(right, moveSpeed);
         }
         if (keys["KeyE"]) {
-            camera.position.y += moveSpeed;
+            camera.position.addScaledVector(up, moveSpeed);
         }
         if (keys["KeyQ"]) {
-            camera.position.y -= moveSpeed;
+            camera.position.addScaledVector(up, -moveSpeed);
         }
     });
 
@@ -379,14 +385,29 @@ function GeoThreeHeightmap() {
                 1,
                 UnitsUtils.EARTH_PERIMETER
             );
-            // eslint-disable-next-line react-hooks/refs
-            mapViewRef.current = map;
+            map.rotation.x = Math.PI / 2;
             return map;
         } catch (err) {
             console.error("Failed to initialize GeoThree MapView:", err);
             return null;
         }
     }, [showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider]);
+
+    useEffect(() => {
+        mapViewRef.current = mapView;
+        return () => {
+            if (mapView) {
+                if (mapView.root?.dispose) {
+                    mapView.root.dispose();
+                }
+                mapView.traverse((child: any) => {
+                    if (child !== mapView && typeof child.dispose === "function") {
+                        child.dispose();
+                    }
+                });
+            }
+        };
+    }, [mapView]);
 
     useFrame(({ camera, gl, scene }) => {
         if (mapViewRef.current?.lod) {
@@ -442,19 +463,17 @@ function PointCloudCenterMarkers() {
     const dummy = useMemo(() => new THREE.Object3D(), []);
 
     useEffect(() => {
-        if (meshRef.current && meshRef.current.geometry) {
+        if (!meshRef.current || queries.length === 0) return;
+
+        if (meshRef.current.geometry) {
             meshRef.current.geometry.boundingSphere = new THREE.Sphere(
                 new THREE.Vector3(0, 0, 0),
                 Infinity
             );
         }
-    }, [queries]);
-
-    useFrame(() => {
-        if (!meshRef.current || queries.length === 0) return;
 
         queries.forEach((query, index) => {
-            const [cx, cy, cz] = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, 0, TARGET_Z];
+            const [cx, cy, cz] = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, TARGET_Y, 0];
 
             const isHovered = query.id === hoveredId;
 
@@ -474,7 +493,7 @@ function PointCloudCenterMarkers() {
         if (meshRef.current.instanceColor) {
             meshRef.current.instanceColor.needsUpdate = true;
         }
-    });
+    }, [queries, summaryMap, hoveredId, dummy]);
 
     if (queries.length === 0) return null;
 
@@ -489,7 +508,6 @@ function PointCloudCenterMarkers() {
         <instancedMesh
             ref={meshRef}
             args={[undefined, undefined, queries.length]}
-            rotation={[-Math.PI / 2, 0, 0]}
             onClick={(e) => {
                 e.stopPropagation();
                 if (e.instanceId !== undefined && queries[e.instanceId]) {
@@ -502,7 +520,7 @@ function PointCloudCenterMarkers() {
                 if (e.instanceId !== undefined && queries[e.instanceId]) {
                     const query = queries[e.instanceId];
                     handleLoadQuery(query);
-                    const center = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, 0, TARGET_Z];
+                    const center = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, TARGET_Y, 0];
                     focusCameraTarget(center);
                 }
             }}
@@ -525,9 +543,11 @@ function PointCloudCenterMarkers() {
     );
 }
 
+import type { PositionSample } from "../TelemetoryPanel/TelemetryPositionReader";
+
 function CameraFocusController() {
     const { camera, gl } = useThree();
-    const { cameraTarget } = usePLYPointCloudContext();
+    const { cameraTarget, cameraViewTarget } = usePLYPointCloudContext();
 
     const animState = useRef<{
         startTime: number;
@@ -537,17 +557,29 @@ function CameraFocusController() {
         targetCenter: THREE.Vector3;
     } | null>(null);
 
+    const viewAnimState = useRef<{
+        startTime: number;
+        duration: number;
+        startPos: THREE.Vector3;
+        targetPos: THREE.Vector3;
+        startQuat: THREE.Quaternion;
+        targetQuat: THREE.Quaternion;
+        startFov: number;
+        targetFov: number;
+    } | null>(null);
+
     const startFocusAnimation = useCallback((targetCenter: THREE.Vector3, customOffset?: [number, number, number] | number) => {
-        let offsetVec = new THREE.Vector3(0, 150, 150);
+        let offsetVec = new THREE.Vector3(0, -150, 150);
         if (customOffset !== undefined) {
             if (Array.isArray(customOffset)) {
                 offsetVec = new THREE.Vector3(...customOffset);
             } else if (typeof customOffset === "number") {
-                offsetVec = new THREE.Vector3(0, customOffset, customOffset);
+                offsetVec = new THREE.Vector3(0, -customOffset, customOffset);
             }
         }
         const targetCamPos = targetCenter.clone().add(offsetVec);
 
+        viewAnimState.current = null;
         animState.current = {
             startTime: performance.now() / 1000,
             duration: 0.6,
@@ -561,12 +593,39 @@ function CameraFocusController() {
         if (!cameraTarget) return;
         const { x, y, z, offset } = cameraTarget;
         if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
-            const targetCenter = new THREE.Vector3(x, y, z).applyEuler(
-                new THREE.Euler(-Math.PI / 2, 0, 0)
-            );
+            const targetCenter = new THREE.Vector3(x, y, z);
             startFocusAnimation(targetCenter, offset);
         }
     }, [cameraTarget, startFocusAnimation]);
+
+    useEffect(() => {
+        if (!cameraViewTarget) return;
+        const { position, quaternion, fov } = cameraViewTarget;
+        const targetPos = new THREE.Vector3(...position);
+
+        let targetQuat: THREE.Quaternion;
+        if (quaternion && quaternion.length === 4) {
+            targetQuat = new THREE.Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
+        } else {
+            targetQuat = camera.quaternion.clone();
+        }
+
+        const perspCam = camera as THREE.PerspectiveCamera;
+        const startFov = perspCam.fov ?? 60;
+        const targetFov = fov ?? startFov;
+
+        animState.current = null;
+        viewAnimState.current = {
+            startTime: performance.now() / 1000,
+            duration: 0.6,
+            startPos: camera.position.clone(),
+            targetPos,
+            startQuat: camera.quaternion.clone(),
+            targetQuat,
+            startFov,
+            targetFov,
+        };
+    }, [cameraViewTarget, camera]);
 
     useEffect(() => {
         const domElement = gl.domElement;
@@ -574,6 +633,9 @@ function CameraFocusController() {
         const stopAnimation = () => {
             if (animState.current) {
                 animState.current = null;
+            }
+            if (viewAnimState.current) {
+                viewAnimState.current = null;
             }
         };
 
@@ -587,8 +649,7 @@ function CameraFocusController() {
                 return;
             }
             const navKeys = [
-                "KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "Space",
-                "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"
+                "KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE"
             ];
             if (navKeys.includes(e.code)) {
                 stopAnimation();
@@ -609,22 +670,51 @@ function CameraFocusController() {
     }, [gl]);
 
     useFrame(() => {
-        if (!animState.current) return;
+        if (animState.current) {
+            const { startTime, duration, startPos, targetCamPos, targetCenter } = animState.current;
+            const now = performance.now() / 1000;
+            const elapsed = now - startTime;
+            const progress = Math.min(1, elapsed / duration);
+            const easeT = 1 - Math.pow(1 - progress, 3);
 
-        const { startTime, duration, startPos, targetCamPos, targetCenter } = animState.current;
-        const now = performance.now() / 1000;
-        const elapsed = now - startTime;
-        const progress = Math.min(1, elapsed / duration);
-
-        const easeT = 1 - Math.pow(1 - progress, 3);
-
-        camera.position.lerpVectors(startPos, targetCamPos, easeT);
-        camera.lookAt(targetCenter);
-
-        if (progress >= 1) {
-            camera.position.copy(targetCamPos);
+            camera.position.lerpVectors(startPos, targetCamPos, easeT);
+            camera.up.set(0, 0, 1);
             camera.lookAt(targetCenter);
-            animState.current = null;
+
+            if (progress >= 1) {
+                camera.position.copy(targetCamPos);
+                camera.up.set(0, 0, 1);
+                camera.lookAt(targetCenter);
+                animState.current = null;
+            }
+            return;
+        }
+
+        if (viewAnimState.current) {
+            const { startTime, duration, startPos, targetPos, startQuat, targetQuat, startFov, targetFov } = viewAnimState.current;
+            const now = performance.now() / 1000;
+            const elapsed = now - startTime;
+            const progress = Math.min(1, elapsed / duration);
+            const easeT = 1 - Math.pow(1 - progress, 3);
+
+            camera.position.lerpVectors(startPos, targetPos, easeT);
+            camera.quaternion.slerpQuaternions(startQuat, targetQuat, easeT);
+
+            const perspCam = camera as THREE.PerspectiveCamera;
+            if (perspCam.fov !== undefined && startFov !== targetFov) {
+                perspCam.fov = THREE.MathUtils.lerp(startFov, targetFov, easeT);
+                perspCam.updateProjectionMatrix();
+            }
+
+            if (progress >= 1) {
+                camera.position.copy(targetPos);
+                camera.quaternion.copy(targetQuat);
+                if (perspCam.fov !== undefined && targetFov) {
+                    perspCam.fov = targetFov;
+                    perspCam.updateProjectionMatrix();
+                }
+                viewAnimState.current = null;
+            }
         }
     });
 
@@ -638,6 +728,7 @@ function DBCameraTrajectoryDisplay() {
         loadingIds,
         summaryMap,
         mode,
+        setCameraView,
     } = usePLYPointCloudContext();
 
     const displayedKeys = useMemo(() => {
@@ -652,6 +743,78 @@ function DBCameraTrajectoryDisplay() {
         }
         return Array.from(keys);
     }, [loadedGeometries, loadingIds]);
+
+    const headerMap = useMemo(() => {
+        const map = new Map<string, { id: string; focal?: number | null; width?: number | null; height?: number | null }>();
+        if (summaryMap) {
+            Object.values(summaryMap).forEach((summary) => {
+                if (summary?.connected_camera_headers) {
+                    summary.connected_camera_headers.forEach((h) => {
+                        if (h && h.id) {
+                            map.set(h.id, h);
+                        }
+                    });
+                }
+            });
+        }
+        return map;
+    }, [summaryMap]);
+
+    const handlePointClick = useCallback((sample: PositionSample, routePosition: [number, number, number]) => {
+        if (!sample) return;
+
+        if (sample.filename) {
+            console.log("Clicked trajectory point filename:", sample.filename);
+        }
+
+        // Compute 3D camera position and orientation directly for native Z-up
+        const routeOffset = new THREE.Vector3(...routePosition);
+
+        // 1. Compute 3D camera position in world coordinates
+        const localPos = new THREE.Vector3(sample.x, sample.y, sample.z);
+        const worldPos = localPos.clone().add(routeOffset);
+
+        // 2. Compute 3D camera orientation quaternion in world coordinates
+        let worldQuat: THREE.Quaternion;
+        if (sample.rotation && Array.isArray(sample.rotation) && sample.rotation.length === 4) {
+            worldQuat = new THREE.Quaternion(
+                sample.rotation[0],
+                sample.rotation[1],
+                sample.rotation[2],
+                sample.rotation[3]
+            );
+        } else if (sample.direction && Array.isArray(sample.direction) && sample.direction.length === 3) {
+            const worldDir = new THREE.Vector3(sample.direction[0], sample.direction[1], sample.direction[2]).normalize();
+
+            const tempCam = new THREE.PerspectiveCamera();
+            tempCam.up.set(0, 0, 1);
+            tempCam.position.copy(worldPos);
+            tempCam.lookAt(worldPos.clone().add(worldDir));
+            worldQuat = tempCam.quaternion.clone();
+        } else {
+            worldQuat = new THREE.Quaternion();
+        }
+
+        // 3. Compute camera vertical FOV (in degrees) from camera header focal length
+        let fovDeg: number | undefined = undefined;
+        if (sample.cameraHeaderId && headerMap.has(sample.cameraHeaderId)) {
+            const header = headerMap.get(sample.cameraHeaderId);
+            if (header && typeof header.focal === "number" && header.width && header.height) {
+                const maxDim = Math.max(header.width, header.height);
+                const focalPixels = header.focal * maxDim;
+                if (focalPixels > 0) {
+                    const fovRad = 2 * Math.atan((header.height / 2) / focalPixels);
+                    fovDeg = fovRad * (180 / Math.PI);
+                }
+            }
+        }
+
+        setCameraView({
+            position: [worldPos.x, worldPos.y, worldPos.z],
+            quaternion: [worldQuat.x, worldQuat.y, worldQuat.z, worldQuat.w],
+            fov: fovDeg,
+        });
+    }, [headerMap, setCameraView]);
 
     if (!showCameraTrajectories || displayedKeys.length === 0) return null;
 
@@ -684,7 +847,7 @@ function DBCameraTrajectoryDisplay() {
 
         headersByPc.forEach((headerIds, pcId) => {
             const position: [number, number, number] =
-                mode === "plyUrl" ? [TARGET_X, 0, TARGET_Z] : [0, 0, 0];
+                mode === "plyUrl" ? [TARGET_X, TARGET_Y, 0] : [0, 0, 0];
 
             routesToRender.push({
                 key: `${qId}-${pcId}`,
@@ -705,13 +868,429 @@ function DBCameraTrajectoryDisplay() {
                     url={route.url}
                     allowedHeaderIds={route.allowedHeaderIds}
                     position={route.position}
-                    rotation={[-Math.PI / 2, 0, 0]}
                     color={0x00ffcc}
                     lineWidth={3}
                     showPoints={true}
                     pointSize={1.5}
+                    onPointClick={(sample) => handlePointClick(sample, route.position)}
                 />
             ))}
+        </group>
+    );
+}
+
+function getLodColor(lod: number): string {
+    const colors: Record<number, string> = {
+        0: "#ff0055", // Red/Pink (LOD 0 - highest detail)
+        1: "#ffaa00", // Orange (LOD 1)
+        2: "#ffff00", // Yellow (LOD 2)
+        3: "#00ff66", // Bright Green (LOD 3)
+        4: "#00ffff", // Cyan (LOD 4)
+        5: "#0088ff", // Blue (LOD 5)
+        6: "#aa00ff", // Purple (LOD 6)
+        7: "#ff00aa", // Magenta (LOD 7)
+        8: "#888888", // Gray (LOD 8)
+        9: "#ffffff", // White (LOD 9)
+        10: "#445566", // Slate (LOD 10 - Global)
+    };
+    return colors[lod] || "#ffffff";
+}
+
+function BoxOutline({ width, height, depth, color }: { width: number; height: number; depth: number; color: string }) {
+    const edgesGeometry = useMemo(() => {
+        const box = new THREE.BoxGeometry(width, height, depth);
+        const edges = new THREE.EdgesGeometry(box);
+        box.dispose();
+        return edges;
+    }, [width, height, depth]);
+
+    useEffect(() => {
+        return () => {
+            edgesGeometry.dispose();
+        };
+    }, [edgesGeometry]);
+
+    return (
+        <lineSegments geometry={edgesGeometry}>
+            <lineBasicMaterial color={color} transparent opacity={0.7} />
+        </lineSegments>
+    );
+}
+
+interface ChunkSlotData {
+    key: string;
+    queryId: string;
+    lod: number;
+    i?: number;
+    j?: number;
+    k?: number;
+    bounds?: {
+        minX: number; maxX: number;
+        minY: number; maxY: number;
+        minZ: number; maxZ: number;
+    };
+    geometry?: THREE.BufferGeometry;
+    status: "loading" | "loaded" | "empty";
+    abortController?: AbortController;
+}
+
+interface FetchTask {
+    key: string;
+    queryId: string;
+    lod: number;
+    i?: number;
+    j?: number;
+    k?: number;
+    distSq: number;
+    filters: FilterRule[];
+    bounds?: {
+        minX: number; maxX: number;
+        minY: number; maxY: number;
+        minZ: number; maxZ: number;
+    };
+}
+
+const W0_BASE_CELL_WIDTH = 0.25;
+const MAX_CONCURRENT_FETCHES = 100;
+const MOVEMENT_THRESHOLD_SQ = 0.025;
+const SHOW_OUTLINES = false
+
+function DynamicCubicLODController() {
+    const { camera } = useThree();
+    const {
+        queries,
+        loadedGeometries,
+        mode,
+        renderMode,
+        wireframe,
+        pointSize,
+    } = usePLYPointCloudContext();
+
+    const [chunksMap, setChunksMap] = useState<Map<string, ChunkSlotData>>(new Map());
+    const activeFetchesRef = useRef<number>(0);
+    const pendingQueueRef = useRef<FetchTask[]>([]);
+    const activeKeysRef = useRef<Set<string>>(new Set());
+    const lastCamPosRef = useRef<THREE.Vector3>(new THREE.Vector3(NaN, NaN, NaN));
+
+    const activeTargetQueries = useMemo(() => {
+        if (mode !== "binary") return [];
+        const targets: Array<{ id: string; filters?: FilterRule[] }> = [];
+        const targetIds = new Set<string>();
+
+        for (const id of loadedGeometries.keys()) {
+            if (id) targetIds.add(id);
+        }
+        for (const q of queries) {
+            if (q.id) targetIds.add(q.id);
+        }
+
+        for (const id of targetIds) {
+            const matchedQuery = queries.find((q) => q.id === id);
+            targets.push({
+                id,
+                filters: matchedQuery?.filters || [
+                    { id: `filter-${id}`, field: "pointcloud_id", operator: "eq", value: id }
+                ]
+            });
+        }
+        return targets;
+    }, [mode, loadedGeometries, queries]);
+
+    const processQueue = useCallback(() => {
+        while (activeFetchesRef.current < MAX_CONCURRENT_FETCHES && pendingQueueRef.current.length > 0) {
+            const task = pendingQueueRef.current.shift();
+            if (!task) break;
+
+            if (!activeKeysRef.current.has(task.key)) continue;
+
+            activeFetchesRef.current++;
+            const controller = new AbortController();
+
+            setChunksMap((prevMap) => {
+                const newMap = new Map(prevMap);
+                newMap.set(task.key, {
+                    key: task.key,
+                    queryId: task.queryId,
+                    lod: task.lod,
+                    i: task.i,
+                    j: task.j,
+                    k: task.k,
+                    bounds: task.bounds,
+                    status: "loading",
+                    abortController: controller,
+                });
+                return newMap;
+            });
+
+            fetchBinaryGeometry(task.queryId, task.lod, controller.signal, task.filters)
+                .then((geom) => {
+                    if (controller.signal.aborted) {
+                        geom.dispose();
+                        return;
+                    }
+                    setChunksMap((prevMap) => {
+                        const entry = prevMap.get(task.key);
+                        if (!entry || controller.signal.aborted) {
+                            geom.dispose();
+                            return prevMap;
+                        }
+                        const newMap = new Map(prevMap);
+                        newMap.set(task.key, {
+                            ...entry,
+                            geometry: geom,
+                            status: "loaded",
+                            abortController: undefined,
+                        });
+                        return newMap;
+                    });
+                })
+                .catch((_err) => {
+                    if (controller.signal.aborted) return;
+                    setChunksMap((prevMap) => {
+                        const entry = prevMap.get(task.key);
+                        if (!entry) return prevMap;
+                        const newMap = new Map(prevMap);
+                        newMap.set(task.key, {
+                            ...entry,
+                            status: "empty",
+                            abortController: undefined,
+                        });
+                        return newMap;
+                    });
+                })
+                .finally(() => {
+                    activeFetchesRef.current--;
+                    processQueue();
+                });
+        }
+    }, []);
+
+    useFrame(() => {
+        if (mode !== "binary" || activeTargetQueries.length === 0) return;
+
+        const camPos = camera.position;
+
+        if (
+            !Number.isNaN(lastCamPosRef.current.x) &&
+            camPos.distanceToSquared(lastCamPosRef.current) < MOVEMENT_THRESHOLD_SQ
+        ) {
+            return;
+        }
+
+        lastCamPosRef.current.copy(camPos);
+
+        const pcX = camPos.x;
+        const pcY = camPos.y;
+        const pcZ = camPos.z;
+
+        const newActiveKeys = new Set<string>();
+        const newTasks: FetchTask[] = [];
+
+        for (const { id: queryId, filters: baseFilters } of activeTargetQueries) {
+            // Global LOD 10 view
+            const globalKey = `${queryId}_lod10_global`;
+            newActiveKeys.add(globalKey);
+            if (!chunksMap.has(globalKey)) {
+                newTasks.push({
+                    key: globalKey,
+                    queryId,
+                    lod: 10,
+                    distSq: 0,
+                    filters: baseFilters || [],
+                });
+            }
+
+            // 3x3x3 cell neighborhood across spatial LOD levels (3x scaling factor so middle cube of LOD L overlaps 27 cubes of LOD L-1)
+            for (let lod = 0; lod <= 9; lod++) {
+                const wL = W0_BASE_CELL_WIDTH * Math.pow(3, lod);
+
+                const centerI = Math.floor(pcX / wL);
+                const centerJ = Math.floor(pcY / wL);
+                const centerK = Math.floor(pcZ / wL);
+
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dz = -1; dz <= 1; dz++) {
+                            const i = centerI + dx;
+                            const j = centerJ + dy;
+                            const k = centerK + dz;
+
+                            const chunkKey = `${queryId}_lod${lod}_${i}_${j}_${k}`;
+                            newActiveKeys.add(chunkKey);
+
+                            if (chunksMap.has(chunkKey)) continue;
+
+                            const minX = i * wL;
+                            const maxX = (i + 1) * wL;
+                            const minY = j * wL;
+                            const maxY = (j + 1) * wL;
+                            const minZ = k * wL;
+                            const maxZ = (k + 1) * wL;
+
+                            const cellCenterX = (i + 0.5) * wL;
+                            const cellCenterY = (j + 0.5) * wL;
+                            const cellCenterZ = (k + 0.5) * wL;
+
+                            const distSq =
+                                Math.pow(cellCenterX - pcX, 2) +
+                                Math.pow(cellCenterY - pcY, 2) +
+                                Math.pow(cellCenterZ - pcZ, 2);
+
+                            const combinedFilters: FilterRule[] = [
+                                ...(baseFilters || []),
+                                { id: `spatial-min_x-${lod}-${i}`, field: "min_x", operator: "gte", value: minX },
+                                { id: `spatial-max_x-${lod}-${i}`, field: "max_x", operator: "lte", value: maxX },
+                                { id: `spatial-min_y-${lod}-${j}`, field: "min_y", operator: "gte", value: minY },
+                                { id: `spatial-max_y-${lod}-${j}`, field: "max_y", operator: "lte", value: maxY },
+                                { id: `spatial-min_z-${lod}-${k}`, field: "min_z", operator: "gte", value: minZ },
+                                { id: `spatial-max_z-${lod}-${k}`, field: "max_z", operator: "lte", value: maxZ },
+                            ];
+
+                            newTasks.push({
+                                key: chunkKey,
+                                queryId,
+                                lod,
+                                i, j, k,
+                                distSq,
+                                filters: combinedFilters,
+                                bounds: { minX, maxX, minY, maxY, minZ, maxZ },
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        activeKeysRef.current = newActiveKeys;
+
+        // Retain loaded chunks in memory until they are more than 3 times as far away as where they would be loaded
+        setChunksMap((prevMap) => {
+            let changed = false;
+            const newMap = new Map(prevMap);
+            for (const [key, entry] of prevMap.entries()) {
+                if (key.endsWith("_global")) continue;
+                if (newActiveKeys.has(key)) continue;
+
+                if (
+                    entry.i !== undefined &&
+                    entry.j !== undefined &&
+                    entry.k !== undefined &&
+                    entry.lod !== undefined
+                ) {
+                    const wL = W0_BASE_CELL_WIDTH * Math.pow(3, entry.lod);
+                    const camCenterI = Math.floor(pcX / wL);
+                    const camCenterJ = Math.floor(pcY / wL);
+                    const camCenterK = Math.floor(pcZ / wL);
+
+                    const dx = Math.abs(entry.i - camCenterI);
+                    const dy = Math.abs(entry.j - camCenterJ);
+                    const dz = Math.abs(entry.k - camCenterK);
+
+                    // Chunks are loaded when max(dx, dy, dz) <= 1 (3x3x3 grid).
+                    // Keep in memory until max(dx, dy, dz) > 3 (more than 3x as far as loading threshold).
+                    if (dx <= 3 && dy <= 3 && dz <= 3) {
+                        continue;
+                    }
+                }
+
+                if (entry.abortController) {
+                    entry.abortController.abort();
+                }
+                if (entry.geometry) {
+                    entry.geometry.dispose();
+                }
+                newMap.delete(key);
+                changed = true;
+            }
+            return changed ? newMap : prevMap;
+        });
+
+        // Filter and merge pending queue tasks
+        const existingQueuedKeys = new Set(pendingQueueRef.current.map((t) => t.key));
+        const filteredPending = pendingQueueRef.current.filter((t) => newActiveKeys.has(t.key));
+
+        for (const task of newTasks) {
+            if (!existingQueuedKeys.has(task.key)) {
+                filteredPending.push(task);
+            }
+        }
+
+        // Priority ordering: LOD 10 first down to LOD 0 last, then closest cell center first
+        filteredPending.sort((a, b) => {
+            if (b.lod !== a.lod) {
+                return b.lod - a.lod;
+            }
+            return a.distSq - b.distSq;
+        });
+
+        pendingQueueRef.current = filteredPending;
+        processQueue();
+    });
+
+    useEffect(() => {
+        return () => {
+            pendingQueueRef.current = [];
+            activeKeysRef.current.clear();
+            setChunksMap((prevMap) => {
+                prevMap.forEach((entry) => {
+                    entry.abortController?.abort();
+                    entry.geometry?.dispose();
+                });
+                return new Map();
+            });
+        };
+    }, []);
+
+    if (mode !== "binary" || chunksMap.size === 0) return null;
+
+    return (
+        <group>
+            {Array.from(chunksMap.values()).map((chunk) => {
+                if (!chunk.geometry && (!SHOW_OUTLINES || !chunk.bounds)) return null;
+                return (
+                    <group key={chunk.key}>
+                        {chunk.geometry && (
+                            renderMode === "mesh" ? (
+                                <mesh geometry={chunk.geometry}>
+                                    <meshStandardMaterial
+                                        vertexColors={!!chunk.geometry.attributes.color}
+                                        side={THREE.DoubleSide}
+                                        wireframe={wireframe}
+                                        roughness={0.5}
+                                        metalness={0.1}
+                                    />
+                                </mesh>
+                            ) : (
+                                <points geometry={chunk.geometry}>
+                                    <pointsMaterial
+                                        vertexColors={!!chunk.geometry.attributes.color}
+                                        size={pointSize * 0.0025 * Math.pow(2, chunk.lod)}
+                                        sizeAttenuation
+                                    />
+                                </points>
+                            )
+                        )}
+
+                        {/* Spatial Chunk Bounding Cube Outer Wireframe Visualizer */}
+                        {SHOW_OUTLINES && chunk.bounds && (
+                            <group
+                                position={[
+                                    (chunk.bounds.minX + chunk.bounds.maxX) / 2,
+                                    (chunk.bounds.minY + chunk.bounds.maxY) / 2,
+                                    (chunk.bounds.minZ + chunk.bounds.maxZ) / 2,
+                                ]}
+                            >
+                                <BoxOutline
+                                    width={chunk.bounds.maxX - chunk.bounds.minX}
+                                    height={chunk.bounds.maxY - chunk.bounds.minY}
+                                    depth={chunk.bounds.maxZ - chunk.bounds.minZ}
+                                    color={getLodColor(chunk.lod)}
+                                />
+                            </group>
+                        )}
+                    </group>
+                );
+            })}
         </group>
     );
 }
@@ -744,12 +1323,13 @@ export default function PLYPointCloud() {
             <GeoThreeHeightmap />
             <PointCloudCenterMarkers />
             <DBCameraTrajectoryDisplay />
+            <DynamicCubicLODController />
 
             {/* Render dynamically streamed full pointcloud geometries */}
             {Array.from(loadedGeometries.entries()).map(([id, geom]) => (
                 <group key={id}>
                     {renderMode === "mesh" ? (
-                        <mesh geometry={geom} rotation={[-Math.PI / 2, 0, 0]}>
+                        <mesh geometry={geom}>
                             <meshStandardMaterial
                                 vertexColors={!!geom.attributes.color}
                                 side={THREE.DoubleSide}
@@ -759,7 +1339,7 @@ export default function PLYPointCloud() {
                             />
                         </mesh>
                     ) : (
-                        <points geometry={geom} rotation={[-Math.PI / 2, 0, 0]}>
+                        <points geometry={geom}>
                             <pointsMaterial
                                 vertexColors={!!geom.attributes.color}
                                 size={pointSize}

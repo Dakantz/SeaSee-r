@@ -4,7 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db_session
 from app.repositories.pointcloud_repository import PointCloudRepository
 from app.services.pointcloud.exporters import BinaryStreamExporter, PLYStreamExporter
-from app.services.pointcloud.database import DatabasePointCloudStorageService
 from app.api.dependencies.filter_parser import QueryFilterParser
 from app.services.pointcloud.query_builder import FILTER_FIELD_MAP
 
@@ -37,12 +36,3 @@ def get_ply_exporter(
     Dependency to provide PLYStreamExporter instance.
     """
     return PLYStreamExporter(repository=repo)
-
-
-def get_pointcloud_service(
-    db: AsyncSession = Depends(get_db_session)
-) -> DatabasePointCloudStorageService:
-    """
-    Dependency to provide the active point cloud storage service.
-    """
-    return DatabasePointCloudStorageService(db_session=db)

@@ -7,9 +7,9 @@ import ExampleDiagnostics from "./components/ExampleDiagnostics.tsx";
 import VideoUploadTestPage from "./components/VideoUploader/VideoUploadTestPage.tsx";
 import PointCloudUploadTestPage from "./components/PointCloudUploader/PointCloudUploadTestPage.tsx";
 import PointCloudEditorPage from "./components/PointCloudEditor/PointCloudEditorPage.tsx";
+import LogsPage from "./components/Logs/LogsPage.tsx";
 import TestRover from "./components/RovRenderer/testRover.tsx";
 import TestRoverVideo from "./components/RovRenderer/testRoverVideo.tsx";
-import StatusBar from "./components/StatusBar.tsx";
 
 function App() {
     return (
@@ -17,6 +17,7 @@ function App() {
             <Toolbar />
             <Routes>
                 <Route path="/" element={<Workspace />} />
+                <Route path="/logs" element={<LogsPage />} />
                 <Route path="/example-diagnostics" element={<ExampleDiagnostics />} />
                 <Route path="/video-upload-test" element={<VideoUploadTestPage />} />
                 <Route path="/pointcloud-upload-test" element={<PointCloudUploadTestPage />} />
@@ -25,7 +26,6 @@ function App() {
                 <Route path="/test-rover" element={<TestRover />} />
                 <Route path="/test-rover-video" element={<TestRoverVideo />} />
             </Routes>
-            <StatusBar />
         </div>
     );
 }

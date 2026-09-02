@@ -11,10 +11,10 @@ import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 
-import { TelemetryPositionReader } from "../TelemetoryPanel/TelemetryPositionReader";
+import { TelemetryPositionReader, type PositionSample } from "../TelemetoryPanel/TelemetryPositionReader";
 import { useTrajectoryHover } from "./hooks/useTrajectoryHover";
 import { useTrajectoryClosestPoint } from "./hooks/useTrajectoryClosestPoint";
-import { Billboard} from "@react-three/drei";
+import { Billboard } from "@react-three/drei";
 import { useVideoStore } from "../../store/videoStore";
 
 let circleTexture: THREE.CanvasTexture | null = null;
@@ -52,6 +52,9 @@ export interface TrajectoryRendererProps {
     showDirections?: boolean;
     directionLength?: number;
     directionColor?: THREE.ColorRepresentation;
+    onPointClick?: (sample: PositionSample) => void;
+    onPointHover?: (sample: PositionSample | null) => void;
+    interactive?: boolean;
 }
 
 export function TrajectoryRenderer({
@@ -71,17 +74,23 @@ export function TrajectoryRenderer({
     showDirections = true,
     directionLength = 3.0,
     directionColor = 0xffaa00,
+    onPointClick,
+    onPointHover,
+    interactive,
 }: TrajectoryRendererProps) {
 
     const [group, setGroup] = useState<THREE.Group | null>(null);
     const { size, gl } = useThree();
-    const { isHovered} = useTrajectoryHover(url);
+    const { isHovered } = useTrajectoryHover(url);
     const [samples, setSamples] = useState<any[]>([]);
+
+    const isInteractive = interactive ?? (!!videoId || !!onPointClick || showPoints);
+
     const { hoveredPoint, hoveredSample } = useTrajectoryClosestPoint(
         samples,
         size,
         30,
-        !!videoId,
+        isInteractive && visible,
         group
     );
     const setSelectedFrame = useVideoStore((state) => state.setSelectedFrame);
@@ -92,8 +101,16 @@ export function TrajectoryRenderer({
     );
 
     useEffect(() => {
+        onPointHover?.(hoveredSample);
+    }, [hoveredSample, onPointHover]);
+
+    useEffect(() => {
         const handleCanvasClick = (_e: MouseEvent) => {
-            if (videoId && hoveredSample) {
+            if (!hoveredSample) return;
+            if (onPointClick) {
+                onPointClick(hoveredSample);
+            }
+            if (videoId) {
                 setSelectedFrame({
                     videoId: videoId,
                     relativeTime: hoveredSample.relativeTime,
@@ -105,7 +122,7 @@ export function TrajectoryRenderer({
         return () => {
             gl.domElement.removeEventListener("click", handleCanvasClick);
         };
-    }, [gl, videoId, hoveredSample, setSelectedFrame]);
+    }, [gl, videoId, hoveredSample, onPointClick, setSelectedFrame]);
 
     useEffect(() => {
         let cancelled = false;

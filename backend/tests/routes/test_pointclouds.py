@@ -15,7 +15,6 @@ from app.core.config import settings
 from app.services.pointcloud import (
     DatabasePointCloudStorageService
 )
-from app.api.dependencies.pointcloud import get_pointcloud_service
 
 client = TestClient(app)
 
@@ -135,7 +134,7 @@ class TestPointCloudServices(TestCase):
 
 def test_dependency_injection():
     mock_db = MagicMock()
-    service = get_pointcloud_service(db=mock_db)
+    service = DatabasePointCloudStorageService(db_session=mock_db)
     assert isinstance(service, DatabasePointCloudStorageService)
 
 
@@ -147,7 +146,7 @@ def test_endpoint_get_pointcloud():
     mock_service = MagicMock()
     mock_service.get_pointcloud = AsyncMock(return_value=StreamingResponse(dummy_gen(), media_type="application/octet-stream"))
         
-    app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
+    app.dependency_overrides[DatabasePointCloudStorageService] = lambda: mock_service
     
     try:
         response = client.get("/pointclouds/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
@@ -231,7 +230,7 @@ def test_endpoint_stream_binary():
     mock_service = MagicMock()
     mock_service.stream_pointcloud_binary = AsyncMock(return_value=dummy_response)
 
-    app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
+    app.dependency_overrides[DatabasePointCloudStorageService] = lambda: mock_service
 
     pc_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
 
@@ -266,7 +265,7 @@ def test_endpoint_stream_binary_lod10():
     mock_service = MagicMock()
     mock_service.stream_pointcloud_binary = AsyncMock(return_value=dummy_response)
 
-    app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
+    app.dependency_overrides[DatabasePointCloudStorageService] = lambda: mock_service
 
     pc_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
 
@@ -308,7 +307,7 @@ def test_endpoint_stream_summary_success():
         }]
     })
 
-    app.dependency_overrides[get_pointcloud_service] = lambda: mock_service
+    app.dependency_overrides[DatabasePointCloudStorageService] = lambda: mock_service
 
     pc_id = "e360394b-a241-49e5-bb66-97fee8bd85ef"
 
@@ -466,6 +465,56 @@ def test_ingest_opensfm_init_laz_file():
                 os.remove(laz_file)
             shutil.rmtree(os.path.join(settings.opensfm_ingestion_dir, "test_folder"), ignore_errors=True)
             app.dependency_overrides.clear()
+
+
+def test_endpoint_get_camera_routes_ordering():
+    import uuid
+    mock_db = MagicMock()
+
+    header_id = uuid.uuid4()
+    mock_header_res = MagicMock()
+    mock_header_res.scalars.return_value.all.return_value = [header_id]
+
+    frame1 = MagicMock()
+    frame1.id = uuid.uuid4()
+    frame1.camera_header_id = header_id
+    frame1.timestamp = 1000
+    frame1.pos_geojson = None
+    frame1.dir_geojson = None
+    frame1.rotation = None
+    frame1.relative_time = 0.0
+    frame1.filename = "01.jpg"
+
+    frame2 = MagicMock()
+    frame2.id = uuid.uuid4()
+    frame2.camera_header_id = header_id
+    frame2.timestamp = 1000
+    frame2.pos_geojson = None
+    frame2.dir_geojson = None
+    frame2.rotation = None
+    frame2.relative_time = 0.0
+    frame2.filename = "02.jpg"
+
+    mock_frames_res = MagicMock()
+    mock_frames_res.all.return_value = [frame1, frame2]
+
+    mock_db.execute = AsyncMock(side_effect=[mock_header_res, mock_frames_res])
+
+    from app.core.database import get_db_session
+    app.dependency_overrides[get_db_session] = lambda: mock_db
+
+    pc_id = str(uuid.uuid4())
+
+    try:
+        response = client.get(f"/pointclouds/{pc_id}/camera-routes")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+        assert data[0]["filename"] == "01.jpg"
+        assert data[1]["filename"] == "02.jpg"
+    finally:
+        app.dependency_overrides.clear()
+
 
 
 

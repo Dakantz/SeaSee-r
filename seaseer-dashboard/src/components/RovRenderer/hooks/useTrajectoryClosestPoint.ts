@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { PositionSample } from "../../TelemetoryPanel/TelemetryPositionReader";
@@ -16,6 +16,17 @@ export function useTrajectoryClosestPoint(
     const [hoveredPoint, setHoveredPoint] = useState<[number, number, number] | null>(null);
     const [hoveredSample, setHoveredSample] = useState<PositionSample | null>(null);
     const lastHoveredTimeRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        if (hoveredPoint) {
+            document.body.style.cursor = "pointer";
+        } else {
+            document.body.style.cursor = "auto";
+        }
+        return () => {
+            document.body.style.cursor = "auto";
+        };
+    }, [hoveredPoint]);
 
     useFrame((state) => {
         if (!enabled || !group || !samples || samples.length === 0) {
@@ -85,3 +96,4 @@ export function useTrajectoryClosestPoint(
         hoveredSample,
     };
 }
+

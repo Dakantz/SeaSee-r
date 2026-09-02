@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Integer, Float, DateTime, ForeignKey, BigInteger
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from geoalchemy2 import Geometry
 
 from app.core.database import Base
@@ -27,5 +27,6 @@ class CameraFrame(Base):
     timestamp = Column(BigInteger, nullable=False, index=True)
     position = Column(Geometry(geometry_type="POINTZ", srid=settings.camera_srid), nullable=True)
     direction = Column(Geometry(geometry_type="POINTZ", srid=settings.camera_srid), nullable=True)
+    rotation = Column(ARRAY(Float), nullable=True)
     relative_time = Column(Float, nullable=True)
     filename = Column(String(255), nullable=True)

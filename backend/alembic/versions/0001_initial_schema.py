@@ -131,6 +131,7 @@ def upgrade() -> None:
             timestamp BIGINT NOT NULL,
             position geometry(PointZ, {srid}),
             direction geometry(PointZ, {srid}),
+            rotation DOUBLE PRECISION[],
             relative_time DOUBLE PRECISION,
             filename VARCHAR(255)
         );
