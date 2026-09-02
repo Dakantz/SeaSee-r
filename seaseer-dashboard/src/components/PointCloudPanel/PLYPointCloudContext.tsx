@@ -22,6 +22,19 @@ export interface CameraViewTarget {
     timestamp: number;
 }
 
+export interface PerfTestMetric {
+    second: number;
+    fps: number;
+    position: { x: number; y: number; z: number };
+}
+
+export interface PerfTestSummary {
+    averageFps: number;
+    totalFrames: number;
+    totalDurationSec: number;
+    metrics: PerfTestMetric[];
+}
+
 export interface PLYPointCloudContextType {
     renderMode: "points" | "mesh";
     setRenderMode: (mode: "points" | "mesh") => void;
@@ -93,6 +106,19 @@ export interface PLYPointCloudContextType {
     updatePointcloudTransform: (id: string, matrix: number[]) => Promise<void>;
     isGizmoDragging: boolean;
     setIsGizmoDragging: (dragging: boolean) => void;
+
+    // Performance Test State
+    perfTestTrigger: number;
+    startPerfTest: () => void;
+    stopPerfTest: () => void;
+    isPerfTestRunning: boolean;
+    setIsPerfTestRunning: React.Dispatch<React.SetStateAction<boolean>>;
+    perfTestMetrics: PerfTestMetric[];
+    setPerfTestMetrics: React.Dispatch<React.SetStateAction<PerfTestMetric[]>>;
+    perfTestSummary: PerfTestSummary | null;
+    setPerfTestSummary: React.Dispatch<React.SetStateAction<PerfTestSummary | null>>;
+    currentFps: number | null;
+    setCurrentFps: React.Dispatch<React.SetStateAction<number | null>>;
 }
 
 const DEFAULT_HARDCODED_IDENTIFIER = "";
@@ -173,6 +199,25 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
 
     // Multi-pointcloud states
     const [catalog, setCatalog] = useState<PointCloudMetadataResponse[]>([]);
+
+    // Performance Test State
+    const [perfTestTrigger, setPerfTestTrigger] = useState<number>(0);
+    const [isPerfTestRunning, setIsPerfTestRunning] = useState<boolean>(false);
+    const [perfTestMetrics, setPerfTestMetrics] = useState<PerfTestMetric[]>([]);
+    const [perfTestSummary, setPerfTestSummary] = useState<PerfTestSummary | null>(null);
+    const [currentFps, setCurrentFps] = useState<number | null>(null);
+
+    const startPerfTest = useCallback(() => {
+        setPerfTestMetrics([]);
+        setPerfTestSummary(null);
+        setCurrentFps(null);
+        setIsPerfTestRunning(true);
+        setPerfTestTrigger((prev) => prev + 1);
+    }, []);
+
+    const stopPerfTest = useCallback(() => {
+        setIsPerfTestRunning(false);
+    }, []);
     const [isFetchingCatalog, setIsFetchingCatalog] = useState<boolean>(false);
     const [hoveredId, setHoveredId] = useState<string | null>(null);
 
@@ -519,6 +564,19 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 toggleCameraUpFixed,
                 showOutlines,
                 setShowOutlines,
+
+                // Performance Test exports
+                perfTestTrigger,
+                startPerfTest,
+                stopPerfTest,
+                isPerfTestRunning,
+                setIsPerfTestRunning,
+                perfTestMetrics,
+                setPerfTestMetrics,
+                perfTestSummary,
+                setPerfTestSummary,
+                currentFps,
+                setCurrentFps,
             }}
         >
             {children}

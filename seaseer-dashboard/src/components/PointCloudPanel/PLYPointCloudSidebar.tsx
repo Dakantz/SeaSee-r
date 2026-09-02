@@ -70,6 +70,12 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const setAmbientLightIntensity = props.setAmbientLightIntensity ?? contextState?.setAmbientLightIntensity ?? (() => {});
     const showOutlines = props.showOutlines ?? contextState?.showOutlines ?? false;
     const setShowOutlines = props.setShowOutlines ?? contextState?.setShowOutlines ?? (() => {});
+    const startPerfTest = contextState?.startPerfTest ?? (() => {});
+    const stopPerfTest = contextState?.stopPerfTest ?? (() => {});
+    const isPerfTestRunning = contextState?.isPerfTestRunning ?? false;
+    const perfTestMetrics = contextState?.perfTestMetrics ?? [];
+    const perfTestSummary = contextState?.perfTestSummary ?? null;
+    const currentFps = contextState?.currentFps ?? null;
 
     const [datasets, setDatasets] = useState<PointCloudMetadataResponse[]>([]);
     const [searchQuery, setSearchQuery] = useState<string>("");
@@ -371,6 +377,95 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                     />
                                 </div>
                             </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Performance Test Section */}
+            <div className="pointcloud-sidebar__section" style={{ marginTop: "12px", borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "12px" }}>
+                <div className="pointcloud-sidebar__section-header" style={{ marginBottom: "8px" }}>
+                    <label className="pointcloud-sidebar__section-label" style={{ display: "flex", alignItems: "center", gap: "6px", color: "#38bdf8", fontWeight: "bold" }}>
+                        ⚡ PLYPointCloud Performance Test
+                    </label>
+                </div>
+
+                <div style={{ backgroundColor: "rgba(15, 23, 42, 0.6)", padding: "10px", borderRadius: "6px", border: "1px solid rgba(255, 255, 255, 0.08)" }}>
+                    {isPerfTestRunning ? (
+                        <button
+                            type="button"
+                            onClick={stopPerfTest}
+                            style={{
+                                width: "100%",
+                                padding: "8px 12px",
+                                backgroundColor: "#dc2626",
+                                color: "#ffffff",
+                                border: "none",
+                                borderRadius: "4px",
+                                cursor: "pointer",
+                                fontWeight: "bold",
+                                fontSize: "12px",
+                                marginBottom: "8px",
+                                transition: "background-color 0.2s ease",
+                            }}
+                        >
+                            🛑 Cancel Performance Test
+                        </button>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={startPerfTest}
+                            style={{
+                                width: "100%",
+                                padding: "8px 12px",
+                                backgroundColor: "#2563eb",
+                                color: "#ffffff",
+                                border: "none",
+                                borderRadius: "4px",
+                                cursor: "pointer",
+                                fontWeight: "bold",
+                                fontSize: "12px",
+                                marginBottom: "8px",
+                                transition: "background-color 0.2s ease",
+                            }}
+                        >
+                            {perfTestSummary ? "Restart Performance Test" : "Run Performance Test"}
+                        </button>
+                    )}
+
+                    {isPerfTestRunning && (
+                        <div style={{ fontSize: "11px", color: "#facc15", marginBottom: "6px", fontFamily: "monospace" }}>
+                            ⏱️ Measuring FPS... {currentFps !== null ? `${currentFps} FPS` : "Calculating..."}
+                        </div>
+                    )}
+
+                    {!isPerfTestRunning && perfTestSummary && (
+                        <div style={{ backgroundColor: "#0f172a", padding: "8px", borderRadius: "4px", marginBottom: "8px", border: "1px solid #1e293b" }}>
+                            <div style={{ color: "#4ade80", fontWeight: "bold", fontSize: "12px", marginBottom: "4px" }}>
+                                Test Complete ✅
+                            </div>
+                            <div style={{ fontSize: "13px", color: "#60a5fa", fontFamily: "monospace" }}>
+                                Average FPS: <strong>{perfTestSummary.averageFps}</strong>
+                            </div>
+                            <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "2px" }}>
+                                Total Frames: {perfTestSummary.totalFrames} | Duration: {perfTestSummary.totalDurationSec}s
+                            </div>
+                        </div>
+                    )}
+
+                    {perfTestMetrics.length > 0 && (
+                        <div style={{ maxHeight: "120px", overflowY: "auto", fontSize: "11px", fontFamily: "monospace", background: "#090d16", padding: "6px 8px", borderRadius: "4px", border: "1px solid #1e293b" }}>
+                            <div style={{ color: "#94a3b8", marginBottom: "4px", borderBottom: "1px solid #1e293b", paddingBottom: "2px" }}>
+                                Per-Second Breakdown:
+                            </div>
+                            {perfTestMetrics.map((m) => (
+                                <div key={m.second} style={{ display: "flex", justifyContent: "space-between", padding: "1px 0" }}>
+                                    <span style={{ color: "#cbd5e1" }}>Sec {m.second}s:</span>
+                                    <span style={{ fontWeight: "bold", color: m.fps >= 50 ? "#4ade80" : m.fps >= 30 ? "#facc15" : "#f87171" }}>
+                                        {m.fps} FPS
+                                    </span>
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { TransformControls } from "@react-three/drei";
 import * as THREE from "three";
-import { usePLYPointCloudContext } from "./PLYPointCloudContext";
+import { usePLYPointCloudContext, type PerfTestMetric, type PerfTestSummary } from "./PLYPointCloudContext";
 import ViewportGizmoHelper from "./ViewportGizmoHelper";
 import { generateDelaunayTerrainMesh } from "./utils/delaunayTriangulation";
 import { TrajectoryRenderer } from "../RovRenderer/trajectoryRenderer";
@@ -1254,7 +1254,141 @@ function PointCloudTransformItem({
     );
 }
 
+const PERF_TEST_START_POS = new THREE.Vector3(10, -100, 10);
+const PERF_TEST_END_POS = new THREE.Vector3(10, 100, -10);
+const PERF_TEST_DURATION_SEC = 30;
 
+export function PerformanceTestController() {
+    const { camera } = useThree();
+    const {
+        perfTestTrigger,
+        isPerfTestRunning,
+        setIsPerfTestRunning,
+        setPerfTestMetrics,
+        setPerfTestSummary,
+        setCurrentFps,
+    } = usePLYPointCloudContext();
+
+    const isRunningRef = useRef<boolean>(false);
+    const completedRef = useRef<boolean>(false);
+    const testStartTimeRef = useRef<number>(0);
+    const totalFramesRef = useRef<number>(0);
+    const framesInSecRef = useRef<number>(0);
+    const secTimerRef = useRef<number>(0);
+    const secondCountRef = useRef<number>(0);
+    const metricsRef = useRef<PerfTestMetric[]>([]);
+
+    useEffect(() => {
+        if (!isPerfTestRunning && isRunningRef.current) {
+            isRunningRef.current = false;
+            completedRef.current = true;
+            console.log("[Performance Test Cancelled by User]");
+        }
+    }, [isPerfTestRunning]);
+
+    useEffect(() => {
+        if (perfTestTrigger === 0) return;
+
+        camera.position.copy(PERF_TEST_START_POS);
+        camera.up.set(0, 0, 1);
+        camera.lookAt(PERF_TEST_END_POS);
+
+        testStartTimeRef.current = performance.now();
+        totalFramesRef.current = 0;
+        framesInSecRef.current = 0;
+        secTimerRef.current = 0;
+        secondCountRef.current = 0;
+        metricsRef.current = [];
+
+        completedRef.current = false;
+        isRunningRef.current = true;
+
+        console.log("=================================================");
+        console.log("[Performance Test Started]");
+        console.log("Start Camera Position:", PERF_TEST_START_POS);
+        console.log("End Camera Position:", PERF_TEST_END_POS);
+        console.log(`Duration: ${PERF_TEST_DURATION_SEC} seconds`);
+        console.log("=================================================");
+    }, [perfTestTrigger, camera]);
+
+    useFrame((_, delta) => {
+        if (!isRunningRef.current || completedRef.current) return;
+
+        const now = performance.now();
+        const elapsedSec = (now - testStartTimeRef.current) / 1000;
+        const progress = Math.min(1, elapsedSec / PERF_TEST_DURATION_SEC);
+
+        // Move camera slowly between start and end positions
+        camera.position.lerpVectors(PERF_TEST_START_POS, PERF_TEST_END_POS, progress);
+        camera.up.set(0, 0, 1);
+        if (camera.position.distanceToSquared(PERF_TEST_END_POS) > 0.001) {
+            camera.lookAt(PERF_TEST_END_POS);
+        }
+
+        // Frame counting
+        totalFramesRef.current++;
+        framesInSecRef.current++;
+        secTimerRef.current += delta;
+
+        // Measure FPS every 1 second
+        if (secTimerRef.current >= 1.0) {
+            secondCountRef.current += 1;
+            const calculatedFps = Math.round((framesInSecRef.current / secTimerRef.current) * 100) / 100;
+            const metric: PerfTestMetric = {
+                second: secondCountRef.current,
+                fps: calculatedFps,
+                position: {
+                    x: Math.round(camera.position.x * 1000) / 1000,
+                    y: Math.round(camera.position.y * 1000) / 1000,
+                    z: Math.round(camera.position.z * 1000) / 1000,
+                },
+            };
+
+            metricsRef.current.push(metric);
+            setPerfTestMetrics([...metricsRef.current]);
+            setCurrentFps(calculatedFps);
+
+            console.log(
+                `[Performance Test] Second ${metric.second}s: ${metric.fps} FPS | Pos: (${metric.position.x}, ${metric.position.y}, ${metric.position.z})`
+            );
+
+            framesInSecRef.current = 0;
+            secTimerRef.current = secTimerRef.current % 1.0;
+        }
+
+        // Check completion
+        if (progress >= 1.0) {
+            camera.position.copy(PERF_TEST_END_POS);
+
+            const totalDurationSec = (performance.now() - testStartTimeRef.current) / 1000;
+            const averageFps = Math.round((totalFramesRef.current / totalDurationSec) * 100) / 100;
+
+            const summary: PerfTestSummary = {
+                averageFps,
+                totalFrames: totalFramesRef.current,
+                totalDurationSec: Math.round(totalDurationSec * 100) / 100,
+                metrics: [...metricsRef.current],
+            };
+
+            (window as any).__PLY_PERFORMANCE_TEST_RESULTS__ = summary;
+
+            setPerfTestSummary(summary);
+            setIsPerfTestRunning(false);
+            completedRef.current = true;
+            isRunningRef.current = false;
+
+            console.log("=================================================");
+            console.log("[Performance Test Completed]");
+            console.log(`Average FPS: ${summary.averageFps}`);
+            console.log(`Total Frames: ${summary.totalFrames}`);
+            console.log(`Total Duration: ${summary.totalDurationSec}s`);
+            console.log("Per-second FPS breakdown:", summary.metrics);
+            console.log("=================================================");
+        }
+    });
+
+    return null;
+}
 
 export default function PLYPointCloud() {
     return (
@@ -1267,6 +1401,7 @@ export default function PLYPointCloud() {
             <DBCameraTrajectoryDisplay />
 
             <DynamicCubicLODController />
+            <PerformanceTestController />
         </group>
     );
 }
