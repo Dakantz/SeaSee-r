@@ -37,3 +37,40 @@ async def test_handler_update_job_status_mocked():
         assert res["status"] == "error"
         mock_update.assert_called_once()
         assert mock_update.call_args[0][1] == "FAILED"
+
+@pytest.mark.anyio
+async def test_run_background_job_timeout_updates_status_to_failed():
+    import uuid
+    from rq.timeouts import JobTimeoutException
+    from app.models.job import Job
+
+    dummy_job_id = str(uuid.uuid4())
+    mock_job = Job(id=uuid.UUID(dummy_job_id), task_type="opensfm_ingest", payload={}, name="Test Job")
+
+    async def mock_execute(*args, **kwargs):
+        class MockScalarResult:
+            def scalar_one_or_none(self):
+                return mock_job
+        return MockScalarResult()
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(side_effect=mock_execute)
+
+    class MockAsyncSessionContext:
+        async def __aenter__(self):
+            return mock_session
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    with patch("app.services.worker.tasks.async_session", return_value=MockAsyncSessionContext()), \
+         patch.object(task_registry, "dispatch", side_effect=JobTimeoutException("Task exceeded maximum timeout value (180 seconds)")), \
+         patch("app.services.worker.tasks._update_job_status", new_callable=AsyncMock) as mock_update_status:
+        with pytest.raises(JobTimeoutException) as exc_info:
+            await _run_background_job_async(dummy_job_id)
+
+        assert "Task exceeded maximum timeout value" in str(exc_info.value)
+        mock_update_status.assert_called_once_with(
+            dummy_job_id,
+            "FAILED",
+            error_message="Task exceeded maximum timeout value (180 seconds)"
+        )

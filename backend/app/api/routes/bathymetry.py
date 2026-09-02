@@ -398,7 +398,8 @@ async def upload_emodnet_csv(
         q.enqueue(
             "app.services.worker.tasks.run_background_job",
             str(job_record.id),
-            job_id=str(job_record.id)
+            job_id=str(job_record.id),
+            job_timeout=settings.job_timeout
         )
     except Exception as e:
         print(f"Warning: Could not enqueue job {job_record.id} to Redis Queue: {e}")

@@ -42,7 +42,8 @@ async def create_job(
         q.enqueue(
             "app.services.worker.tasks.run_background_job",
             str(job.id),
-            job_id=str(job.id)
+            job_id=str(job.id),
+            job_timeout=settings.job_timeout
         )
     except Exception as e:
         print(f"Warning: Could not enqueue job {job.id} to Redis Queue: {e}")
@@ -157,7 +158,8 @@ async def retry_job(
         q.enqueue(
             "app.services.worker.tasks.run_background_job",
             str(job.id),
-            job_id=str(job.id)
+            job_id=str(job.id),
+            job_timeout=settings.job_timeout
         )
     except Exception as e:
         print(f"Warning: Could not re-enqueue job {job.id} to Redis Queue: {e}")

@@ -291,7 +291,8 @@ async def ingest_opensfm_init(
                         q.enqueue(
                             "app.services.worker.tasks.run_background_job",
                             str(job_record.id),
-                            job_id=str(job_record.id)
+                            job_id=str(job_record.id),
+                            job_timeout=settings.job_timeout
                         )
                         
                         jobs_created.append({
@@ -401,7 +402,8 @@ async def ingest_opensfm_append(
                 q.enqueue(
                     "app.services.worker.tasks.run_background_job",
                     str(job_record.id),
-                    job_id=str(job_record.id)
+                    job_id=str(job_record.id),
+                    job_timeout=settings.job_timeout
                 )
 
                 jobs_created.append({
@@ -492,7 +494,8 @@ async def ingest_emodnet_init(
             q.enqueue(
                 "app.services.worker.tasks.run_background_job",
                 str(job_record.id),
-                job_id=str(job_record.id)
+                job_id=str(job_record.id),
+                job_timeout=settings.job_timeout
             )
 
             jobs_created.append({
@@ -616,7 +619,8 @@ async def ingest_emodnet_append(
             q.enqueue(
                 "app.services.worker.tasks.run_background_job",
                 str(job_record.id),
-                job_id=str(job_record.id)
+                job_id=str(job_record.id),
+                job_timeout=settings.job_timeout
             )
 
             jobs_created.append({

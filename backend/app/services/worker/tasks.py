@@ -1,10 +1,13 @@
 import asyncio
+import logging
 from datetime import datetime
 from typing import Dict, Any, Optional
 from sqlalchemy import update, select
 
 from app.core.database import async_session
 from app.models.job import Job
+
+logger = logging.getLogger(__name__)
 
 async def _update_job_status(
     job_id_str: str,
@@ -59,5 +62,14 @@ async def _run_background_job_async(job_id_str: str) -> Dict[str, Any]:
         task_type = job_record.task_type or ""
         name = job_record.name or ""
 
-    return await task_registry.dispatch(job_id_str, task_type=task_type, payload=payload, name=name)
+    try:
+        return await task_registry.dispatch(job_id_str, task_type=task_type, payload=payload, name=name)
+    except BaseException as e:
+        error_msg = str(e) or f"Task execution failed ({type(e).__name__})"
+        logger.error(f"Job {job_id_str} failed with error: {error_msg}", exc_info=True)
+        try:
+            await _update_job_status(job_id_str, "FAILED", error_message=error_msg)
+        except Exception as update_err:
+            logger.error(f"Failed to update job status for {job_id_str}: {update_err}")
+        raise
 
