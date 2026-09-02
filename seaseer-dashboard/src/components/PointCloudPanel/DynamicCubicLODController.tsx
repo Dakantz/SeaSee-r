@@ -46,6 +46,71 @@ export function BoxOutline({ width, height, depth, color }: { width: number; hei
     );
 }
 
+export function LODPointMaterial({ pointSize, lod }: { pointSize: number; lod: number }) {
+    const materialRef = useRef<THREE.ShaderMaterial>(null);
+
+    const material = useMemo(() => {
+        return new THREE.ShaderMaterial({
+            uniforms: {
+                uSize: { value: pointSize },
+                uLod: { value: lod },
+                uScale: { value: typeof window !== "undefined" ? window.innerHeight / 2.0 : 500.0 },
+            },
+            vertexShader: `
+                uniform float uSize;
+                uniform float uLod;
+                uniform float uScale;
+                varying vec3 vColor;
+
+                void main() {
+                    vColor = color;
+                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                    gl_Position = projectionMatrix * mvPosition;
+
+                    // Scale point size dynamically based on LOD level (coarser LODs get larger point sizes)
+                    float lodMultiplier = pow(1.35, uLod);
+                    float pointSizeAttenuated = (uSize * lodMultiplier * uScale) / (-mvPosition.z);
+
+                    // Clamp point size between 1.0px and 128.0px
+                    gl_PointSize = clamp(pointSizeAttenuated, 1.0, 128.0);
+                }
+            `,
+            fragmentShader: `
+                varying vec3 vColor;
+
+                void main() {
+                    // Anti-aliased smooth circular point rendering
+                    vec2 coord = gl_PointCoord - vec2(0.5);
+                    if (dot(coord, coord) > 0.25) {
+                        discard;
+                    }
+                    gl_FragColor = vec4(vColor, 1.0);
+                }
+            `,
+            vertexColors: true,
+            transparent: false,
+            depthTest: true,
+            depthWrite: true,
+        });
+    }, []);
+
+    useEffect(() => {
+        if (materialRef.current) {
+            materialRef.current.uniforms.uSize.value = pointSize;
+            materialRef.current.uniforms.uLod.value = lod;
+            materialRef.current.uniforms.uScale.value = typeof window !== "undefined" ? window.innerHeight / 2.0 : 500.0;
+        }
+    }, [pointSize, lod]);
+
+    useEffect(() => {
+        return () => {
+            material.dispose();
+        };
+    }, [material]);
+
+    return <primitive ref={materialRef} object={material} attach="material" />;
+}
+
 export interface ChunkSlotData {
     key: string;
     queryId: string;
@@ -59,7 +124,6 @@ export interface ChunkSlotData {
         minZ: number; maxZ: number;
     };
     geometry?: THREE.BufferGeometry;
-    instancedGeometry?: THREE.InstancedBufferGeometry;
     status: "loading" | "loaded" | "empty";
     abortController?: AbortController;
 }
@@ -153,6 +217,7 @@ const W0_BASE_CELL_WIDTH = 0.25;
 const MAX_CONCURRENT_FETCHES = 100;
 const MOVEMENT_THRESHOLD_SQ = 0.025;
 
+
 export function DynamicCubicLODController() {
     const { camera } = useThree();
     const {
@@ -163,6 +228,7 @@ export function DynamicCubicLODController() {
         wireframe,
         pointSize,
         showOutlines,
+        pauseCubicLodUpdate,
     } = usePLYPointCloudContext();
 
     // Central source of truth: Array of loaded chunks
@@ -172,6 +238,16 @@ export function DynamicCubicLODController() {
     const pendingQueueRef = useRef<FetchTask[]>([]);
     const activeKeysRef = useRef<Set<string>>(new Set());
     const lastCamPosRef = useRef<THREE.Vector3>(new THREE.Vector3(NaN, NaN, NaN));
+    const lastLoadedChunksCountRef = useRef<number>(0);
+    const prevPauseRef = useRef<boolean>(pauseCubicLodUpdate);
+
+    useEffect(() => {
+        if (prevPauseRef.current && !pauseCubicLodUpdate) {
+            // When unpausing, force update on next frame by clearing last saved camera position
+            lastCamPosRef.current.set(NaN, NaN, NaN);
+        }
+        prevPauseRef.current = pauseCubicLodUpdate;
+    }, [pauseCubicLodUpdate]);
 
     const activeTargetQueries = useMemo(() => {
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -245,20 +321,17 @@ export function DynamicCubicLODController() {
                     if (renderMode === "mesh") {
                         generateDelaunayTerrainMesh(geom, true);
                     }
-                    const instancedGeom = createInstancedPointGeometry(geom, pointSize);
 
                     setLoadedChunks((prevChunks) => {
                         const idx = prevChunks.findIndex((c) => c.key === task.key);
                         if (idx === -1 || controller.signal.aborted) {
                             geom.dispose();
-                            instancedGeom.dispose();
                             return prevChunks;
                         }
                         const updated = [...prevChunks];
                         updated[idx] = {
                             ...updated[idx],
                             geometry: geom,
-                            instancedGeometry: instancedGeom,
                             status: "loaded",
                             abortController: undefined,
                         };
@@ -289,14 +362,20 @@ export function DynamicCubicLODController() {
                     processQueue();
                 });
         }
-    }, [renderMode, pointSize]);
+    }, [renderMode]);
 
     useFrame(() => {
+        if (pauseCubicLodUpdate) return;
         if (activeTargetQueries.length === 0) return;
 
         const camPos = camera.position;
 
+        const loadedCount = loadedChunks.length;
+        const loadedCountChanged = loadedCount !== lastLoadedChunksCountRef.current;
+        lastLoadedChunksCountRef.current = loadedCount;
+
         if (
+            !loadedCountChanged &&
             !Number.isNaN(lastCamPosRef.current.x) &&
             camPos.distanceToSquared(lastCamPosRef.current) < MOVEMENT_THRESHOLD_SQ
         ) {
@@ -305,8 +384,14 @@ export function DynamicCubicLODController() {
 
         lastCamPosRef.current.copy(camPos);
 
+        const loadedMap = new Map<string, ChunkSlotData>();
+        for (const chunk of loadedChunks) {
+            loadedMap.set(chunk.key, chunk);
+        }
+
         const newActiveKeys = new Set<string>();
         const newTasks: FetchTask[] = [];
+        const addedTaskKeys = new Set<string>();
 
         const loadedKeySet = new Set(loadedChunks.map((c) => c.key));
 
@@ -330,7 +415,8 @@ export function DynamicCubicLODController() {
             // Global LOD 10 view
             const globalKey = `${queryId}_lod10_global`;
             newActiveKeys.add(globalKey);
-            if (!loadedKeySet.has(globalKey)) {
+            if (!loadedKeySet.has(globalKey) && !addedTaskKeys.has(globalKey)) {
+                addedTaskKeys.add(globalKey);
                 newTasks.push({
                     key: globalKey,
                     queryId,
@@ -348,9 +434,72 @@ export function DynamicCubicLODController() {
                 const centerJ = Math.floor(pcY / wL);
                 const centerK = Math.floor(pcZ / wL);
 
+                // Ensure the 27 sub-cubes of the next LOD level (lod - 1) covering this center cube are active and queued
+                if (lod > 0) {
+                    const nextLod = lod - 1;
+                    const baseI = centerI * 3;
+                    const baseJ = centerJ * 3;
+                    const baseK = centerK * 3;
+                    const wNext = W0_BASE_CELL_WIDTH * Math.pow(3, nextLod);
+
+                    for (let dx = 0; dx < 3; dx++) {
+                        for (let dy = 0; dy < 3; dy++) {
+                            for (let dz = 0; dz < 3; dz++) {
+                                const subI = baseI + dx;
+                                const subJ = baseJ + dy;
+                                const subK = baseK + dz;
+                                const subKey = `${queryId}_lod${nextLod}_${subI}_${subJ}_${subK}`;
+
+                                newActiveKeys.add(subKey);
+
+                                if (!loadedKeySet.has(subKey) && !addedTaskKeys.has(subKey)) {
+                                    addedTaskKeys.add(subKey);
+
+                                    const minX = subI * wNext;
+                                    const maxX = (subI + 1) * wNext;
+                                    const minY = subJ * wNext;
+                                    const maxY = (subJ + 1) * wNext;
+                                    const minZ = subK * wNext;
+                                    const maxZ = (subK + 1) * wNext;
+
+                                    const cellCenterX = (subI + 0.5) * wNext;
+                                    const cellCenterY = (subJ + 0.5) * wNext;
+                                    const cellCenterZ = (subK + 0.5) * wNext;
+
+                                    const distSq =
+                                        Math.pow(cellCenterX - pcX, 2) +
+                                        Math.pow(cellCenterY - pcY, 2) +
+                                        Math.pow(cellCenterZ - pcZ, 2);
+
+                                    const combinedFilters: FilterRule[] = [
+                                        ...(baseFilters || []),
+                                        { id: `spatial-min_x-${nextLod}-${subI}`, field: "min_x", operator: "gte", value: minX },
+                                        { id: `spatial-max_x-${nextLod}-${subI}`, field: "max_x", operator: "lte", value: maxX },
+                                        { id: `spatial-min_y-${nextLod}-${subJ}`, field: "min_y", operator: "gte", value: minY },
+                                        { id: `spatial-max_y-${nextLod}-${subJ}`, field: "max_y", operator: "lte", value: maxY },
+                                        { id: `spatial-min_z-${nextLod}-${subK}`, field: "min_z", operator: "gte", value: minZ },
+                                        { id: `spatial-max_z-${nextLod}-${subK}`, field: "max_z", operator: "lte", value: maxZ },
+                                    ];
+
+                                    newTasks.push({
+                                        key: subKey,
+                                        queryId,
+                                        lod: nextLod,
+                                        i: subI, j: subJ, k: subK,
+                                        distSq,
+                                        filters: combinedFilters,
+                                        bounds: { minX, maxX, minY, maxY, minZ, maxZ },
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+
                 for (let dx = -1; dx <= 1; dx++) {
                     for (let dy = -1; dy <= 1; dy++) {
                         for (let dz = -1; dz <= 1; dz++) {
+
                             const i = centerI + dx;
                             const j = centerJ + dy;
                             const k = centerK + dz;
@@ -360,41 +509,45 @@ export function DynamicCubicLODController() {
 
                             if (loadedKeySet.has(chunkKey)) continue;
 
-                            const minX = i * wL;
-                            const maxX = (i + 1) * wL;
-                            const minY = j * wL;
-                            const maxY = (j + 1) * wL;
-                            const minZ = k * wL;
-                            const maxZ = (k + 1) * wL;
+                            if (!addedTaskKeys.has(chunkKey)) {
+                                addedTaskKeys.add(chunkKey);
 
-                            const cellCenterX = (i + 0.5) * wL;
-                            const cellCenterY = (j + 0.5) * wL;
-                            const cellCenterZ = (k + 0.5) * wL;
+                                const minX = i * wL;
+                                const maxX = (i + 1) * wL;
+                                const minY = j * wL;
+                                const maxY = (j + 1) * wL;
+                                const minZ = k * wL;
+                                const maxZ = (k + 1) * wL;
 
-                            const distSq =
-                                Math.pow(cellCenterX - pcX, 2) +
-                                Math.pow(cellCenterY - pcY, 2) +
-                                Math.pow(cellCenterZ - pcZ, 2);
+                                const cellCenterX = (i + 0.5) * wL;
+                                const cellCenterY = (j + 0.5) * wL;
+                                const cellCenterZ = (k + 0.5) * wL;
 
-                            const combinedFilters: FilterRule[] = [
-                                ...(baseFilters || []),
-                                { id: `spatial-min_x-${lod}-${i}`, field: "min_x", operator: "gte", value: minX },
-                                { id: `spatial-max_x-${lod}-${i}`, field: "max_x", operator: "lte", value: maxX },
-                                { id: `spatial-min_y-${lod}-${j}`, field: "min_y", operator: "gte", value: minY },
-                                { id: `spatial-max_y-${lod}-${j}`, field: "max_y", operator: "lte", value: maxY },
-                                { id: `spatial-min_z-${lod}-${k}`, field: "min_z", operator: "gte", value: minZ },
-                                { id: `spatial-max_z-${lod}-${k}`, field: "max_z", operator: "lte", value: maxZ },
-                            ];
+                                const distSq =
+                                    Math.pow(cellCenterX - pcX, 2) +
+                                    Math.pow(cellCenterY - pcY, 2) +
+                                    Math.pow(cellCenterZ - pcZ, 2);
 
-                            newTasks.push({
-                                key: chunkKey,
-                                queryId,
-                                lod,
-                                i, j, k,
-                                distSq,
-                                filters: combinedFilters,
-                                bounds: { minX, maxX, minY, maxY, minZ, maxZ },
-                            });
+                                const combinedFilters: FilterRule[] = [
+                                    ...(baseFilters || []),
+                                    { id: `spatial-min_x-${lod}-${i}`, field: "min_x", operator: "gte", value: minX },
+                                    { id: `spatial-max_x-${lod}-${i}`, field: "max_x", operator: "lte", value: maxX },
+                                    { id: `spatial-min_y-${lod}-${j}`, field: "min_y", operator: "gte", value: minY },
+                                    { id: `spatial-max_y-${lod}-${j}`, field: "max_y", operator: "lte", value: maxY },
+                                    { id: `spatial-min_z-${lod}-${k}`, field: "min_z", operator: "gte", value: minZ },
+                                    { id: `spatial-max_z-${lod}-${k}`, field: "max_z", operator: "lte", value: maxZ },
+                                ];
+
+                                newTasks.push({
+                                    key: chunkKey,
+                                    queryId,
+                                    lod,
+                                    i, j, k,
+                                    distSq,
+                                    filters: combinedFilters,
+                                    bounds: { minX, maxX, minY, maxY, minZ, maxZ },
+                                });
+                            }
                         }
                     }
                 }
@@ -460,9 +613,6 @@ export function DynamicCubicLODController() {
                 if (entry.geometry) {
                     entry.geometry.dispose();
                 }
-                if (entry.instancedGeometry) {
-                    entry.instancedGeometry.dispose();
-                }
                 evictedCount++;
                 changed = true;
             }
@@ -510,24 +660,6 @@ export function DynamicCubicLODController() {
     }, [renderMode, loadedChunks]);
 
     useEffect(() => {
-        setLoadedChunks((prevChunks) => {
-            return prevChunks.map((chunk) => {
-                if (chunk.geometry) {
-                    if (chunk.instancedGeometry) {
-                        chunk.instancedGeometry.dispose();
-                    }
-                    const newInstanced = createInstancedPointGeometry(chunk.geometry, pointSize);
-                    return {
-                        ...chunk,
-                        instancedGeometry: newInstanced,
-                    };
-                }
-                return chunk;
-            });
-        });
-    }, [pointSize]);
-
-    useEffect(() => {
         return () => {
             pendingQueueRef.current = [];
             activeKeysRef.current.clear();
@@ -535,7 +667,6 @@ export function DynamicCubicLODController() {
                 prevChunks.forEach((entry) => {
                     entry.abortController?.abort();
                     entry.geometry?.dispose();
-                    entry.instancedGeometry?.dispose();
                 });
                 return [];
             });
@@ -577,28 +708,10 @@ export function DynamicCubicLODController() {
                                         </mesh>
                                     )
                                 ) : (
-                                    chunk.instancedGeometry && (
-                                        <instancedMesh
-                                            ref={(mesh) => {
-                                                if (mesh && chunk.instancedGeometry) {
-                                                    const matrixAttr = chunk.instancedGeometry.getAttribute("instanceMatrix") as THREE.InstancedBufferAttribute;
-                                                    const colorAttr = chunk.instancedGeometry.getAttribute("instanceColor") as THREE.InstancedBufferAttribute;
-                                                    if (matrixAttr) mesh.instanceMatrix = matrixAttr;
-                                                    if (colorAttr) mesh.instanceColor = colorAttr;
-                                                    mesh.count = chunk.instancedGeometry.instanceCount;
-                                                }
-                                            }}
-                                            args={[chunk.instancedGeometry, undefined, chunk.instancedGeometry.instanceCount]}
-                                            frustumCulled={false}
-                                        >
-                                            <meshStandardMaterial
-                                                vertexColors={!!chunk.instancedGeometry.attributes.instanceColor}
-                                                side={THREE.DoubleSide}
-                                                roughness={0.5}
-                                                metalness={0.1}
-                                                wireframe={wireframe}
-                                            />
-                                        </instancedMesh>
+                                    chunk.geometry && (
+                                        <points geometry={chunk.geometry}>
+                                            <LODPointMaterial pointSize={pointSize} lod={chunk.lod} />
+                                        </points>
                                     )
                                 )}
 
