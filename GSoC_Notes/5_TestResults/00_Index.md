@@ -4,5 +4,5 @@ This folder contains performance benchmarks and test logs for rendering and proc
 
 ## Index
 
-- [pointcloud_rendering_without_threejs_instancing.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/5_TestResults/pointcloud_rendering_without_threejs_instancing.md): Performance test benchmark for 3D point cloud rendering without Three.js instancing (30-second camera path trajectory, 15.36 Avg FPS).
-- [pointcloud_rendering_instanced_buffer_geometry.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/5_TestResults/pointcloud_rendering_instanced_buffer_geometry.md): Performance test benchmark for 3D point cloud rendering with Instanced Buffer Geometry in Three.js (~21.18 Avg FPS).
+- [pointcloud_rendering_points_material.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/5_TestResults/pointcloud_rendering_points_material.md): Performance test benchmark for 3D point cloud rendering using standard `pointsMaterial` with frametimes and point counts across multiple test runs (Run 1: 23.60 Avg FPS @ 754k pts; Run 2: 13.47 Avg FPS @ 2.17M pts; Run 3: 8.05 Avg FPS @ 5.47M pts).
+

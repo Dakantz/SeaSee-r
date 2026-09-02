@@ -80,6 +80,7 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const perfTestMetrics = contextState?.perfTestMetrics ?? [];
     const perfTestSummary = contextState?.perfTestSummary ?? null;
     const currentFps = contextState?.currentFps ?? null;
+    const currentFrameTimeMs = contextState?.currentFrameTimeMs ?? null;
 
     const [datasets, setDatasets] = useState<PointCloudMetadataResponse[]>([]);
     const [searchQuery, setSearchQuery] = useState<string>("");
@@ -449,7 +450,7 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
 
                     {isPerfTestRunning && (
                         <div style={{ fontSize: "11px", color: "#facc15", marginBottom: "6px", fontFamily: "monospace" }}>
-                            ⏱️ Measuring FPS... {currentFps !== null ? `${currentFps} FPS` : "Calculating..."}
+                            ⏱️ Measuring... {currentFps !== null ? `${currentFps} FPS (${currentFrameTimeMs} ms)` : "Calculating..."}
                         </div>
                     )}
 
@@ -459,7 +460,7 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                 Test Complete ✅
                             </div>
                             <div style={{ fontSize: "13px", color: "#60a5fa", fontFamily: "monospace" }}>
-                                Average FPS: <strong>{perfTestSummary.averageFps}</strong>
+                                Average FPS: <strong>{perfTestSummary.averageFps}</strong> ({perfTestSummary.averageFrameTimeMs} ms)
                             </div>
                             <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "2px" }}>
                                 Total Frames: {perfTestSummary.totalFrames} | Duration: {perfTestSummary.totalDurationSec}s
@@ -473,10 +474,13 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                 Per-Second Breakdown:
                             </div>
                             {perfTestMetrics.map((m) => (
-                                <div key={m.second} style={{ display: "flex", justifyContent: "space-between", padding: "1px 0" }}>
+                                <div key={m.second} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "1px 0", gap: "6px" }}>
                                     <span style={{ color: "#cbd5e1" }}>Sec {m.second}s:</span>
+                                    <span style={{ color: "#94a3b8", fontSize: "10px" }}>
+                                        {m.pointsCount !== undefined ? `${m.pointsCount.toLocaleString()} pts` : ""}
+                                    </span>
                                     <span style={{ fontWeight: "bold", color: m.fps >= 50 ? "#4ade80" : m.fps >= 30 ? "#facc15" : "#f87171" }}>
-                                        {m.fps} FPS
+                                        {m.fps} FPS ({m.frameTimeMs} ms)
                                     </span>
                                 </div>
                             ))}

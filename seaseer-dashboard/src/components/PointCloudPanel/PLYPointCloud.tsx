@@ -694,14 +694,13 @@ export function PerformanceTestController() {
         perfTestTrigger,
         isPerfTestRunning,
         setIsPerfTestRunning,
-        setPerfTestMetrics,
         setPerfTestSummary,
-        setCurrentFps,
+        pointCount,
     } = usePLYPointCloudContext();
 
     const isRunningRef = useRef<boolean>(false);
     const completedRef = useRef<boolean>(false);
-    const testStartTimeRef = useRef<number>(0);
+    const totalElapsedSecRef = useRef<number>(0);
     const totalFramesRef = useRef<number>(0);
     const framesInSecRef = useRef<number>(0);
     const secTimerRef = useRef<number>(0);
@@ -723,7 +722,7 @@ export function PerformanceTestController() {
         camera.up.set(0, 0, 1);
         camera.lookAt(PERF_TEST_END_POS);
 
-        testStartTimeRef.current = performance.now();
+        totalElapsedSecRef.current = 0;
         totalFramesRef.current = 0;
         framesInSecRef.current = 0;
         secTimerRef.current = 0;
@@ -744,9 +743,8 @@ export function PerformanceTestController() {
     useFrame((_, delta) => {
         if (!isRunningRef.current || completedRef.current) return;
 
-        const now = performance.now();
-        const elapsedSec = (now - testStartTimeRef.current) / 1000;
-        const progress = Math.min(1, elapsedSec / PERF_TEST_DURATION_SEC);
+        totalElapsedSecRef.current += delta;
+        const progress = Math.min(1, totalElapsedSecRef.current / PERF_TEST_DURATION_SEC);
 
         // Move camera slowly between start and end positions
         camera.position.lerpVectors(PERF_TEST_START_POS, PERF_TEST_END_POS, progress);
@@ -760,13 +758,20 @@ export function PerformanceTestController() {
         framesInSecRef.current++;
         secTimerRef.current += delta;
 
-        // Measure FPS every 1 second
+        // Measure FPS and Frametime every 1 second
         if (secTimerRef.current >= 1.0) {
             secondCountRef.current += 1;
-            const calculatedFps = Math.round((framesInSecRef.current / secTimerRef.current) * 100) / 100;
+            const windowDuration = secTimerRef.current;
+            const count = framesInSecRef.current;
+            const calculatedFps = count > 0 && windowDuration > 0 ? Math.round((count / windowDuration) * 100) / 100 : 0;
+            const calculatedFrameTimeMs = count > 0 ? Math.round((windowDuration / count) * 1000 * 100) / 100 : 0;
+            const currentPoints = pointCount ?? 0;
+
             const metric: PerfTestMetric = {
                 second: secondCountRef.current,
                 fps: calculatedFps,
+                frameTimeMs: calculatedFrameTimeMs,
+                pointsCount: currentPoints,
                 position: {
                     x: Math.round(camera.position.x * 1000) / 1000,
                     y: Math.round(camera.position.y * 1000) / 1000,
@@ -775,27 +780,59 @@ export function PerformanceTestController() {
             };
 
             metricsRef.current.push(metric);
-            setPerfTestMetrics([...metricsRef.current]);
-            setCurrentFps(calculatedFps);
 
             console.log(
-                `[Performance Test] Second ${metric.second}s: ${metric.fps} FPS | Pos: (${metric.position.x}, ${metric.position.y}, ${metric.position.z})`
+                `[Performance Test] Second ${metric.second}s: ${metric.fps} FPS | ${metric.frameTimeMs} ms | ${metric.pointsCount.toLocaleString()} points | Pos: (${metric.position.x}, ${metric.position.y}, ${metric.position.z})`
             );
 
             framesInSecRef.current = 0;
-            secTimerRef.current = secTimerRef.current % 1.0;
+            secTimerRef.current = 0; // Reset window accumulator
         }
 
         // Check completion
         if (progress >= 1.0) {
+            // Capture remainder / final second if frames are pending
+            if (framesInSecRef.current > 0) {
+                secondCountRef.current += 1;
+                const windowDuration = secTimerRef.current;
+                const count = framesInSecRef.current;
+                const calculatedFps = count > 0 && windowDuration > 0 ? Math.round((count / windowDuration) * 100) / 100 : 0;
+                const calculatedFrameTimeMs = count > 0 ? Math.round((windowDuration / count) * 1000 * 100) / 100 : 0;
+                const currentPoints = pointCount ?? 0;
+
+                const metric: PerfTestMetric = {
+                    second: secondCountRef.current,
+                    fps: calculatedFps,
+                    frameTimeMs: calculatedFrameTimeMs,
+                    pointsCount: currentPoints,
+                    position: {
+                        x: Math.round(camera.position.x * 1000) / 1000,
+                        y: Math.round(camera.position.y * 1000) / 1000,
+                        z: Math.round(camera.position.z * 1000) / 1000,
+                    },
+                };
+
+                metricsRef.current.push(metric);
+
+                console.log(
+                    `[Performance Test] Second ${metric.second}s (Final): ${metric.fps} FPS | ${metric.frameTimeMs} ms | ${metric.pointsCount.toLocaleString()} points | Pos: (${metric.position.x}, ${metric.position.y}, ${metric.position.z})`
+                );
+
+                framesInSecRef.current = 0;
+                secTimerRef.current = 0;
+            }
+
             camera.position.copy(PERF_TEST_END_POS);
 
-            const totalDurationSec = (performance.now() - testStartTimeRef.current) / 1000;
-            const averageFps = Math.round((totalFramesRef.current / totalDurationSec) * 100) / 100;
+            const totalDurationSec = totalElapsedSecRef.current;
+            const totalFrames = totalFramesRef.current;
+            const averageFps = totalFrames > 0 && totalDurationSec > 0 ? Math.round((totalFrames / totalDurationSec) * 100) / 100 : 0;
+            const averageFrameTimeMs = totalFrames > 0 ? Math.round((totalDurationSec / totalFrames) * 1000 * 100) / 100 : 0;
 
             const summary: PerfTestSummary = {
                 averageFps,
-                totalFrames: totalFramesRef.current,
+                averageFrameTimeMs,
+                totalFrames,
                 totalDurationSec: Math.round(totalDurationSec * 100) / 100,
                 metrics: [...metricsRef.current],
             };
@@ -810,9 +847,10 @@ export function PerformanceTestController() {
             console.log("=================================================");
             console.log("[Performance Test Completed]");
             console.log(`Average FPS: ${summary.averageFps}`);
+            console.log(`Average Frametime: ${summary.averageFrameTimeMs} ms`);
             console.log(`Total Frames: ${summary.totalFrames}`);
             console.log(`Total Duration: ${summary.totalDurationSec}s`);
-            console.log("Per-second FPS breakdown:", summary.metrics);
+            console.log("Per-second breakdown:", summary.metrics);
             console.log("=================================================");
         }
     });

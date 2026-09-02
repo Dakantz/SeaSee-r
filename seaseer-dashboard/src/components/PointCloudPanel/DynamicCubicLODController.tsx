@@ -229,10 +229,19 @@ export function DynamicCubicLODController() {
         pointSize,
         showOutlines,
         pauseCubicLodUpdate,
+        setPointCount,
     } = usePLYPointCloudContext();
 
     // Central source of truth: Array of loaded chunks
     const [loadedChunks, setLoadedChunks] = useState<ChunkSlotData[]>([]);
+
+    useEffect(() => {
+        const totalPoints = loadedChunks.reduce(
+            (sum, c) => sum + (c.status === "loaded" && c.geometry?.attributes?.position ? c.geometry.attributes.position.count : 0),
+            0
+        );
+        setPointCount(totalPoints);
+    }, [loadedChunks, setPointCount]);
 
     const activeFetchesRef = useRef<number>(0);
     const pendingQueueRef = useRef<FetchTask[]>([]);
@@ -337,8 +346,12 @@ export function DynamicCubicLODController() {
                         };
                         const loadedCount = updated.filter((c) => c.status === "loaded").length;
                         const loadingCount = updated.filter((c) => c.status === "loading").length;
+                        const totalLoadedPoints = updated.reduce(
+                            (sum, c) => sum + (c.status === "loaded" && c.geometry?.attributes?.position ? c.geometry.attributes.position.count : 0),
+                            0
+                        );
                         console.log(
-                            `[DynamicCubicLODController] Chunk Loaded: ${task.key} | Currently Loaded: ${loadedCount} | Currently Loading: ${loadingCount} | In Queue: ${pendingQueueRef.current.length}`
+                            `[DynamicCubicLODController] Chunk Loaded: ${task.key} | Currently Loaded Chunks: ${loadedCount} | Currently Loaded Points: ${totalLoadedPoints.toLocaleString()} | Currently Loading: ${loadingCount} | In Queue: ${pendingQueueRef.current.length}`
                         );
                         return updated;
                     });
@@ -619,8 +632,12 @@ export function DynamicCubicLODController() {
 
             if (changed && evictedCount > 0) {
                 const loadedCount = remainingChunks.filter((c) => c.status === "loaded").length;
+                const totalLoadedPoints = remainingChunks.reduce(
+                    (sum, c) => sum + (c.status === "loaded" && c.geometry?.attributes?.position ? c.geometry.attributes.position.count : 0),
+                    0
+                );
                 console.log(
-                    `[DynamicCubicLODController] Evicted ${evictedCount} chunk(s) | Currently Loaded: ${loadedCount} | In Queue: ${pendingQueueRef.current.length}`
+                    `[DynamicCubicLODController] Evicted ${evictedCount} chunk(s) | Currently Loaded Chunks: ${loadedCount} | Currently Loaded Points: ${totalLoadedPoints.toLocaleString()} | In Queue: ${pendingQueueRef.current.length}`
                 );
             }
 
@@ -710,7 +727,11 @@ export function DynamicCubicLODController() {
                                 ) : (
                                     chunk.geometry && (
                                         <points geometry={chunk.geometry}>
-                                            <LODPointMaterial pointSize={pointSize} lod={chunk.lod} />
+                                            <pointsMaterial
+                                                vertexColors={!!chunk.geometry.attributes.color}
+                                                size={pointSize * 0.25}
+                                                sizeAttenuation
+                                            />
                                         </points>
                                     )
                                 )}

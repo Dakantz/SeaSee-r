@@ -25,11 +25,14 @@ export interface CameraViewTarget {
 export interface PerfTestMetric {
     second: number;
     fps: number;
+    frameTimeMs: number;
+    pointsCount: number;
     position: { x: number; y: number; z: number };
 }
 
 export interface PerfTestSummary {
     averageFps: number;
+    averageFrameTimeMs: number;
     totalFrames: number;
     totalDurationSec: number;
     metrics: PerfTestMetric[];
@@ -58,6 +61,7 @@ export interface PLYPointCloudContextType {
     isLoading: boolean;
     error: string | null;
     pointCount: number | null;
+    setPointCount: (count: number | null) => void;
     keyLightIntensity: number;
     setKeyLightIntensity: (val: number) => void;
     fillLightIntensity: number;
@@ -121,6 +125,8 @@ export interface PLYPointCloudContextType {
     setPerfTestSummary: React.Dispatch<React.SetStateAction<PerfTestSummary | null>>;
     currentFps: number | null;
     setCurrentFps: React.Dispatch<React.SetStateAction<number | null>>;
+    currentFrameTimeMs: number | null;
+    setCurrentFrameTimeMs: React.Dispatch<React.SetStateAction<number | null>>;
 }
 
 const DEFAULT_HARDCODED_IDENTIFIER = "";
@@ -209,11 +215,13 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [perfTestMetrics, setPerfTestMetrics] = useState<PerfTestMetric[]>([]);
     const [perfTestSummary, setPerfTestSummary] = useState<PerfTestSummary | null>(null);
     const [currentFps, setCurrentFps] = useState<number | null>(null);
+    const [currentFrameTimeMs, setCurrentFrameTimeMs] = useState<number | null>(null);
 
     const startPerfTest = useCallback(() => {
         setPerfTestMetrics([]);
         setPerfTestSummary(null);
         setCurrentFps(null);
+        setCurrentFrameTimeMs(null);
         setIsPerfTestRunning(true);
         setPerfTestTrigger((prev) => prev + 1);
     }, []);
@@ -523,6 +531,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 isLoading,
                 error,
                 pointCount,
+                setPointCount,
                 keyLightIntensity,
                 setKeyLightIntensity,
                 fillLightIntensity,
@@ -582,6 +591,8 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 setPerfTestSummary,
                 currentFps,
                 setCurrentFps,
+                currentFrameTimeMs,
+                setCurrentFrameTimeMs,
             }}
         >
             {children}
