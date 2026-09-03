@@ -10,5 +10,6 @@ This folder contains technical documentation for features, services, setup proce
 - [Emodnet_Provider.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/Emodnet_Provider.md): EMODnet provider integration details.
 - [downscale_all.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/downscale_all.md): Downscaling batch utility.
 - [download_training.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/download_training.md): Training data downloader.
+- [video_data_analyzer.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/video_data_analyzer.md): Analyzers (`analyze_video_intervals.py` & `analyze_log_intervals.py`) for finding overlapping intervals between video recordings and log data.
 - [Docker_Setup.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/Docker_Setup.md): Docker deployment guide.
 - [Native_Setup.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/Native_Setup.md): Native host setup guide.
