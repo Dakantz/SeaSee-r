@@ -28,9 +28,8 @@ export interface TileNode {
 export interface LodManagerConfig {
   bounds: TileBounds;
   maxLOD: number;
-  /** Distance multiplier or per-LOD threshold array in world units */
+  /** Distance multiplier in world units */
   distanceFactor: number;
-  customThresholds?: number[];
   simulateAsyncLoad: boolean;
   asyncLoadDelayMs: number;
   wireframe: boolean;
@@ -38,14 +37,7 @@ export interface LodManagerConfig {
 }
 
 export interface ManagerStats {
-  totalNodes: number;
-  leafNodes: number;
-  loadedNodes: number;
-  needsLoadNodes: number;
-  needsRefreshNodes: number;
-  needsEvictNodes: number;
   nodesPerLod: Record<number, number>;
-  evictedTotal: number;
 }
 
 export const LOD_COLORS: number[] = [
@@ -131,12 +123,9 @@ export class QuadtreeLodManager {
   }
 
   /**
-   * Calculate distance split threshold for a given depth/LOD and tile dimension
+   * Calculate distance split threshold for a given tile dimension
    */
-  private getSplitThreshold(depth: number, bounds: TileBounds): number {
-    if (this.config.customThresholds && this.config.customThresholds[depth] !== undefined) {
-      return this.config.customThresholds[depth];
-    }
+  private getSplitThreshold(bounds: TileBounds): number {
     const tileSize = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ);
     return tileSize * this.config.distanceFactor;
   }
@@ -196,7 +185,7 @@ export class QuadtreeLodManager {
     const dz = focalPos.z - node.position.z;
     const dist2D = Math.sqrt(dx * dx + dz * dz);
 
-    const threshold = this.getSplitThreshold(node.depth, node.bounds);
+    const threshold = this.getSplitThreshold(node.bounds);
     const shouldSplit = node.depth < this.config.maxLOD && dist2D < threshold;
 
     if (shouldSplit) {
@@ -247,6 +236,7 @@ export class QuadtreeLodManager {
     const sw = this.createNode(nextDepth, { minX, minZ: midZ, maxX: midX, maxZ }, node);
     const se = this.createNode(nextDepth, { minX: midX, minZ: midZ, maxX, maxZ }, node);
 
+    node.status = "NEEDS_EVICT";
     node.children = [nw, ne, sw, se];
     node.isLeaf = false;
   }
@@ -538,35 +528,11 @@ export class QuadtreeLodManager {
   }
 
   public getStats(): ManagerStats {
-    let totalNodes = 0;
-    let leafNodes = 0;
-    let loadedNodes = 0;
-    let needsLoadNodes = 0;
-    let needsRefreshNodes = 0;
-    let needsEvictNodes = 0;
     const nodesPerLod: Record<number, number> = {};
 
     const traverse = (node: TileNode) => {
-      totalNodes++;
-      nodesPerLod[node.lod] = (nodesPerLod[node.lod] || 0) + 1;
-
-      if (node.isLeaf) {
-        leafNodes++;
-      }
-
-      switch (node.status) {
-        case "LOADED":
-          loadedNodes++;
-          break;
-        case "NEEDS_LOAD":
-          needsLoadNodes++;
-          break;
-        case "NEEDS_REFRESH":
-          needsRefreshNodes++;
-          break;
-        case "NEEDS_EVICT":
-          needsEvictNodes++;
-          break;
+      if (node.status == "LOADED") {
+        nodesPerLod[node.lod] = (nodesPerLod[node.lod] || 0) + 1;
       }
 
       for (const child of node.children) {
@@ -577,14 +543,7 @@ export class QuadtreeLodManager {
     traverse(this.root);
 
     return {
-      totalNodes,
-      leafNodes,
-      loadedNodes,
-      needsLoadNodes,
-      needsRefreshNodes,
-      needsEvictNodes,
       nodesPerLod,
-      evictedTotal: this.evictedCountTotal,
     };
   }
 

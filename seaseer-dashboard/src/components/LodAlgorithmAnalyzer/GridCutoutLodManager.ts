@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { TileBounds, ManagerStats, LodManagerConfig, TileStatus, LOD_COLORS } from "./QuadtreeLodManager";
+import { type TileBounds, type ManagerStats, type LodManagerConfig, type TileStatus, LOD_COLORS } from "./QuadtreeLodManager";
 
 export interface GridTileNode {
   id: string;
@@ -405,42 +405,14 @@ export class GridCutoutLodManager {
   }
 
   public getStats(): ManagerStats {
-    let totalNodes = this.activeTiles.size;
-    let leafNodes = this.activeTiles.size;
-    let loadedNodes = 0;
-    let needsLoadNodes = 0;
-    let needsRefreshNodes = 0;
-    let needsEvictNodes = 0;
     const nodesPerLod: Record<number, number> = {};
 
     for (const tile of this.activeTiles.values()) {
       nodesPerLod[tile.lod] = (nodesPerLod[tile.lod] || 0) + 1;
-
-      switch (tile.status) {
-        case "LOADED":
-          loadedNodes++;
-          break;
-        case "NEEDS_LOAD":
-          needsLoadNodes++;
-          break;
-        case "NEEDS_REFRESH":
-          needsRefreshNodes++;
-          break;
-        case "NEEDS_EVICT":
-          needsEvictNodes++;
-          break;
-      }
     }
 
     return {
-      totalNodes,
-      leafNodes,
-      loadedNodes,
-      needsLoadNodes,
-      needsRefreshNodes,
-      needsEvictNodes,
       nodesPerLod,
-      evictedTotal: this.evictedCountTotal,
     };
   }
 

@@ -30,14 +30,7 @@ export function useLodAlgorithmAnalyzer() {
 
   // Real-time Stats
   const [stats, setStats] = useState<ManagerStats>({
-    totalNodes: 0,
-    leafNodes: 0,
-    loadedNodes: 0,
-    needsLoadNodes: 0,
-    needsRefreshNodes: 0,
-    needsEvictNodes: 0,
     nodesPerLod: {},
-    evictedTotal: 0,
   });
 
   // Manager reference
@@ -150,7 +143,7 @@ export function useLodAlgorithmAnalyzer() {
 
     // 7. LOD Tile Manager Setup (Algorithm 1: Quadtree vs Algorithm 2: Grid-Cutout)
     const managerConfig = {
-      bounds: { minX: -120, minZ: -120, maxX: 120, maxZ: 120 },
+      bounds: { minX: -500, minZ: -100, maxX: 100, maxZ: 100 },
       maxLOD,
       distanceFactor,
       simulateAsyncLoad: simulateAsync,

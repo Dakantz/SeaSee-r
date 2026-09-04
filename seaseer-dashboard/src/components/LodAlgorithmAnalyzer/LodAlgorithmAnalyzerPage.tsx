@@ -1,4 +1,4 @@
-import { FiTarget, FiEye, FiLayers, FiZap, FiRefreshCw, FiGrid, FiActivity, FiCpu } from "react-icons/fi";
+import { FiTarget, FiEye, FiZap, FiRefreshCw, FiGrid, FiActivity, FiCpu } from "react-icons/fi";
 import { useLodAlgorithmAnalyzer } from "./useLodAlgorithmAnalyzer";
 import { LOD_COLOR_HEX } from "./QuadtreeLodManager";
 import "./LodAlgorithmAnalyzerPage.css";
@@ -107,33 +107,6 @@ export default function LodAlgorithmAnalyzerPage() {
           </div>
         </div>
 
-        {/* Real-Time Quadtree Node Counters */}
-        <div className="hud-section-title">
-          <FiLayers /> 2D Quadtree Analytics
-        </div>
-
-        <div className="node-stats-grid">
-          <div className="stat-box">
-            <div className="stat-num">{stats.totalNodes}</div>
-            <div className="stat-label">Total Nodes</div>
-          </div>
-          <div className="stat-box accent">
-            <div className="stat-num">{stats.leafNodes}</div>
-            <div className="stat-label">Active Leaves</div>
-          </div>
-          <div className="stat-box success">
-            <div className="stat-num">{stats.loadedNodes}</div>
-            <div className="stat-label">Loaded Tiles</div>
-          </div>
-          <div className="stat-box warning">
-            <div className="stat-num">{stats.needsLoadNodes}</div>
-            <div className="stat-label">Needs Load</div>
-          </div>
-          <div className="stat-box danger">
-            <div className="stat-num">{stats.evictedTotal}</div>
-            <div className="stat-label">Evicted Total</div>
-          </div>
-        </div>
 
         {/* Nodes Breakdown Per LOD Level */}
         <div className="hud-section-title">
