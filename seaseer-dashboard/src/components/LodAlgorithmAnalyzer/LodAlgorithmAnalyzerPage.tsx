@@ -18,6 +18,8 @@ export default function LodAlgorithmAnalyzerPage() {
     setMaxLOD,
     distanceFactor,
     setDistanceFactor,
+    evictionDistanceFactor,
+    setEvictionDistanceFactor,
     focalSource,
     setFocalSource,
     simulateAsync,
@@ -30,7 +32,7 @@ export default function LodAlgorithmAnalyzerPage() {
     setShowStatusOverlays,
     stats,
     handleRecenter,
-    handleForceRebuild,
+    handleReset,
   } = useLodAlgorithmAnalyzer();
 
   return (
@@ -72,12 +74,23 @@ export default function LodAlgorithmAnalyzerPage() {
               className={`toggle-btn ${lodAlgorithm === "grid-cutout" ? "active" : ""}`}
               onClick={() => setLodAlgorithm("grid-cutout")}
             >
-              2. Grid Cutout (Max 16)
+              2. Grid Cutout
+            </button>
+            <button
+              className={`toggle-btn ${lodAlgorithm === "inside-out-3x3" ? "active" : ""}`}
+              onClick={() => setLodAlgorithm("inside-out-3x3")}
+            >
+              3. Inside Out 3x3
             </button>
           </div>
           {lodAlgorithm === "grid-cutout" && (
             <div className="algorithm-info-banner">
               💡 <strong>Algorithm 2 (Grid Cutout):</strong> Base coarse grid (LOD {maxLOD}) stays loaded. Finer detail tiles (LOD 0) carve out matching sub-squares based on distance. At perfect alignment (0,0), loads <strong>at most 16 tiles</strong> (and fewer off-center).
+            </div>
+          )}
+          {lodAlgorithm === "inside-out-3x3" && (
+            <div className="algorithm-info-banner">
+              💡 <strong>Algorithm 3 (Inside Out 3x3):</strong> 2D adaptation of the 3D Dynamic Cubic LOD controller. Concentric 3x3 grids center around the focal point, scaling by 3× per LOD level from finest detail (LOD 0) outwards to coarsest detail (LOD {maxLOD}).
             </div>
           )}
         </div>
@@ -113,7 +126,7 @@ export default function LodAlgorithmAnalyzerPage() {
           <FiGrid /> Nodes per LOD Level
         </div>
         <div className="lod-breakdown-list">
-          {[0, 1, 2, 3, 4, 5].map((lvl) => {
+          {[0, 1, 2, 3, 4, 5, 6].map((lvl) => {
             const count = stats.nodesPerLod[lvl] || 0;
             const color = LOD_COLOR_HEX[Math.min(lvl, LOD_COLOR_HEX.length - 1)];
             const maxCount = Math.max(...Object.values(stats.nodesPerLod), 1);
@@ -160,21 +173,42 @@ export default function LodAlgorithmAnalyzerPage() {
           </div>
 
           {/* Distance Factor Threshold Slider */}
-          <div className="control-row">
-            <div className="control-label">
-              <span>Split Distance Factor:</span>
-              <span className="control-val">{distanceFactor.toFixed(1)}×</span>
+          {lodAlgorithm !== "inside-out-3x3" && (
+            <div className="control-row">
+              <div className="control-label">
+                <span>Split Distance Factor:</span>
+                <span className="control-val">{distanceFactor.toFixed(1)}×</span>
+              </div>
+              <input
+                type="range"
+                min="0.8"
+                max="3.5"
+                step="0.1"
+                value={distanceFactor}
+                onChange={(e) => setDistanceFactor(parseFloat(e.target.value))}
+                className="range-input"
+              />
             </div>
-            <input
-              type="range"
-              min="0.8"
-              max="3.5"
-              step="0.1"
-              value={distanceFactor}
-              onChange={(e) => setDistanceFactor(parseFloat(e.target.value))}
-              className="range-input"
-            />
-          </div>
+          )}
+
+          {/* Tile Eviction Distance Factor Slider (Algorithm 3: Inside Out 3x3) */}
+          {lodAlgorithm === "inside-out-3x3" && (
+            <div className="control-row">
+              <div className="control-label">
+                <span>Eviction Distance Factor:</span>
+                <span className="control-val">{evictionDistanceFactor}× tileSize</span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                step="1"
+                value={evictionDistanceFactor}
+                onChange={(e) => setEvictionDistanceFactor(parseInt(e.target.value, 10))}
+                className="range-input"
+              />
+            </div>
+          )}
 
           {/* Focal Source Radio Buttons */}
           <div className="control-row vertical">
@@ -253,9 +287,9 @@ export default function LodAlgorithmAnalyzerPage() {
 
           <button
             className="action-btn primary full-width"
-            onClick={handleForceRebuild}
+            onClick={handleReset}
           >
-            <FiRefreshCw /> Force Rebuild Quadtree
+            <FiRefreshCw /> Reset
           </button>
         </div>
 

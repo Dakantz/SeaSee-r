@@ -3,9 +3,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { QuadtreeLodManager, type ManagerStats } from "./QuadtreeLodManager";
 import { GridCutoutLodManager } from "./GridCutoutLodManager";
+import { InsideOut3x3LodManager } from "./InsideOut3x3LodManager";
 
 export type FocalSource = "camera" | "mouse" | "orbit";
-export type LodAlgorithm = "quadtree" | "grid-cutout";
+export type LodAlgorithm = "quadtree" | "grid-cutout" | "inside-out-3x3";
 
 export function useLodAlgorithmAnalyzer() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -22,6 +23,7 @@ export function useLodAlgorithmAnalyzer() {
   const [lodAlgorithm, setLodAlgorithm] = useState<LodAlgorithm>("quadtree");
   const [maxLOD, setMaxLOD] = useState<number>(4);
   const [distanceFactor, setDistanceFactor] = useState<number>(1.6);
+  const [evictionDistanceFactor, setEvictionDistanceFactor] = useState<number>(3);
   const [focalSource, setFocalSource] = useState<FocalSource>("camera");
   const [simulateAsync, setSimulateAsync] = useState<boolean>(false);
   const [asyncDelay, setAsyncDelay] = useState<number>(300);
@@ -34,7 +36,7 @@ export function useLodAlgorithmAnalyzer() {
   });
 
   // Manager reference
-  const lodManagerRef = useRef<QuadtreeLodManager | GridCutoutLodManager | null>(null);
+  const lodManagerRef = useRef<QuadtreeLodManager | GridCutoutLodManager | InsideOut3x3LodManager | null>(null);
   const resetCameraTriggerRef = useRef<(() => void) | null>(null);
 
   // Sync state changes with LOD Manager
@@ -49,6 +51,12 @@ export function useLodAlgorithmAnalyzer() {
       lodManagerRef.current.setDistanceFactor(distanceFactor);
     }
   }, [distanceFactor]);
+
+  useEffect(() => {
+    if (lodManagerRef.current && lodManagerRef.current instanceof InsideOut3x3LodManager) {
+      lodManagerRef.current.setEvictionDistanceFactor(evictionDistanceFactor);
+    }
+  }, [evictionDistanceFactor]);
 
   useEffect(() => {
     if (lodManagerRef.current) {
@@ -141,11 +149,12 @@ export function useLodAlgorithmAnalyzer() {
     centerRing.position.set(0, 0.05, 0);
     scene.add(centerRing);
 
-    // 7. LOD Tile Manager Setup (Algorithm 1: Quadtree vs Algorithm 2: Grid-Cutout)
+    // 7. LOD Tile Manager Setup (Algorithm 1: Quadtree, Algorithm 2: Grid-Cutout, Algorithm 3: Inside Out 3x3)
     const managerConfig = {
       bounds: { minX: -500, minZ: -100, maxX: 100, maxZ: 100 },
       maxLOD,
       distanceFactor,
+      evictionDistanceFactor,
       simulateAsyncLoad: simulateAsync,
       asyncLoadDelayMs: asyncDelay,
       wireframe,
@@ -153,7 +162,9 @@ export function useLodAlgorithmAnalyzer() {
     };
 
     const lodManager =
-      lodAlgorithm === "grid-cutout"
+      lodAlgorithm === "inside-out-3x3"
+        ? new InsideOut3x3LodManager(scene, managerConfig)
+        : lodAlgorithm === "grid-cutout"
         ? new GridCutoutLodManager(scene, managerConfig)
         : new QuadtreeLodManager(scene, managerConfig);
 
@@ -322,8 +333,8 @@ export function useLodAlgorithmAnalyzer() {
     resetCameraTriggerRef.current?.();
   };
 
-  const handleForceRebuild = () => {
-    lodManagerRef.current?.markAllNeedsRefresh();
+  const handleReset = () => {
+    lodManagerRef.current?.reset();
   };
 
   return {
@@ -340,6 +351,8 @@ export function useLodAlgorithmAnalyzer() {
     setMaxLOD,
     distanceFactor,
     setDistanceFactor,
+    evictionDistanceFactor,
+    setEvictionDistanceFactor,
     focalSource,
     setFocalSource,
     simulateAsync,
@@ -352,7 +365,7 @@ export function useLodAlgorithmAnalyzer() {
     setShowStatusOverlays,
     stats,
     handleRecenter,
-    handleForceRebuild,
+    handleReset,
   };
 }
 

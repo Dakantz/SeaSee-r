@@ -30,6 +30,8 @@ export interface LodManagerConfig {
   maxLOD: number;
   /** Distance multiplier in world units */
   distanceFactor: number;
+  /** Tile eviction distance factor multiplier (for Algorithm 3) */
+  evictionDistanceFactor?: number;
   simulateAsyncLoad: boolean;
   asyncLoadDelayMs: number;
   wireframe: boolean;
@@ -46,7 +48,8 @@ export const LOD_COLORS: number[] = [
   0xeab308, // Level 2: Yellow
   0x22c55e, // Level 3: Green
   0x3b82f6, // Level 4: Blue
-  0xa855f7, // Level 5+: Purple (Coarsest)
+  0xa855f7, // Level 5: Purple
+  0xec4899, // Level 6+: Pink (Coarsest)
 ];
 
 export const LOD_COLOR_HEX: string[] = [
@@ -56,6 +59,7 @@ export const LOD_COLOR_HEX: string[] = [
   "#22c55e",
   "#3b82f6",
   "#a855f7",
+  "#ec4899",
 ];
 
 export class QuadtreeLodManager {
@@ -464,6 +468,22 @@ export class QuadtreeLodManager {
     }
     node.children = [];
     node.isLeaf = true;
+  }
+
+  /**
+   * Force reset the entire Quadtree construct from scratch
+   */
+  public reset(): void {
+    const disposeSubtree = (node: TileNode) => {
+      this.disposeNodeVisuals(node);
+      for (const child of node.children) {
+        disposeSubtree(child);
+      }
+      node.children = [];
+      node.isLeaf = true;
+    };
+    disposeSubtree(this.root);
+    this.root = this.createNode(0, this.config.bounds, null);
   }
 
   /**
