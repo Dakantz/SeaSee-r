@@ -1,5 +1,11 @@
 import * as THREE from "three";
-import { type TileBounds, type ManagerStats, type LodManagerConfig, type TileStatus, LOD_COLORS } from "./QuadtreeLodManager";
+import {
+  type TileBounds,
+  type ManagerStats,
+  type LodManagerConfig,
+  type TileStatus,
+  LOD_COLORS,
+} from "./QuadtreeLodManager";
 
 export interface GridTileNode {
   id: string;
@@ -13,6 +19,13 @@ export interface GridTileNode {
   loadStartTime?: number;
 }
 
+/**
+ * Grid Cutout LOD Manager (Combination of Quadtree bounds constraint & Inside-Out concentric LOD grids)
+ * 
+ * Generates nested 2x2 grid neighborhoods centered around the active focal point for each LOD level (0..maxLOD).
+ * All tile boundaries are strictly clipped against `config.bounds` (Quadtree style), preventing loaded chunks
+ * from exceeding the base domain bounds while preserving the Inside-Out visual pattern.
+ */
 export class GridCutoutLodManager {
   private scene: THREE.Scene;
   private config: LodManagerConfig;
@@ -32,6 +45,7 @@ export class GridCutoutLodManager {
       bounds: { minX: -120, minZ: -120, maxX: 120, maxZ: 120 },
       maxLOD: 4,
       distanceFactor: 1.6,
+      evictionDistanceFactor: 3,
       simulateAsyncLoad: false,
       asyncLoadDelayMs: 300,
       wireframe: false,
@@ -45,102 +59,62 @@ export class GridCutoutLodManager {
   }
 
   /**
-   * Main per-frame update loop for Algorithm 2 (Grid-Aligned Cutout LOD)
+   * Main per-frame update loop for Algorithm 2 (Grid-Aligned Cutout LOD with 2x2 Inside-Out & Base Bounds)
    */
   public update(focalPosition: THREE.Vector3, timeSeconds: number = performance.now() * 0.001): void {
     const { bounds, maxLOD, distanceFactor } = this.config;
     const totalWidth = bounds.maxX - bounds.minX;
     const totalHeight = bounds.maxZ - bounds.minZ;
 
-    // Base coarse grid size at LOD 0 (4x4 coarse grid across total domain)
-    const baseCoarseGridCols = 4;
-    const baseCoarseGridRows = 4;
-    const coarseTileW = totalWidth / baseCoarseGridCols; // e.g. 60
-    const coarseTileH = totalHeight / baseCoarseGridRows; // e.g. 60
-
-    // Fine detail level (LOD 1) subdivides coarse tile into 2x2 fine sub-squares (30x30)
-    // 8x8 fine sub-squares total across domain.
-    const fineCols = baseCoarseGridCols * 2; // 8
-    const fineRows = baseCoarseGridRows * 2; // 8
-    const fineTileW = coarseTileW / 2; // 30
-    const fineTileH = coarseTileH / 2; // 30
-
-    // Distance threshold: when focal position is at center of alignment (0,0),
-    // the 16 fine sub-squares surrounding (0,0) span [-60, 60] x [-60, 60].
-    // Their centers are at (+-15, +-15), (+-15, +-45), (+-45, +-15), (+-45, +-45).
-    // Maximum distance from (0,0) to center of these 16 squares is sqrt(45^2 + 45^2) = 63.64.
-    // Setting threshold radius to ~65 * (distanceFactor / 1.6) loads exactly 16 fine squares at center,
-    // and loads fewer than 16 in most off-center situations.
-    const cutoffRadius = 65.0 * (distanceFactor / 1.6);
+    // Base cell width for LOD 0 (finest detail), scaling with distanceFactor and domain size
+    const domainScale = Math.max(totalWidth, totalHeight);
+    const baseW0 = (domainScale / 20.0) * (distanceFactor / 1.6);
 
     const neededTiles: Map<string, { lod: number; bounds: TileBounds; center: THREE.Vector3 }> = new Map();
 
-    // Track active fine sub-squares (col, row)
-    const activeFineSquares = new Set<string>();
+    // Concentric 2x2 grids centered on focal position from lod = 0 (finest detail) up to maxLOD (coarsest detail)
+    for (let lod = 0; lod <= maxLOD; lod++) {
+      const wL = baseW0 * Math.pow(2, lod);
 
-    // 1. Evaluate fine sub-squares (LOD 1 or maxLOD detail)
-    for (let r = 0; r < fineRows; r++) {
-      for (let c = 0; c < fineCols; c++) {
-        const minX = bounds.minX + c * fineTileW;
-        const maxX = minX + fineTileW;
-        const minZ = bounds.minZ + r * fineTileH;
-        const maxZ = minZ + fineTileH;
+      // Center 2x2 grid on current focal position
+      const centerI = Math.floor((focalPosition.x - wL / 2) / wL);
+      const centerJ = Math.floor((focalPosition.z - wL / 2) / wL);
 
-        const centerX = minX + fineTileW / 2;
-        const centerZ = minZ + fineTileH / 2;
-        const center = new THREE.Vector3(centerX, 0, centerZ);
+      for (let dx = 0; dx <= 1; dx++) {
+        for (let dz = 0; dz <= 1; dz++) {
+          const i = centerI + dx;
+          const j = centerJ + dz;
 
-        const dx = focalPosition.x - centerX;
-        const dz = focalPosition.z - centerZ;
-        const dist = Math.sqrt(dx * dx + dz * dz);
+          const rawMinX = i * wL;
+          const rawMaxX = (i + 1) * wL;
+          const rawMinZ = j * wL;
+          const rawMaxZ = (j + 1) * wL;
 
-        if (dist <= cutoffRadius) {
-          activeFineSquares.add(`${r}_${c}`);
-          const fineLodLevel = 0; // LOD 0 is finest detail
-          const key = `grid_fine_${r}_${c}_lod${fineLodLevel}`;
+          // Strict Quadtree-style bounds enforcement (clamp/clip to base bounds)
+          const minX = Math.max(rawMinX, bounds.minX);
+          const maxX = Math.min(rawMaxX, bounds.maxX);
+          const minZ = Math.max(rawMinZ, bounds.minZ);
+          const maxZ = Math.min(rawMaxZ, bounds.maxZ);
+
+          // Skip tiles completely outside the base bounds
+          if (minX >= maxX || minZ >= maxZ) {
+            continue;
+          }
+
+          const centerX = (minX + maxX) / 2;
+          const centerZ = (minZ + maxZ) / 2;
+
+          const key = `grid_cutout_lod${lod}_${i}_${j}`;
           neededTiles.set(key, {
-            lod: fineLodLevel,
+            lod,
             bounds: { minX, minZ, maxX, maxZ },
-            center,
+            center: new THREE.Vector3(centerX, 0, centerZ),
           });
         }
       }
     }
 
-    // 2. Evaluate coarse tiles (coarsest detail level) and cut out fine sub-squares
-    const coarseLodLevel = Math.max(1, maxLOD);
-    for (let cr = 0; cr < baseCoarseGridRows; cr++) {
-      for (let cc = 0; cc < baseCoarseGridCols; cc++) {
-        // A coarse tile contains 4 fine sub-squares: (2*cr, 2*cc), (2*cr+1, 2*cc), (2*cr, 2*cc+1), (2*cr+1, 2*cc+1)
-        for (let subR = 0; subR < 2; subR++) {
-          for (let subC = 0; subC < 2; subC++) {
-            const fr = cr * 2 + subR;
-            const fc = cc * 2 + subC;
-
-            // If fine sub-square is NOT active, render it as coarse sub-tile!
-            if (!activeFineSquares.has(`${fr}_${fc}`)) {
-              const minX = bounds.minX + fc * fineTileW;
-              const maxX = minX + fineTileW;
-              const minZ = bounds.minZ + fr * fineTileH;
-              const maxZ = minZ + fineTileH;
-
-              const centerX = minX + fineTileW / 2;
-              const centerZ = minZ + fineTileH / 2;
-              const center = new THREE.Vector3(centerX, 0, centerZ);
-
-              const key = `grid_coarse_${fr}_${fc}_lod${coarseLodLevel}`;
-              neededTiles.set(key, {
-                lod: coarseLodLevel,
-                bounds: { minX, minZ, maxX, maxZ },
-                center,
-              });
-            }
-          }
-        }
-      }
-    }
-
-    // 3. Reconcile existing active tiles vs needed tiles
+    // Reconcile active tiles vs needed tiles
     const nowMs = performance.now();
 
     // Mark missing tiles for eviction
@@ -168,6 +142,18 @@ export class GridCutoutLodManager {
           statusOverlay: null,
         };
         this.activeTiles.set(key, tile);
+      } else {
+        // If tile position/bounds changed due to clipping updates, trigger rebuild
+        if (
+          tile.bounds.minX !== info.bounds.minX ||
+          tile.bounds.maxX !== info.bounds.maxX ||
+          tile.bounds.minZ !== info.bounds.minZ ||
+          tile.bounds.maxZ !== info.bounds.maxZ
+        ) {
+          tile.bounds = info.bounds;
+          tile.position = info.center;
+          tile.status = "NEEDS_REFRESH";
+        }
       }
 
       if (tile.status === "NEEDS_LOAD") {
@@ -234,7 +220,8 @@ export class GridCutoutLodManager {
     });
 
     const mesh = new THREE.Mesh(planeGeo, material);
-    mesh.position.copy(node.position);
+    // Slight Y elevation layer per LOD to avoid depth z-fighting (finer LODs rendered on top)
+    mesh.position.set(node.position.x, 0.02 + (10 - node.lod) * 0.005, node.position.z);
     mesh.renderOrder = 10 - node.lod;
 
     const borderMat = new THREE.LineBasicMaterial({
@@ -277,7 +264,6 @@ export class GridCutoutLodManager {
     const baseColor = this.getLodColor(node.lod);
     meshMat.color.setHex(baseColor);
     meshMat.wireframe = this.config.wireframe;
-
     meshMat.opacity = this.config.wireframe ? 0.15 : 0.25;
 
     if (node.statusOverlay) {
@@ -396,6 +382,13 @@ export class GridCutoutLodManager {
     }
   }
 
+  public setEvictionDistanceFactor(factor: number): void {
+    const intFactor = Math.max(1, Math.round(factor));
+    if (this.config.evictionDistanceFactor !== intFactor) {
+      this.config.evictionDistanceFactor = intFactor;
+    }
+  }
+
   public setSimulateAsyncLoad(simulate: boolean, delayMs: number = 300): void {
     this.config.simulateAsyncLoad = simulate;
     this.config.asyncLoadDelayMs = delayMs;
@@ -411,11 +404,22 @@ export class GridCutoutLodManager {
     this.markAllNeedsRefresh();
   }
 
+  public setBounds(bounds: TileBounds): void {
+    this.config.bounds = { ...bounds };
+    this.reset();
+  }
+
+  public getConfig(): LodManagerConfig {
+    return { ...this.config };
+  }
+
   public getStats(): ManagerStats {
     const nodesPerLod: Record<number, number> = {};
 
     for (const tile of this.activeTiles.values()) {
-      nodesPerLod[tile.lod] = (nodesPerLod[tile.lod] || 0) + 1;
+      if (tile.status === "LOADED") {
+        nodesPerLod[tile.lod] = (nodesPerLod[tile.lod] || 0) + 1;
+      }
     }
 
     return {

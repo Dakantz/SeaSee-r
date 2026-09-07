@@ -82,15 +82,26 @@ export default function LodAlgorithmAnalyzerPage() {
             >
               3. Inside Out 3x3
             </button>
+            <button
+              className={`toggle-btn ${lodAlgorithm === "whole-domain" ? "active" : ""}`}
+              onClick={() => setLodAlgorithm("whole-domain")}
+            >
+              4. Whole Domain
+            </button>
           </div>
           {lodAlgorithm === "grid-cutout" && (
             <div className="algorithm-info-banner">
-              💡 <strong>Algorithm 2 (Grid Cutout):</strong> Base coarse grid (LOD {maxLOD}) stays loaded. Finer detail tiles (LOD 0) carve out matching sub-squares based on distance. At perfect alignment (0,0), loads <strong>at most 16 tiles</strong> (and fewer off-center).
+              💡 <strong>Algorithm 2 (Grid Cutout):</strong> Combination of Quadtree base bounds and Inside-Out concentric 2x2 grids. Concentric 2x2 grids scale per LOD level around the focal point, while remaining strictly clipped within the base domain bounds.
             </div>
           )}
           {lodAlgorithm === "inside-out-3x3" && (
             <div className="algorithm-info-banner">
               💡 <strong>Algorithm 3 (Inside Out 3x3):</strong> 2D adaptation of the 3D Dynamic Cubic LOD controller. Concentric 3x3 grids center around the focal point, scaling by 3× per LOD level from finest detail (LOD 0) outwards to coarsest detail (LOD {maxLOD}).
+            </div>
+          )}
+          {lodAlgorithm === "whole-domain" && (
+            <div className="algorithm-info-banner">
+              💡 <strong>Algorithm 4 (Whole Domain):</strong> Keeps the entire domain as a single unbroken rectangle. When the focal point is inside the bounding box, LOD is strictly 0 (finest detail). Moving outside the bounding box scales the LOD level through exponentially growing distance thresholds (LOD 1 spans a 3x3 size of the original bounding box).
             </div>
           )}
         </div>
@@ -173,7 +184,7 @@ export default function LodAlgorithmAnalyzerPage() {
           </div>
 
           {/* Distance Factor Threshold Slider */}
-          {lodAlgorithm !== "inside-out-3x3" && (
+          {lodAlgorithm !== "inside-out-3x3" && lodAlgorithm !== "whole-domain" && (
             <div className="control-row">
               <div className="control-label">
                 <span>Split Distance Factor:</span>

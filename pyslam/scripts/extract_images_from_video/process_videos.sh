@@ -10,7 +10,7 @@ fi
 TARGET_DIR="$1"
 # Assume the extraction script is in the same directory as this script
 EXTRACT_SCRIPT="$(dirname "$0")/extract_images.sh"
-OPENSFM_BIN="/home/gsoc-thomas/Documents/GsoC/SeaSee-r/openSfM/openSfM_core/bin/opensfm_run_all"
+OPENSFM_BIN="/home/tastegger/Documents/SeaSee-r/openSfM/openSfM_core/bin/opensfm_run_all"
 
 # Check if the target directory exists
 if [ ! -d "$TARGET_DIR" ]; then

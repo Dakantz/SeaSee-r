@@ -425,7 +425,7 @@
 }
 
 .btn-toggle-group.algorithm-toggle {
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
 }
 
 .algorithm-info-banner {

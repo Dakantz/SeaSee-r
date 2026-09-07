@@ -4,9 +4,10 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { QuadtreeLodManager, type ManagerStats } from "./QuadtreeLodManager";
 import { GridCutoutLodManager } from "./GridCutoutLodManager";
 import { InsideOut3x3LodManager } from "./InsideOut3x3LodManager";
+import { WholeDomainLodManager } from "./WholeDomainLodManager";
 
 export type FocalSource = "camera" | "mouse" | "orbit";
-export type LodAlgorithm = "quadtree" | "grid-cutout" | "inside-out-3x3";
+export type LodAlgorithm = "quadtree" | "grid-cutout" | "inside-out-3x3" | "whole-domain";
 
 export function useLodAlgorithmAnalyzer() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -36,7 +37,7 @@ export function useLodAlgorithmAnalyzer() {
   });
 
   // Manager reference
-  const lodManagerRef = useRef<QuadtreeLodManager | GridCutoutLodManager | InsideOut3x3LodManager | null>(null);
+  const lodManagerRef = useRef<QuadtreeLodManager | GridCutoutLodManager | InsideOut3x3LodManager | WholeDomainLodManager | null>(null);
   const resetCameraTriggerRef = useRef<(() => void) | null>(null);
 
   // Sync state changes with LOD Manager
@@ -166,6 +167,8 @@ export function useLodAlgorithmAnalyzer() {
         ? new InsideOut3x3LodManager(scene, managerConfig)
         : lodAlgorithm === "grid-cutout"
         ? new GridCutoutLodManager(scene, managerConfig)
+        : lodAlgorithm === "whole-domain"
+        ? new WholeDomainLodManager(scene, managerConfig)
         : new QuadtreeLodManager(scene, managerConfig);
 
     lodManagerRef.current = lodManager;
