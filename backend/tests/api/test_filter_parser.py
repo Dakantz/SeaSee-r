@@ -44,10 +44,13 @@ def test_parser_single_underscore_operator():
 
 def test_parser_in_operator_comma_separated():
     parser = QueryFilterParser(allowed_fields=ALLOWED_FIELDS)
-    req = make_request("pointcloud_id__in=uuid1,uuid2,uuid3")
+    u1 = "11111111-1111-1111-1111-111111111111"
+    u2 = "22222222-2222-2222-2222-222222222222"
+    u3 = "33333333-3333-3333-3333-333333333333"
+    req = make_request(f"pointcloud_id__in={u1},{u2},{u3}")
     filters = parser(req)
     assert len(filters) == 1
-    assert filters[0] == FilterCriterion(field="pointcloud_id", operator="in", value=["uuid1", "uuid2", "uuid3"])
+    assert filters[0] == FilterCriterion(field="pointcloud_id", operator="in", value=[u1, u2, u3])
 
 
 def test_parser_like_operator():
@@ -60,10 +63,11 @@ def test_parser_like_operator():
 
 def test_parser_reserved_params_ignored():
     parser = QueryFilterParser(allowed_fields=ALLOWED_FIELDS)
-    req = make_request("lod=2&page=1&limit=50&pointcloud_id=uuid1")
+    u1 = "11111111-1111-1111-1111-111111111111"
+    req = make_request(f"lod=2&page=1&limit=50&pointcloud_id={u1}")
     filters = parser(req)
     assert len(filters) == 1
-    assert filters[0] == FilterCriterion(field="pointcloud_id", operator="eq", value="uuid1")
+    assert filters[0] == FilterCriterion(field="pointcloud_id", operator="eq", value=u1)
 
 
 def test_parser_unauthorized_field_raises_400():

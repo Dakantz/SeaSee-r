@@ -74,6 +74,10 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
             if lod == 0 and pcid is None and ingested_pcid is not None:
                 pcid = ingested_pcid
 
+            if job_id:
+                db_progress = 50.0 + ((lod + 1) / 11.0) * 45.0
+                await self.update_job_status(job_id, "RUNNING", db_progress)
+
         if pcid is None:
             async with async_session() as session:
                 pcid = (await query_existing_pcid(session, file_id)) or 1
@@ -121,7 +125,8 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         try:
             async def on_progress(pct: float):
                 if job_id:
-                    await self.update_job_status(job_id, "RUNNING", pct)
+                    pipeline_progress = (pct / 100.0) * 50.0
+                    await self.update_job_status(job_id, "RUNNING", pipeline_progress)
 
             await build_ept(
                 file_path=file_path,
