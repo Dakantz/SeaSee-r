@@ -304,26 +304,26 @@ export default function LodAlgorithmAnalyzerPage() {
           </button>
         </div>
 
-        {/* Legend for Status Pipeline & LOD Colors */}
+        {/* Legend for Status Pipeline (Textures) */}
         <div className="hud-section-title">
           <FiEye /> Status Pipeline Legend
         </div>
         <div className="legend-grid">
           <div className="legend-item">
-            <span className="legend-dot" style={{ backgroundColor: "#00f0ff" }} />
-            <span>NEEDS_LOAD (Pulsing Cyan)</span>
+            <span className="legend-texture-swatch legend-texture-needs-load" />
+            <span>NEEDS_LOAD (Dotted Matrix Texture)</span>
           </div>
           <div className="legend-item">
-            <span className="legend-dot" style={{ backgroundColor: "#ffffff" }} />
-            <span>LOADED (Solid Level Color)</span>
+            <span className="legend-texture-swatch legend-texture-loaded" />
+            <span>LOADED (Clean Solid Level Color)</span>
           </div>
           <div className="legend-item">
-            <span className="legend-dot" style={{ backgroundColor: "#ffb703" }} />
-            <span>NEEDS_REFRESH (Yellow Border)</span>
+            <span className="legend-texture-swatch legend-texture-needs-refresh" />
+            <span>NEEDS_REFRESH (Diagonal Hatching Texture)</span>
           </div>
           <div className="legend-item">
-            <span className="legend-dot" style={{ backgroundColor: "#ff0055" }} />
-            <span>NEEDS_EVICT (Red Wireframe)</span>
+            <span className="legend-texture-swatch legend-texture-needs-evict" />
+            <span>NEEDS_EVICT (Crosshatch Pattern Texture)</span>
           </div>
         </div>
       </div>

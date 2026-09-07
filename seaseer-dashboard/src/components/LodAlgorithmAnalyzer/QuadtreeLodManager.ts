@@ -1,5 +1,7 @@
 import * as THREE from "three";
 
+import { getStatusTexture } from "./StatusTextures";
+
 export type TileStatus = "NEEDS_LOAD" | "LOADED" | "NEEDS_REFRESH" | "NEEDS_EVICT";
 
 export interface TileBounds {
@@ -68,6 +70,7 @@ export class QuadtreeLodManager {
   private config: LodManagerConfig;
   private evictedCountTotal: number = 0;
   private nodeCounter: number = 0;
+  private thresholdGroup: THREE.Group | null = null;
 
   // Shared geometry cache per tile size to reduce allocations
   private planeGeometryCache: Map<string, THREE.BufferGeometry> = new Map();
@@ -88,6 +91,71 @@ export class QuadtreeLodManager {
     };
 
     this.root = this.createNode(0, this.config.bounds, null);
+  }
+
+  /**
+   * Rebuild visual 2D threshold boundary circles centered at the focal point.
+   */
+  private rebuildThresholdVisuals(): void {
+    if (this.thresholdGroup) {
+      this.scene.remove(this.thresholdGroup);
+      this.thresholdGroup.traverse((child) => {
+        if (child instanceof THREE.Line) {
+          child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m) => m.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
+      this.thresholdGroup = null;
+    }
+
+    if (!this.config.showStatusOverlays) return;
+
+    this.thresholdGroup = new THREE.Group();
+    const { bounds, maxLOD, distanceFactor } = this.config;
+    const baseWidth = bounds.maxX - bounds.minX;
+    const baseHeight = bounds.maxZ - bounds.minZ;
+    const baseTileSize = Math.max(baseWidth, baseHeight);
+    const segments = 64;
+
+    // Create concentric circle threshold boundary lines for each depth split threshold
+    for (let depth = 0; depth < maxLOD; depth++) {
+      const lod = Math.max(0, maxLOD - depth);
+      const tileSize = baseTileSize / Math.pow(2, depth);
+      const radius = tileSize * distanceFactor;
+      if (radius <= 0) continue;
+
+      const color = this.getLodColor(lod);
+      const points: THREE.Vector3[] = [];
+
+      for (let step = 0; step <= segments; step++) {
+        const angle = (step / segments) * Math.PI * 2;
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+        points.push(new THREE.Vector3(x, 0.05, z));
+      }
+
+      const geo = new THREE.BufferGeometry().setFromPoints(points);
+      const mat = new THREE.LineDashedMaterial({
+        color,
+        transparent: true,
+        opacity: 0.75,
+        scale: 1,
+        dashSize: 3,
+        gapSize: 2,
+      });
+
+      const line = new THREE.Line(geo, mat);
+      line.computeLineDistances();
+      line.renderOrder = 15;
+
+      this.thresholdGroup.add(line);
+    }
+
+    this.scene.add(this.thresholdGroup);
   }
 
   /**
@@ -138,6 +206,14 @@ export class QuadtreeLodManager {
    * Main update function called each render frame
    */
   public update(focalPosition: THREE.Vector3, timeSeconds: number = performance.now() * 0.001): void {
+    if (!this.thresholdGroup && this.config.showStatusOverlays) {
+      this.rebuildThresholdVisuals();
+    }
+
+    if (this.thresholdGroup) {
+      this.thresholdGroup.position.set(focalPosition.x, 0, focalPosition.z);
+      this.thresholdGroup.visible = this.config.showStatusOverlays;
+    }
     // 1. Evaluate quadtree recursively based on focal position in 2D plane
     const activeLeaves: TileNode[] = [];
     const nodesToEvict: TileNode[] = [];
@@ -149,21 +225,28 @@ export class QuadtreeLodManager {
     for (const node of activeLeaves) {
       if (node.status === "NEEDS_LOAD") {
         if (!this.config.simulateAsyncLoad) {
-          this.instantiateTileMesh(node);
+          if (!node.mesh) {
+            this.instantiateTileMesh(node);
+          }
           node.status = "LOADED";
+          delete node.loadStartTime;
           this.updateTileMaterials(node);
         } else {
-          if (!node.loadStartTime) {
+          if (!node.loadStartTime || !node.mesh) {
             node.loadStartTime = nowMs;
-            this.instantiateTileMesh(node);
+            if (!node.mesh) {
+              this.instantiateTileMesh(node);
+            }
           } else if (nowMs - node.loadStartTime >= this.config.asyncLoadDelayMs) {
             node.status = "LOADED";
+            delete node.loadStartTime;
             this.updateTileMaterials(node);
           }
         }
       } else if (node.status === "NEEDS_REFRESH") {
         this.rebuildTileMesh(node);
         node.status = "LOADED";
+        delete node.loadStartTime;
         this.updateTileMaterials(node);
       }
 
@@ -193,14 +276,16 @@ export class QuadtreeLodManager {
     const shouldSplit = node.depth < this.config.maxLOD && dist2D < threshold;
 
     if (shouldSplit) {
+      if (node.mesh) {
+        this.disposeNodeVisuals(node);
+      }
+
       if (node.isLeaf) {
         this.splitNode(node);
       }
 
-      if (node.status === "LOADED" || node.status === "NEEDS_LOAD") {
-        this.disposeNodeVisuals(node);
-        node.status = "NEEDS_EVICT";
-      }
+      node.status = "NEEDS_EVICT";
+      delete node.loadStartTime;
 
       for (const child of node.children) {
         this.evaluateNode(child, focalPos, activeLeaves, nodesToEvict);
@@ -215,11 +300,13 @@ export class QuadtreeLodManager {
 
         if (node.status !== "LOADED") {
           node.status = "NEEDS_LOAD";
+          delete node.loadStartTime;
         }
       }
 
       if (node.status === "NEEDS_EVICT") {
         node.status = "NEEDS_LOAD";
+        delete node.loadStartTime;
       }
 
       activeLeaves.push(node);
@@ -241,6 +328,7 @@ export class QuadtreeLodManager {
     const se = this.createNode(nextDepth, { minX: midX, minZ: midZ, maxX, maxZ }, node);
 
     node.status = "NEEDS_EVICT";
+    delete node.loadStartTime;
     node.children = [nw, ne, sw, se];
     node.isLeaf = false;
   }
@@ -310,10 +398,10 @@ export class QuadtreeLodManager {
 
     // 2D Status Overlay
     const overlayMat = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
+      color: 0xffffff,
       transparent: true,
       opacity: 0.0,
-      wireframe: true,
+      wireframe: false,
       side: THREE.DoubleSide,
       depthWrite: false,
     });
@@ -354,50 +442,40 @@ export class QuadtreeLodManager {
       node.statusOverlay.visible = this.config.showStatusOverlays;
     }
 
-    switch (node.status) {
-      case "NEEDS_LOAD":
-        if (overlayMat) {
-          overlayMat.color.setHex(0x00f0ff);
-          overlayMat.opacity = 0.4;
-          overlayMat.wireframe = false;
-        }
-        if (borderMat) {
-          borderMat.color.setHex(0x00f0ff);
-        }
-        break;
+    if (borderMat) {
+      borderMat.color.setHex(baseColor);
+      borderMat.opacity = 0.9;
+    }
 
-      case "LOADED":
-        if (overlayMat) {
-          overlayMat.opacity = 0;
-        }
-        if (borderMat) {
-          borderMat.color.setHex(baseColor);
-          borderMat.opacity = 0.9;
-        }
-        break;
+    if (overlayMat) {
+      const width = node.bounds.maxX - node.bounds.minX;
+      const height = node.bounds.maxZ - node.bounds.minZ;
+      if (overlayMat.map) {
+        overlayMat.map.dispose();
+      }
+      const texture = getStatusTexture(node.status, width, height);
+      overlayMat.map = texture;
+      overlayMat.color.setHex(0xffffff);
+      overlayMat.wireframe = false;
 
-      case "NEEDS_REFRESH":
-        if (overlayMat) {
-          overlayMat.color.setHex(0xffb703);
-          overlayMat.opacity = 0.5;
-          overlayMat.wireframe = true;
-        }
-        if (borderMat) {
-          borderMat.color.setHex(0xffb703);
-        }
-        break;
+      switch (node.status) {
+        case "NEEDS_LOAD":
+          overlayMat.opacity = 0.7;
+          break;
 
-      case "NEEDS_EVICT":
-        meshMat.opacity = 0.15;
-        if (overlayMat) {
-          overlayMat.color.setHex(0xff0055);
-          overlayMat.opacity = 0.5;
-          overlayMat.wireframe = true;
-        }
-        if (borderMat) {
-          borderMat.color.setHex(0xff0055);
-        }
-        break;
+        case "LOADED":
+          overlayMat.opacity = 0.0;
+          break;
+
+        case "NEEDS_REFRESH":
+          overlayMat.opacity = 0.75;
+          break;
+
+        case "NEEDS_EVICT":
+          overlayMat.opacity = 0.85;
+          meshMat.opacity = 0.15;
+          break;
+      }
     }
   }
 
@@ -447,12 +525,15 @@ export class QuadtreeLodManager {
     }
 
     if (node.statusOverlay && node.statusOverlay.material) {
-      (node.statusOverlay.material as THREE.Material).dispose();
+      const mat = node.statusOverlay.material as THREE.MeshBasicMaterial;
+      if (mat.map) mat.map.dispose();
+      mat.dispose();
     }
 
     node.mesh = null;
     node.borderLines = null;
     node.statusOverlay = null;
+    delete node.loadStartTime;
   }
 
   /**
@@ -484,6 +565,7 @@ export class QuadtreeLodManager {
     };
     disposeSubtree(this.root);
     this.root = this.createNode(0, this.config.bounds, null);
+    this.rebuildThresholdVisuals();
   }
 
   /**
@@ -505,6 +587,7 @@ export class QuadtreeLodManager {
     if (this.config.maxLOD !== maxLOD) {
       this.config.maxLOD = maxLOD;
       this.updateNodeLODs(this.root);
+      this.rebuildThresholdVisuals();
       this.markAllNeedsRefresh();
     }
   }
@@ -519,6 +602,7 @@ export class QuadtreeLodManager {
   public setDistanceFactor(factor: number): void {
     if (this.config.distanceFactor !== factor) {
       this.config.distanceFactor = factor;
+      this.rebuildThresholdVisuals();
     }
   }
 
@@ -534,6 +618,11 @@ export class QuadtreeLodManager {
 
   public setShowStatusOverlays(show: boolean): void {
     this.config.showStatusOverlays = show;
+    if (this.thresholdGroup) {
+      this.thresholdGroup.visible = show;
+    } else if (show) {
+      this.rebuildThresholdVisuals();
+    }
     this.markAllNeedsRefresh();
   }
 
@@ -541,6 +630,7 @@ export class QuadtreeLodManager {
     this.config.bounds = { ...bounds };
     this.dispose();
     this.root = this.createNode(0, this.config.bounds, null);
+    this.rebuildThresholdVisuals();
   }
 
   public getConfig(): LodManagerConfig {
@@ -568,6 +658,21 @@ export class QuadtreeLodManager {
   }
 
   public dispose(): void {
+    if (this.thresholdGroup) {
+      this.scene.remove(this.thresholdGroup);
+      this.thresholdGroup.traverse((child) => {
+        if (child instanceof THREE.Line) {
+          child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m) => m.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
+      this.thresholdGroup = null;
+    }
+
     const disposeSubtree = (node: TileNode) => {
       this.disposeNodeVisuals(node);
       for (const child of node.children) {

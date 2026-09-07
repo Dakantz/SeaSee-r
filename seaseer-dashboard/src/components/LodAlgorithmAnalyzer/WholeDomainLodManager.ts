@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { getStatusTexture } from "./StatusTextures";
 import {
   type TileBounds,
   type ManagerStats,
@@ -294,10 +295,10 @@ export class WholeDomainLodManager {
     mesh.add(borderLines);
 
     const overlayMat = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
+      color: 0xffffff,
       transparent: true,
       opacity: 0.0,
-      wireframe: true,
+      wireframe: false,
       side: THREE.DoubleSide,
       depthWrite: false,
     });
@@ -330,42 +331,40 @@ export class WholeDomainLodManager {
       node.statusOverlay.visible = this.config.showStatusOverlays;
     }
 
-    switch (node.status) {
-      case "NEEDS_LOAD":
-        if (overlayMat) {
-          overlayMat.color.setHex(0x00f0ff);
-          overlayMat.opacity = 0.4;
-          overlayMat.wireframe = false;
-        }
-        if (borderMat) borderMat.color.setHex(0x00f0ff);
-        break;
+    if (borderMat) {
+      borderMat.color.setHex(baseColor);
+      borderMat.opacity = 0.9;
+    }
 
-      case "LOADED":
-        if (overlayMat) overlayMat.opacity = 0;
-        if (borderMat) {
-          borderMat.color.setHex(baseColor);
-          borderMat.opacity = 0.9;
-        }
-        break;
+    if (overlayMat) {
+      const width = node.bounds.maxX - node.bounds.minX;
+      const height = node.bounds.maxZ - node.bounds.minZ;
+      if (overlayMat.map) {
+        overlayMat.map.dispose();
+      }
+      const texture = getStatusTexture(node.status, width, height);
+      overlayMat.map = texture;
+      overlayMat.color.setHex(0xffffff);
+      overlayMat.wireframe = false;
 
-      case "NEEDS_REFRESH":
-        if (overlayMat) {
-          overlayMat.color.setHex(0xffb703);
-          overlayMat.opacity = 0.55;
-          overlayMat.wireframe = true;
-        }
-        if (borderMat) borderMat.color.setHex(0xffb703);
-        break;
+      switch (node.status) {
+        case "NEEDS_LOAD":
+          overlayMat.opacity = 0.7;
+          break;
 
-      case "NEEDS_EVICT":
-        meshMat.opacity = 0.2;
-        if (overlayMat) {
-          overlayMat.color.setHex(0xff0055);
-          overlayMat.opacity = 0.6;
-          overlayMat.wireframe = true;
-        }
-        if (borderMat) borderMat.color.setHex(0xff0055);
-        break;
+        case "LOADED":
+          overlayMat.opacity = 0.0;
+          break;
+
+        case "NEEDS_REFRESH":
+          overlayMat.opacity = 0.75;
+          break;
+
+        case "NEEDS_EVICT":
+          overlayMat.opacity = 0.85;
+          meshMat.opacity = 0.2;
+          break;
+      }
     }
   }
 
@@ -406,7 +405,9 @@ export class WholeDomainLodManager {
     }
 
     if (node.statusOverlay && node.statusOverlay.material) {
-      (node.statusOverlay.material as THREE.Material).dispose();
+      const mat = node.statusOverlay.material as THREE.MeshBasicMaterial;
+      if (mat.map) mat.map.dispose();
+      mat.dispose();
     }
 
     node.mesh = null;
