@@ -10,6 +10,7 @@ import PointCloudEditorPage from "./components/PointCloudEditor/PointCloudEditor
 import TestRover from "./components/RovRenderer/testRover.tsx";
 import TestRoverVideo from "./components/RovRenderer/testRoverVideo.tsx";
 import LodAlgorithmAnalyzerPage from "./components/LodAlgorithmAnalyzer/LodAlgorithmAnalyzerPage.tsx";
+import PointCloudOverviewPage from "./components/PointCloudOverview/PointCloudOverviewPage.tsx";
 import StatusBar from "./components/StatusBar.tsx";
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
             <Toolbar />
             <Routes>
                 <Route path="/" element={<Workspace />} />
+                <Route path="/pointcloud-overview" element={<PointCloudOverviewPage />} />
                 <Route path="/lod-algorithm-analyzer" element={<LodAlgorithmAnalyzerPage />} />
                 <Route path="/example-diagnostics" element={<ExampleDiagnostics />} />
                 <Route path="/video-upload-test" element={<VideoUploadTestPage />} />
