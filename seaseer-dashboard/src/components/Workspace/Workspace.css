@@ -32,6 +32,7 @@
     height: 100%;
     display: flex;
     flex-direction: column;
+    position: relative;
 }
 
 .pointcloud-container {
@@ -45,26 +46,28 @@
     border-top: 1px solid var(--color-border-solid-alt);
 }
 
-/* Collapsible Left Sidebar Styles for Custom Queries */
-.left-sidebar-panel {
-    background: var(--color-bg-surface);
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    overflow: hidden;
-    border-right: 1px solid var(--color-border-default);
-}
-
-.left-sidebar-header {
+/* ==========================================
+   Unified Panel Header & Close Button Styles
+   ========================================== */
+.left-sidebar-header,
+.jobs-sidebar-header,
+.videologs-sidebar-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--spacing-md) var(--spacing-3xl);
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    padding: 0 var(--spacing-lg);
     background: var(--color-bg-card);
     border-bottom: 1px solid var(--color-border-subtle);
+    box-sizing: border-box;
+    flex-shrink: 0;
 }
 
-.left-sidebar-title {
+.left-sidebar-title,
+.jobs-sidebar-title,
+.videologs-sidebar-title {
     font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text-muted);
@@ -72,20 +75,90 @@
     letter-spacing: 0.05em;
 }
 
-.left-sidebar-toggle-btn {
+/* Shared, Pixel-Identical Cross Close Button */
+.panel-close-btn,
+.left-sidebar-toggle-btn,
+.jobs-sidebar-toggle-btn,
+.videologs-sidebar-toggle-btn {
     background: transparent;
     border: none;
     color: var(--color-text-muted);
-    font-size: var(--font-size-md);
     cursor: pointer;
-    padding: var(--spacing-3xs) var(--spacing-xs);
+    padding: 4px;
     border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
     transition: var(--transition-normal);
 }
 
-.left-sidebar-toggle-btn:hover {
+.panel-close-btn:hover,
+.left-sidebar-toggle-btn:hover,
+.jobs-sidebar-toggle-btn:hover,
+.videologs-sidebar-toggle-btn:hover {
     background: var(--color-border-default);
     color: var(--color-text-primary);
+}
+
+/* ==========================================
+   Unified Viewport Floating Reopen Buttons
+   ========================================== */
+.workspace-reopen-left {
+    position: absolute;
+    top: var(--spacing-lg);
+    left: var(--spacing-lg);
+    z-index: var(--z-sticky);
+}
+
+.workspace-reopen-group-right {
+    position: absolute;
+    top: var(--spacing-lg);
+    right: var(--spacing-lg);
+    z-index: var(--z-sticky);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.workspace-reopen-btn,
+.left-sidebar-reopen-btn,
+.jobs-sidebar-reopen-btn,
+.videologs-sidebar-reopen-btn {
+    background: var(--color-bg-card);
+    backdrop-filter: var(--backdrop-blur-md);
+    -webkit-backdrop-filter: var(--backdrop-blur-md);
+    border: 1px solid var(--color-border-strong);
+    color: var(--color-primary-text);
+    padding: var(--spacing-xs) var(--spacing-lg);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    cursor: pointer;
+    box-shadow: var(--shadow-md);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    transition: var(--transition-normal);
+}
+
+.workspace-reopen-btn:hover,
+.left-sidebar-reopen-btn:hover,
+.jobs-sidebar-reopen-btn:hover,
+.videologs-sidebar-reopen-btn:hover {
+    background: var(--color-bg-card-hover);
+    border-color: var(--color-primary-border);
+    color: var(--color-text-primary);
+    transform: translateY(-1px);
+}
+
+/* Collapsible Left Sidebar Panel for Custom Queries */
+.left-sidebar-panel {
+    background: var(--color-bg-surface);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    border-right: 1px solid var(--color-border-default);
 }
 
 .left-sidebar-content {
@@ -98,36 +171,7 @@
     gap: var(--spacing-sm);
 }
 
-.left-sidebar-reopen-btn {
-    position: absolute;
-    top: var(--spacing-lg);
-    left: var(--spacing-lg);
-    z-index: var(--z-sticky);
-    background: var(--color-bg-card);
-    backdrop-filter: var(--backdrop-blur-md);
-    -webkit-backdrop-filter: var(--backdrop-blur-md);
-    border: 1px solid var(--color-border-strong);
-    color: var(--color-primary-text);
-    padding: var(--spacing-xs) var(--spacing-lg);
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-    cursor: pointer;
-    box-shadow: var(--shadow-md);
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-xs);
-    transition: var(--transition-normal);
-}
-
-.left-sidebar-reopen-btn:hover {
-    background: var(--color-bg-card-hover);
-    border-color: var(--color-primary-border);
-    color: var(--color-text-primary);
-    transform: translateY(-1px);
-}
-
-/* Collapsible Sidebar Styles for Job System Overview */
+/* Collapsible Sidebar for Job System Overview */
 .jobs-sidebar-panel {
     background: var(--color-bg-surface);
     display: flex;
@@ -137,41 +181,9 @@
     border-left: 1px solid var(--color-border-default);
 }
 
-.jobs-sidebar-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--spacing-md) var(--spacing-3xl);
-    background: var(--color-bg-card);
-    border-bottom: 1px solid var(--color-border-subtle);
-}
-
-.jobs-sidebar-title {
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.jobs-sidebar-toggle-btn {
-    background: transparent;
-    border: none;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-md);
-    cursor: pointer;
-    padding: var(--spacing-3xs) var(--spacing-xs);
-    border-radius: var(--radius-sm);
-    transition: var(--transition-normal);
-}
-
-.jobs-sidebar-toggle-btn:hover {
-    background: var(--color-border-default);
-    color: var(--color-text-primary);
-}
-
 .jobs-sidebar-content {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: var(--spacing-md);
     display: flex;
@@ -179,41 +191,27 @@
     gap: var(--spacing-sm);
 }
 
-.jobs-sidebar-divider {
-    border: none;
-    border-top: 1px solid var(--color-border-subtle);
-    margin: var(--spacing-md) 0;
+/* Collapsible Sidebar for Video & Logs Panel */
+.videologs-sidebar-panel {
+    background: var(--color-bg-surface);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    border-left: 1px solid var(--color-border-default);
 }
 
-.jobs-section-header {
-    margin-bottom: var(--spacing-2xs);
-}
-
-.jobs-sidebar-reopen-btn {
-    position: absolute;
-    top: var(--spacing-lg);
-    right: var(--spacing-lg);
-    z-index: var(--z-sticky);
-    background: var(--color-bg-card);
-    backdrop-filter: var(--backdrop-blur-md);
-    -webkit-backdrop-filter: var(--backdrop-blur-md);
-    border: 1px solid var(--color-border-strong);
-    color: var(--color-primary-text);
-    padding: var(--spacing-xs) var(--spacing-lg);
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-    cursor: pointer;
-    box-shadow: var(--shadow-md);
+.videologs-sidebar-title-group {
     display: flex;
     align-items: center;
     gap: var(--spacing-xs);
-    transition: var(--transition-normal);
 }
 
-.jobs-sidebar-reopen-btn:hover {
-    background: var(--color-bg-card-hover);
-    border-color: var(--color-primary-border);
-    color: var(--color-text-primary);
-    transform: translateY(-1px);
+.videologs-sidebar-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
 }

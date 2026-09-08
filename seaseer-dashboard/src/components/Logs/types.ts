@@ -30,6 +30,7 @@ export interface ComputedTelemetryPoint {
     direction?: [number, number, number];
     rotation?: [number, number, number, number];
     filename?: string | null;
+    cameraHeaderId?: string;
 }
 
 export interface MissionSummary {

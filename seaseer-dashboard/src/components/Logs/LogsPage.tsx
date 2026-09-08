@@ -1,4 +1,4 @@
-import { useLogsData } from "./useLogsData";
+import { useLogsData } from "./hooks";
 import { LogsHeader } from "./LogsHeader";
 import { LogsMapPicker } from "./LogsMapPicker";
 import { LogsSummaryCards } from "./LogsSummaryCards";

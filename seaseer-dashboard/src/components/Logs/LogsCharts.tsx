@@ -1,5 +1,5 @@
 import React, { useRef, useState, useMemo, useCallback } from "react";
-import { FiTrendingUp, FiActivity, FiCompass, FiNavigation } from "react-icons/fi";
+import { FiActivity, FiCompass, FiNavigation, FiLayers } from "react-icons/fi";
 import type { ComputedTelemetryPoint } from "./types";
 
 interface LogsChartsProps {
@@ -153,19 +153,6 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
     return (
         <div className="logs-chart-panel" ref={containerRef}>
             <div className="logs-chart-header">
-                <div className="logs-chart-title-group">
-                    <FiTrendingUp className="logs-chart-title-icon" size={16} />
-                    <span className="logs-chart-title">
-                        {chartMode === "depth"
-                            ? "Dive Profile: Time vs. Depth (m)"
-                            : chartMode === "altitude"
-                            ? "Vertical Elevation: Time vs. Z (m)"
-                            : chartMode === "speed"
-                            ? "Velocity Profile: Time vs. Speed (m/s)"
-                            : "Trajectory: Time vs. Cumulative Distance (m)"}
-                    </span>
-                </div>
-
                 <div className="logs-chart-tabs">
                     <button
                         className={`logs-chart-tab ${chartMode === "depth" ? "active" : ""}`}
@@ -178,7 +165,8 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                         className={`logs-chart-tab ${chartMode === "altitude" ? "active" : ""}`}
                         onClick={() => setChartMode("altitude")}
                     >
-                        Elevation (Z)
+                        <FiLayers size={12} style={{ marginRight: 4 }} />
+                        Elevation
                     </button>
                     <button
                         className={`logs-chart-tab ${chartMode === "speed" ? "active" : ""}`}

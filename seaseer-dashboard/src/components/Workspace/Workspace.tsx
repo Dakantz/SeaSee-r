@@ -1,10 +1,6 @@
 import { useState } from "react";
-import {
-    Panel,
-    Group,
-    Separator,
-} from "react-resizable-panels";
-
+import { Group, Panel, Separator } from "react-resizable-panels";
+import { FiVideo, FiX } from "react-icons/fi";
 
 import PointCloudPanel from "../PointCloudPanel/PointCloudPanel";
 import TelemetryPanel from "../TelemetoryPanel/TrajectoryPanel";
@@ -12,12 +8,14 @@ import { JobSystemOverview } from "../JobSystemOverview";
 import { PLYPointCloudProvider } from "../PointCloudPanel/PLYPointCloudContext";
 import PLYPointCloudSidebar from "../PointCloudPanel/PLYPointCloudSidebar";
 import CustomQueryManagerContainer from "../PointCloudPanel/CustomQueryManagerContainer";
+import { VideoLogsPanel } from "../Logs/VideoLogsPanel";
 
 import "./Workspace.css";
 
 export default function Workspace() {
     const [isQueriesOpen, setIsQueriesOpen] = useState<boolean>(true);
     const [isJobsOpen, setIsJobsOpen] = useState<boolean>(true);
+    const [isVideoLogsOpen, setIsVideoLogsOpen] = useState<boolean>(true);
 
     return (
         <PLYPointCloudProvider>
@@ -26,16 +24,16 @@ export default function Workspace() {
                     {/* Left Collapsible Panel: Custom Queries */}
                     {isQueriesOpen && (
                         <>
-                            <Panel defaultSize="25%" minSize="15%" maxSize="35%" className="left-sidebar-panel">
+                            <Panel defaultSize="20%" minSize="14%" maxSize="30%" className="left-sidebar-panel">
                                 <div className="left-sidebar-header">
                                     <span className="left-sidebar-title">Custom Queries</span>
                                     <button
                                         type="button"
-                                        className="left-sidebar-toggle-btn"
+                                        className="panel-close-btn"
                                         onClick={() => setIsQueriesOpen(false)}
-                                        title="Collapse Left Sidebar"
+                                        title="Collapse Custom Queries"
                                     >
-                                        ✕
+                                        <FiX size={16} />
                                     </button>
                                 </div>
                                 <div className="left-sidebar-content">
@@ -47,8 +45,46 @@ export default function Workspace() {
                     )}
 
                     {/* Center Panel: PointCloud + Telemetry */}
-                    <Panel defaultSize="50%" minSize="20%">
+                    <Panel defaultSize="38%" minSize="20%">
                         <div className="right-panel">
+                            {/* Re-open toggle buttons floating cleanly over the 3D viewport without extending sidebars */}
+                            {!isQueriesOpen && (
+                                <button
+                                    type="button"
+                                    className="workspace-reopen-btn workspace-reopen-left"
+                                    onClick={() => setIsQueriesOpen(true)}
+                                    title="Expand Custom Queries"
+                                >
+                                    Custom Queries
+                                </button>
+                            )}
+
+                            {(!isJobsOpen || !isVideoLogsOpen) && (
+                                <div className="workspace-reopen-group-right">
+                                    {!isJobsOpen && (
+                                        <button
+                                            type="button"
+                                            className="workspace-reopen-btn"
+                                            onClick={() => setIsJobsOpen(true)}
+                                            title="Expand Controls & Jobs"
+                                        >
+                                            Controls & Jobs
+                                        </button>
+                                    )}
+                                    {!isVideoLogsOpen && (
+                                        <button
+                                            type="button"
+                                            className="workspace-reopen-btn"
+                                            onClick={() => setIsVideoLogsOpen(true)}
+                                            title="Expand Video & Logs"
+                                        >
+                                            <FiVideo size={13} />
+                                            <span>Video & Logs</span>
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
                             <div className="pointcloud-container">
                                 <PointCloudPanel />
                             </div>
@@ -59,20 +95,20 @@ export default function Workspace() {
                         </div>
                     </Panel>
 
-                    {/* Right Collapsible Sidebar Widget: DebugControls & Job System Overview */}
+                    {/* Controls & Jobs Panel (Independent panel with clean non-extending header) */}
                     {isJobsOpen && (
                         <>
                             <Separator className="resize-handle vertical" />
-                            <Panel defaultSize="25%" minSize="15%" maxSize="35%" className="jobs-sidebar-panel">
+                            <Panel defaultSize="18%" minSize="14%" maxSize="30%" className="jobs-sidebar-panel">
                                 <div className="jobs-sidebar-header">
                                     <span className="jobs-sidebar-title">Controls & Jobs</span>
                                     <button
                                         type="button"
-                                        className="jobs-sidebar-toggle-btn"
+                                        className="panel-close-btn"
                                         onClick={() => setIsJobsOpen(false)}
-                                        title="Collapse Sidebar"
+                                        title="Collapse Controls & Jobs"
                                     >
-                                        ✕
+                                        <FiX size={16} />
                                     </button>
                                 </div>
                                 <div className="jobs-sidebar-content">
@@ -89,30 +125,33 @@ export default function Workspace() {
                             </Panel>
                         </>
                     )}
+
+                    {/* Video & Logs Panel (Independent panel with clean non-extending header) */}
+                    {isVideoLogsOpen && (
+                        <>
+                            <Separator className="resize-handle vertical" />
+                            <Panel defaultSize="24%" minSize="24%" maxSize="24%" className="videologs-sidebar-panel">
+                                <div className="videologs-sidebar-header">
+                                    <div className="videologs-sidebar-title-group">
+                                        <FiVideo size={14} style={{ color: "#38bdf8" }} />
+                                        <span className="videologs-sidebar-title">Video & Logs</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="panel-close-btn"
+                                        onClick={() => setIsVideoLogsOpen(false)}
+                                        title="Collapse Video & Logs"
+                                    >
+                                        <FiX size={16} />
+                                    </button>
+                                </div>
+                                <div className="videologs-sidebar-content">
+                                    <VideoLogsPanel />
+                                </div>
+                            </Panel>
+                        </>
+                    )}
                 </Group>
-
-                {/* Re-open toggle buttons when sidebar widgets are collapsed */}
-                {!isQueriesOpen && (
-                    <button
-                        type="button"
-                        className="left-sidebar-reopen-btn"
-                        onClick={() => setIsQueriesOpen(true)}
-                        title="Expand Custom Queries"
-                    >
-                        Custom Queries
-                    </button>
-                )}
-
-                {!isJobsOpen && (
-                    <button
-                        type="button"
-                        className="jobs-sidebar-reopen-btn"
-                        onClick={() => setIsJobsOpen(true)}
-                        title="Expand Sidebar"
-                    >
-                        Controls & Jobs
-                    </button>
-                )}
             </div>
         </PLYPointCloudProvider>
     );

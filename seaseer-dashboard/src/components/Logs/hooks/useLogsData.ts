@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { listPointclouds, getCameraRoutes } from "../../client";
-import type { PointCloudMetadataResponse, CameraFrameResponse } from "../../client";
-import type { PointCloudOption, ComputedTelemetryPoint, MissionSummary } from "./types";
+import { listPointclouds, getCameraRoutes } from "../../../client";
+import type { PointCloudMetadataResponse, CameraFrameResponse } from "../../../client";
+import type { PointCloudOption, ComputedTelemetryPoint, MissionSummary } from "../types";
 
 export function useLogsData() {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -44,17 +44,16 @@ export function useLogsData() {
 
             setMaps(parsedMaps);
 
-            if (parsedMaps.length > 0) {
-                if (mapParam) {
-                    const matched = parsedMaps.find((m) => m.id === mapParam || m.name === mapParam);
-                    if (matched) {
-                        setSelectedMapId(matched.id);
-                    } else {
-                        setSelectedMapId(null);
-                    }
+            if (parsedMaps.length > 0 && mapParam) {
+                const matched = parsedMaps.find((m) => m.id === mapParam || m.name === mapParam);
+                if (matched) {
+                    setSelectedMapId(matched.id);
                 } else {
                     setSelectedMapId(null);
                 }
+            } else if (!mapParam) {
+                // If no mapParam in URL, keep whatever was already focused or remain null
+                setSelectedMapId((prev) => (prev && parsedMaps.some((m) => m.id === prev) ? prev : null));
             } else {
                 setSelectedMapId(null);
             }
@@ -208,6 +207,7 @@ export function useLogsData() {
                 direction: (frame.direction && frame.direction.length === 3) ? (frame.direction as [number, number, number]) : undefined,
                 rotation: (frame.rotation && frame.rotation.length === 4) ? (frame.rotation as [number, number, number, number]) : undefined,
                 filename: frame.filename,
+                cameraHeaderId: frame.camera_header_id,
             });
         }
 
