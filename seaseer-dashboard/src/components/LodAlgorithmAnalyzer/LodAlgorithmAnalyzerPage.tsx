@@ -109,7 +109,7 @@ export default function LodAlgorithmAnalyzerPage() {
 
         {/* Distance Metrics Card */}
         <div className="distance-card">
-          <div className="distance-label">Focal 2D Distance to Center (0,0)</div>
+          <div className="distance-label">Focal 2D Distance to Box Center (-200, 0)</div>
           <div className="distance-value">
             {focalDistance.toFixed(2)} <span className="distance-unit">m</span>
           </div>

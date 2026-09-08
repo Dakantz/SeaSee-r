@@ -133,24 +133,11 @@ export function useLodAlgorithmAnalyzer() {
     scene.add(ambientLight);
 
     // 5. 2D Grid Background Lines
-    const gridHelper = new THREE.GridHelper(300, 60, 0x38bdf8, 0x1e293b);
+    const gridHelper = new THREE.GridHelper(3000, 600, 0x38bdf8, 0x1e293b);
     gridHelper.position.y = -0.1;
     scene.add(gridHelper);
 
-    // 6. 2D Center Marker (0,0)
-    const centerRingGeo = new THREE.RingGeometry(0.8, 1.8, 32);
-    centerRingGeo.rotateX(-Math.PI / 2);
-    const centerRingMat = new THREE.MeshBasicMaterial({
-      color: 0x00f0ff,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.85,
-    });
-    const centerRing = new THREE.Mesh(centerRingGeo, centerRingMat);
-    centerRing.position.set(0, 0.05, 0);
-    scene.add(centerRing);
-
-    // 7. LOD Tile Manager Setup (Algorithm 1: Quadtree, Algorithm 2: Grid-Cutout, Algorithm 3: Inside Out 3x3)
+    // LOD Tile Manager Config Setup
     const managerConfig = {
       bounds: { minX: -500, minZ: -100, maxX: 100, maxZ: 100 },
       maxLOD,
@@ -162,6 +149,26 @@ export function useLodAlgorithmAnalyzer() {
       showStatusOverlays,
     };
 
+    const bboxCenter = new THREE.Vector3(
+      (managerConfig.bounds.minX + managerConfig.bounds.maxX) / 2,
+      0,
+      (managerConfig.bounds.minZ + managerConfig.bounds.maxZ) / 2
+    );
+
+    // 6. 2D Bounding Box Center Marker (-200, 0)
+    const centerRingGeo = new THREE.RingGeometry(0.8, 1.8, 32);
+    centerRingGeo.rotateX(-Math.PI / 2);
+    const centerRingMat = new THREE.MeshBasicMaterial({
+      color: 0x00f0ff,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.85,
+    });
+    const centerRing = new THREE.Mesh(centerRingGeo, centerRingMat);
+    centerRing.position.set(bboxCenter.x, 0.05, bboxCenter.z);
+    scene.add(centerRing);
+
+    // 7. LOD Tile Manager Setup (Algorithm 1: Quadtree, Algorithm 2: Grid-Cutout, Algorithm 3: Inside Out 3x3)
     const lodManager =
       lodAlgorithm === "inside-out-3x3"
         ? new InsideOut3x3LodManager(scene, managerConfig)
@@ -194,10 +201,10 @@ export function useLodAlgorithmAnalyzer() {
     focalCore.position.set(0, 0.12, 0);
     scene.add(focalCore);
 
-    // 2D Dashed line connecting focal target to center (0,0)
+    // 2D Dashed line connecting focal target to center of bounding box (-200, 0)
     const lineGeo = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(0, 0.1, 0),
-      new THREE.Vector3(0, 0.1, 0),
+      new THREE.Vector3(bboxCenter.x, 0.1, bboxCenter.z),
     ]);
     const lineMat = new THREE.LineDashedMaterial({
       color: 0x38bdf8,
@@ -270,10 +277,10 @@ export function useLodAlgorithmAnalyzer() {
       focalMarker.scale.set(pulseScale, 1, pulseScale);
       centerRing.scale.set(Math.sin(timeSec * 3) * 0.1 + 1.0, 1, Math.sin(timeSec * 3) * 0.1 + 1.0);
 
-      // Update 2D dashed line to center (0,0)
+      // Update 2D dashed line to center of bounding box (-200, 0)
       const linePositions = connectorLine.geometry.attributes.position as THREE.BufferAttribute;
       linePositions.setXYZ(0, focalPos.x, 0.1, focalPos.z);
-      linePositions.setXYZ(1, 0, 0.1, 0);
+      linePositions.setXYZ(1, bboxCenter.x, 0.1, bboxCenter.z);
       linePositions.needsUpdate = true;
       connectorLine.computeLineDistances();
 
@@ -282,7 +289,7 @@ export function useLodAlgorithmAnalyzer() {
 
       // Update HUD stats
       setStats(lodManager.getStats());
-      setFocalDistance(parseFloat(focalPos.length().toFixed(2)));
+      setFocalDistance(parseFloat(focalPos.distanceTo(bboxCenter).toFixed(2)));
       setCameraPosText(`${controls.target.x.toFixed(1)}, ${controls.target.z.toFixed(1)}`);
       setFocalPosText(`${focalPos.x.toFixed(1)}, ${focalPos.z.toFixed(1)}`);
       setMousePosText(`${mouseWorldPos.x.toFixed(1)}, ${mouseWorldPos.z.toFixed(1)}`);

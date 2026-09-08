@@ -3,7 +3,6 @@ import { usePotreeViewer } from './hooks/usePotreeViewer';
 import { useLoadPLY } from './hooks/useLoadPLY';
 import { useLoadEPT } from './hooks/useLoadEPT';
 import { useTransformControls } from './hooks/useTransformControls';
-import { useYellowSphere } from './hooks/useYellowSphere';
 import { usePotreeRovRenderer } from './hooks/usePotreeRovRenderer';
 
 interface NativePotreeViewerProps {
