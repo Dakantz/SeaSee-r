@@ -23,7 +23,7 @@ export function useLodAlgorithmAnalyzer() {
   // Manager Controls State
   const [lodAlgorithm, setLodAlgorithm] = useState<LodAlgorithm>("quadtree");
   const [maxLOD, setMaxLOD] = useState<number>(4);
-  const [distanceFactor, setDistanceFactor] = useState<number>(1.6);
+  const [distanceFactor, setDistanceFactor] = useState<number>(1.0);
   const [evictionDistanceFactor, setEvictionDistanceFactor] = useState<number>(3);
   const [focalSource, setFocalSource] = useState<FocalSource>("camera");
   const [simulateAsync, setSimulateAsync] = useState<boolean>(false);

@@ -46,7 +46,7 @@ export class InsideOut3x3LodManager {
     this.config = {
       bounds: { minX: -120, minZ: -120, maxX: 120, maxZ: 120 },
       maxLOD: 4,
-      distanceFactor: 1.6,
+      distanceFactor: 1.0,
       evictionDistanceFactor: 3,
       simulateAsyncLoad: false,
       asyncLoadDelayMs: 300,

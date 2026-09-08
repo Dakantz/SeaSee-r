@@ -46,22 +46,30 @@ export interface ManagerStats {
 
 export const LOD_COLORS: number[] = [
   0xef4444, // Level 0: Red (Finest detail)
-  0xf97316, // Level 1: Orange
-  0xeab308, // Level 2: Yellow
-  0x22c55e, // Level 3: Green
-  0x3b82f6, // Level 4: Blue
-  0xa855f7, // Level 5: Purple
-  0xec4899, // Level 6+: Pink (Coarsest)
+  0xf97316, // Level 1: Orange-Red
+  0xf59e0b, // Level 2: Amber
+  0xeab308, // Level 3: Yellow
+  0x84cc16, // Level 4: Lime
+  0x22c55e, // Level 5: Green
+  0x14b8a6, // Level 6: Teal
+  0x06b6d4, // Level 7: Cyan
+  0x3b82f6, // Level 8: Blue
+  0xa855f7, // Level 9: Purple
+  0xec4899, // Level 10: Pink (Coarsest detail)
 ];
 
 export const LOD_COLOR_HEX: string[] = [
-  "#ef4444",
-  "#f97316",
-  "#eab308",
-  "#22c55e",
-  "#3b82f6",
-  "#a855f7",
-  "#ec4899",
+  "#ef4444", // Level 0: Red
+  "#f97316", // Level 1: Orange-Red
+  "#f59e0b", // Level 2: Amber
+  "#eab308", // Level 3: Yellow
+  "#84cc16", // Level 4: Lime
+  "#22c55e", // Level 5: Green
+  "#14b8a6", // Level 6: Teal
+  "#06b6d4", // Level 7: Cyan
+  "#3b82f6", // Level 8: Blue
+  "#a855f7", // Level 9: Purple
+  "#ec4899", // Level 10: Pink
 ];
 
 export class QuadtreeLodManager {
@@ -82,7 +90,7 @@ export class QuadtreeLodManager {
     this.config = {
       bounds: { minX: -100, minZ: -100, maxX: 100, maxZ: 100 },
       maxLOD: 4,
-      distanceFactor: 1.6,
+      distanceFactor: 1.0,
       simulateAsyncLoad: false,
       asyncLoadDelayMs: 300,
       wireframe: false,

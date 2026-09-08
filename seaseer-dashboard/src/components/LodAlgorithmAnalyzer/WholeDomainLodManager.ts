@@ -43,7 +43,7 @@ export class WholeDomainLodManager {
     this.config = {
       bounds: { minX: -120, minZ: -120, maxX: 120, maxZ: 120 },
       maxLOD: 4,
-      distanceFactor: 1.6,
+      distanceFactor: 1.0,
       simulateAsyncLoad: false,
       asyncLoadDelayMs: 300,
       wireframe: false,
@@ -65,7 +65,7 @@ export class WholeDomainLodManager {
     const { bounds, maxLOD } = this.config;
     const width = bounds.maxX - bounds.minX;
     const height = bounds.maxZ - bounds.minZ;
-    const baseMetric = Math.max(width, height);
+    const baseMetric = Math.sqrt(width * width + height * height);
 
     this.thresholdsSq = [];
 
@@ -129,7 +129,7 @@ export class WholeDomainLodManager {
     const { bounds, maxLOD } = this.config;
     const width = bounds.maxX - bounds.minX;
     const height = bounds.maxZ - bounds.minZ;
-    const baseMetric = Math.max(width, height);
+    const baseMetric = Math.sqrt(width * width + height * height);
 
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerZ = (bounds.minZ + bounds.maxZ) / 2;

@@ -137,7 +137,7 @@ export default function LodAlgorithmAnalyzerPage() {
           <FiGrid /> Nodes per LOD Level
         </div>
         <div className="lod-breakdown-list">
-          {[0, 1, 2, 3, 4, 5, 6].map((lvl) => {
+          {Array.from({ length: maxLOD + 1 }, (_, i) => i).map((lvl) => {
             const count = stats.nodesPerLod[lvl] || 0;
             const color = LOD_COLOR_HEX[Math.min(lvl, LOD_COLOR_HEX.length - 1)];
             const maxCount = Math.max(...Object.values(stats.nodesPerLod), 1);
@@ -175,7 +175,7 @@ export default function LodAlgorithmAnalyzerPage() {
             <input
               type="range"
               min="1"
-              max="6"
+              max="10"
               step="1"
               value={maxLOD}
               onChange={(e) => setMaxLOD(parseInt(e.target.value))}
@@ -192,8 +192,8 @@ export default function LodAlgorithmAnalyzerPage() {
               </div>
               <input
                 type="range"
-                min="0.8"
-                max="3.5"
+                min="0.1"
+                max="10.0"
                 step="0.1"
                 value={distanceFactor}
                 onChange={(e) => setDistanceFactor(parseFloat(e.target.value))}

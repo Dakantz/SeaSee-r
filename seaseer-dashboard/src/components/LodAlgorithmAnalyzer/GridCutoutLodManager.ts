@@ -45,7 +45,7 @@ export class GridCutoutLodManager {
     this.config = {
       bounds: { minX: -120, minZ: -120, maxX: 120, maxZ: 120 },
       maxLOD: 4,
-      distanceFactor: 1.6,
+      distanceFactor: 1.0,
       evictionDistanceFactor: 3,
       simulateAsyncLoad: false,
       asyncLoadDelayMs: 300,
@@ -69,7 +69,7 @@ export class GridCutoutLodManager {
 
     // Base cell width for LOD 0 (finest detail), scaling with distanceFactor and domain size
     const domainScale = Math.max(totalWidth, totalHeight);
-    const baseW0 = (domainScale / 20.0) * (distanceFactor / 1.6);
+    const baseW0 = (domainScale / 20.0) * distanceFactor;
 
     const neededTiles: Map<string, { lod: number; bounds: TileBounds; center: THREE.Vector3 }> = new Map();
 
