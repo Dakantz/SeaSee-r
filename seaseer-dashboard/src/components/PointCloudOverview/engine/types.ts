@@ -30,58 +30,24 @@ export interface CameraViewTarget {
     timestamp?: number;
 }
 
-export interface PerfTestMetric {
-    second: number;
-    fps: number;
-    frameTimeMs: number;
-    pointsCount: number;
-    position: {
-        x: number;
-        y: number;
-        z: number;
-    };
-}
-
-export interface PerfTestSummary {
-    averageFps: number;
-    averageFrameTimeMs: number;
-    totalFrames: number;
-    totalDurationSec: number;
-    metrics: PerfTestMetric[];
-}
-
 export interface EngineConfig {
-    // Lighting
-    keyLightIntensity?: number;
-    fillLightIntensity?: number;
-    hemisphereLightIntensity?: number;
-    ambientLightIntensity?: number;
-
     // Heightmap / Terrain
     showHeightmap?: boolean;
     heightmapMode?: string;
     heightmapMapProvider?: MapProviderChoice;
     heightmapHeightProvider?: HeightProviderChoice;
 
-    // Queries & Summaries
+    // Point Cloud & Queries
     queries?: CustomQuery[];
     summaryMap?: Record<string, QuerySummaryData>;
     catalog?: PointCloudMetadataResponse[];
-    hoveredId?: string | null;
-
-    // Trajectory
-    showCameraTrajectories?: boolean;
 
     // Transform Gizmo
     editingPointcloudId?: string | null;
     gizmoMode?: "translate" | "rotate" | "scale" | null;
 
-    // Camera view targets / movement
+    // Camera view targets
     cameraViewTarget?: CameraViewTarget | null;
-    isCameraUpFixed?: boolean;
-
-    // Point count metric
-    pointCount?: number | null;
 }
 
 export interface EngineCallbacks {
@@ -90,7 +56,6 @@ export interface EngineCallbacks {
     onFocusCameraTarget?: (center: [number, number, number]) => void;
     onUpdatePointcloudTransform?: (id: string, matrixArray: number[]) => void;
     onCameraViewChange?: (view: { position?: [number, number, number]; quaternion?: [number, number, number, number]; fov?: number; target?: [number, number, number] }) => void;
-    onSetIsCameraUpFixed?: (fixed: boolean) => void;
     onSetIsGizmoDragging?: (dragging: boolean) => void;
-    onBenchmarkComplete?: (summary: PerfTestSummary) => void;
+    onPointCountChange?: (count: number) => void;
 }

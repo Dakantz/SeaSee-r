@@ -402,6 +402,44 @@ def test_query_builder_spatial_filtering():
     assert len(bind_multi) == 6
 
 
+def test_query_builder_summary_non_spatial():
+    from app.services.pointcloud.query_builder import PointCloudQueryBuilder
+    from app.schemas.filter import FilterCriterion
+
+    # No filters
+    summary_sql, distinct_sql, bind, _ = PointCloudQueryBuilder.build_summary_query(filters=None, lod=0)
+    assert "FROM pointcloud_metadata pm" in summary_sql
+    assert "SUM(pm.number_of_points)" in summary_sql
+    assert "pointcloud_patches_lod0" not in summary_sql
+    assert "FROM pointcloud_metadata pm" in distinct_sql
+
+    # Non-spatial filter (pointcloud_id & number_of_points)
+    filters = [
+        FilterCriterion(field="pointcloud_id", operator="eq", value="a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"),
+        FilterCriterion(field="number_of_points", operator="gte", value=500)
+    ]
+    summary_sql_ns, distinct_sql_ns, bind_ns, _ = PointCloudQueryBuilder.build_summary_query(filters=filters, lod=0)
+    assert "FROM pointcloud_metadata pm" in summary_sql_ns
+    assert "SUM(pm.number_of_points)" in summary_sql_ns
+    assert "pointcloud_patches_lod0" not in summary_sql_ns
+    assert "pm.id =" in summary_sql_ns
+    assert "pm.number_of_points >=" in summary_sql_ns
+
+
+def test_query_builder_summary_spatial():
+    from app.services.pointcloud.query_builder import PointCloudQueryBuilder
+    from app.schemas.filter import FilterCriterion
+
+    filters = [
+        FilterCriterion(field="min_x", operator="gte", value=-10.0),
+        FilterCriterion(field="max_x", operator="lte", value=10.0)
+    ]
+    summary_sql, distinct_sql, bind, _ = PointCloudQueryBuilder.build_summary_query(filters=filters, lod=0)
+    assert "FROM pointcloud_patches_lod0 p" in summary_sql
+    assert "SUM(PC_NumPoints(p.patch))" in summary_sql
+    assert "FROM pointcloud_patches_lod0 p" in distinct_sql
+
+
 
 def test_endpoint_stream_binary_invalid_field_400():
     res = client.get("/pointclouds/stream-binary?lod=0&unapproved_field=123")

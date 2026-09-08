@@ -22,15 +22,12 @@ const PointCloudLoader: React.FC<{ identifier: string }> = ({ identifier }) => {
 const NativePotreeViewer: React.FC<NativePotreeViewerProps> = ({ pointCloudIds, gizmoMode = null, editingPointcloudId = null }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const renderAreaRef = useRef<HTMLDivElement>(null);
-    
+
     // Initialize Potree
     usePotreeViewer(containerRef, renderAreaRef);
 
     // Initialize TransformControls (Gizmo)
     useTransformControls(gizmoMode, editingPointcloudId);
-
-    // Add yellow sphere at coordinates (0, 0, 0)
-    useYellowSphere([0, 0, 0], 1.0);
 
     // Add ROV 3D model & Trajectory Path into Potree scene
     usePotreeRovRenderer();

@@ -17,6 +17,66 @@ export interface QuerySummaryProps {
 }
 
 /**
+ * Helper to extract or aggregate 3D bounding box boundaries (min_x, min_y, min_z, max_x, max_y, max_z)
+ * from a QuerySummaryData record.
+ */
+export function getQueryBoundingBox(summary?: QuerySummaryData | null): {
+  min_x: number;
+  min_y: number;
+  min_z: number;
+  max_x: number;
+  max_y: number;
+  max_z: number;
+} | null {
+  if (!summary) return null;
+  if (
+    summary.bounding_box &&
+    typeof summary.bounding_box.min_x === "number" &&
+    typeof summary.bounding_box.max_x === "number" &&
+    typeof summary.bounding_box.min_y === "number" &&
+    typeof summary.bounding_box.max_y === "number" &&
+    typeof summary.bounding_box.min_z === "number" &&
+    typeof summary.bounding_box.max_z === "number"
+  ) {
+    return {
+      min_x: summary.bounding_box.min_x,
+      min_y: summary.bounding_box.min_y,
+      min_z: summary.bounding_box.min_z,
+      max_x: summary.bounding_box.max_x,
+      max_y: summary.bounding_box.max_y,
+      max_z: summary.bounding_box.max_z,
+    };
+  }
+
+  if (summary.connected_pointclouds && summary.connected_pointclouds.length > 0) {
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    let count = 0;
+
+    for (const pc of summary.connected_pointclouds) {
+      if (
+        typeof pc.min_x === "number" && typeof pc.max_x === "number" &&
+        typeof pc.min_y === "number" && typeof pc.max_y === "number" &&
+        typeof pc.min_z === "number" && typeof pc.max_z === "number"
+      ) {
+        if (pc.min_x < minX) minX = pc.min_x;
+        if (pc.min_y < minY) minY = pc.min_y;
+        if (pc.min_z < minZ) minZ = pc.min_z;
+        if (pc.max_x > maxX) maxX = pc.max_x;
+        if (pc.max_y > maxY) maxY = pc.max_y;
+        if (pc.max_z > maxZ) maxZ = pc.max_z;
+        count++;
+      }
+    }
+    if (count > 0) {
+      return { min_x: minX, min_y: minY, min_z: minZ, max_x: maxX, max_y: maxY, max_z: maxZ };
+    }
+  }
+
+  return null;
+}
+
+/**
  * ConnectedMetadataCard Component
  * Displays all possible information from a Connected Metadata record (PointCloudMetadata).
  */
@@ -322,6 +382,53 @@ export const QuerySummary: React.FC<QuerySummaryProps> = ({
             isLoadingStream={isLoadingStream}
             isLoadedStream={isLoadedStream}
           />
+
+          {/* Query Summary Spatial Boundaries */}
+          {(() => {
+            const bbox = getQueryBoundingBox(summary);
+            if (!bbox) return null;
+            const dx = bbox.max_x - bbox.min_x;
+            const dy = bbox.max_y - bbox.min_y;
+            const dz = bbox.max_z - bbox.min_z;
+
+            return (
+              <div className="query-summary__connected-section" style={{ marginBottom: "12px" }}>
+                <span className="query-summary__label">
+                  Query Bounding Box Boundaries:
+                </span>
+                <div className="query-summary__connected-card" style={{ marginTop: "4px" }}>
+                  <div className="query-summary__connected-details" style={{ display: "block", padding: "10px" }}>
+                    <div className="query-summary__connected-grid">
+                      <div className="query-summary__connected-field">
+                        <span className="query-summary__connected-field-label">Min (XYZ):</span>
+                        <span className="query-summary__connected-field-value mono">
+                          [{bbox.min_x.toFixed(2)}, {bbox.min_y.toFixed(2)}, {bbox.min_z.toFixed(2)}]
+                        </span>
+                      </div>
+                      <div className="query-summary__connected-field">
+                        <span className="query-summary__connected-field-label">Max (XYZ):</span>
+                        <span className="query-summary__connected-field-value mono">
+                          [{bbox.max_x.toFixed(2)}, {bbox.max_y.toFixed(2)}, {bbox.max_z.toFixed(2)}]
+                        </span>
+                      </div>
+                      <div className="query-summary__connected-field">
+                        <span className="query-summary__connected-field-label">Extents (ΔX, ΔY, ΔZ):</span>
+                        <span className="query-summary__connected-field-value mono">
+                          {dx.toFixed(2)}m × {dy.toFixed(2)}m × {dz.toFixed(2)}m
+                        </span>
+                      </div>
+                      <div className="query-summary__connected-field">
+                        <span className="query-summary__connected-field-label">Center (XYZ):</span>
+                        <span className="query-summary__connected-field-value mono">
+                          [{((bbox.min_x + bbox.max_x) / 2).toFixed(2)}, {((bbox.min_y + bbox.max_y) / 2).toFixed(2)}, {((bbox.min_z + bbox.max_z) / 2).toFixed(2)}]
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Connected Point Clouds Metadata Section */}
           {summary.connected_pointclouds && summary.connected_pointclouds.length > 0 ? (

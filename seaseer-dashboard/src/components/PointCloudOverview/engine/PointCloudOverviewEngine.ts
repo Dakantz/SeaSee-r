@@ -2,12 +2,12 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { CameraViewTarget, EngineCallbacks, EngineConfig } from "./types";
 import { patchGeoThreeHeight } from "./patches/patchGeoThreeHeight";
-import { LightingSystem, TARGET_X, TARGET_Y } from "./systems/LightingSystem";
+import { PointCloudSystem } from "./systems/PointCloudSystem";
 import { TerrainSystem } from "./systems/TerrainSystem";
-import { MarkerSystem } from "./systems/MarkerSystem";
-import { TrajectorySystem } from "./systems/TrajectorySystem";
 import { TransformGizmoSystem } from "./systems/TransformGizmoSystem";
-import { BenchmarkSystem } from "./systems/BenchmarkSystem";
+
+export const TARGET_X = 0;
+export const TARGET_Y = 0;
 
 export class PointCloudOverviewEngine {
     private container: HTMLElement;
@@ -18,12 +18,12 @@ export class PointCloudOverviewEngine {
     private renderer: THREE.WebGLRenderer;
     private controls: OrbitControls;
 
-    private lightingSystem: LightingSystem;
+    private ambientLight: THREE.AmbientLight;
+    private dirLight: THREE.DirectionalLight;
+
+    private pointCloudSystem: PointCloudSystem;
     private terrainSystem: TerrainSystem;
-    private markerSystem: MarkerSystem;
-    private trajectorySystem: TrajectorySystem;
     private transformGizmoSystem: TransformGizmoSystem;
-    private benchmarkSystem: BenchmarkSystem;
 
     private animationFrameId: number | null = null;
     private clock: THREE.Clock;
@@ -40,6 +40,14 @@ export class PointCloudOverviewEngine {
         this.scene = new THREE.Scene();
         this.scene.name = "PointCloudOverviewScene";
         this.scene.background = new THREE.Color(0x050811);
+
+        // Initialize Scene Lighting
+        this.ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+        this.scene.add(this.ambientLight);
+
+        this.dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        this.dirLight.position.set(-5000, 5000, 8000);
+        this.scene.add(this.dirLight);
 
         // Initialize Camera
         const width = container.clientWidth || window.innerWidth;
@@ -66,13 +74,10 @@ export class PointCloudOverviewEngine {
         // Initialize Clock
         this.clock = new THREE.Clock();
 
-        // Initialize Systems
-        this.lightingSystem = new LightingSystem(this.scene, initialConfig);
+        // Initialize Core Systems
+        this.pointCloudSystem = new PointCloudSystem(this.scene, this.callbacks, initialConfig);
         this.terrainSystem = new TerrainSystem(this.scene, initialConfig);
-        this.markerSystem = new MarkerSystem(this.scene, this.camera, this.renderer.domElement, this.callbacks, initialConfig);
-        this.trajectorySystem = new TrajectorySystem(this.scene, this.camera, this.renderer.domElement, this.callbacks, initialConfig);
         this.transformGizmoSystem = new TransformGizmoSystem(this.scene, this.camera, this.renderer.domElement, this.callbacks, initialConfig);
-        this.benchmarkSystem = new BenchmarkSystem(this.camera, this.callbacks);
 
         // Bind Resize Observer
         this.initResizeObserver();
@@ -99,7 +104,6 @@ export class PointCloudOverviewEngine {
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(width, height);
-        this.trajectorySystem.handleResize(width, height);
     }
 
     public updateConfig(newConfig: Partial<EngineConfig>): void {
@@ -107,12 +111,9 @@ export class PointCloudOverviewEngine {
             this.applyCameraViewTarget(newConfig.cameraViewTarget);
         }
 
-        this.lightingSystem.updateConfig(newConfig);
+        this.pointCloudSystem.updateConfig(newConfig);
         this.terrainSystem.updateConfig(newConfig);
-        this.markerSystem.updateConfig(newConfig);
-        this.trajectorySystem.updateConfig(newConfig);
         this.transformGizmoSystem.updateConfig(newConfig);
-        this.benchmarkSystem.updateConfig(newConfig);
     }
 
     public applyCameraViewTarget(target: CameraViewTarget): void {
@@ -145,19 +146,11 @@ export class PointCloudOverviewEngine {
         this.controls.update();
     }
 
-    public startBenchmark(): void {
-        this.benchmarkSystem.startBenchmark();
-    }
-
     private tick(): void {
-        const delta = this.clock.getDelta();
-
+        this.clock.getDelta();
         this.controls.update();
         this.terrainSystem.update(this.camera, this.renderer);
-        this.benchmarkSystem.update(delta);
-
         this.renderer.render(this.scene, this.camera);
-
         this.animationFrameId = requestAnimationFrame(this.tick);
     }
 
@@ -172,18 +165,21 @@ export class PointCloudOverviewEngine {
             this.resizeObserver = null;
         }
 
-        // Destroy systems
-        this.lightingSystem.destroy(this.scene);
+        // Destroy core systems
+        this.pointCloudSystem.destroy();
         this.terrainSystem.destroy();
-        this.markerSystem.destroy();
-        this.trajectorySystem.destroy();
         this.transformGizmoSystem.destroy();
-        this.benchmarkSystem.destroy();
+
+        // Dispose lights
+        this.scene.remove(this.ambientLight);
+        this.scene.remove(this.dirLight);
+        this.ambientLight.dispose();
+        this.dirLight.dispose();
 
         // Dispose controls
         this.controls.dispose();
 
-        // Traverse scene and dispose resources
+        // Traverse scene and dispose remaining resources
         this.scene.traverse((child: any) => {
             if (child.geometry) {
                 child.geometry.dispose();

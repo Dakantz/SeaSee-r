@@ -24,6 +24,17 @@ export interface StreamQueryParams {
   filters?: FilterRule[] | null;
 }
 
+export const SPATIAL_FIELDS = ["min_x", "max_x", "min_y", "max_y", "min_z", "max_z"];
+
+export function isSpatialFilter(rule: FilterRule): boolean {
+  return SPATIAL_FIELDS.includes(rule.field);
+}
+
+export function sanitizeNonSpatialFilters(filters?: FilterRule[] | null): FilterRule[] {
+  if (!filters || !Array.isArray(filters)) return [];
+  return filters.filter((rule) => !isSpatialFilter(rule));
+}
+
 /**
  * Converts filter rules into standard URLSearchParams
  * e.g. { field: "number_of_points", operator: "gte", value: 50000 }
@@ -33,9 +44,10 @@ export function buildFilterQueryParams(params: StreamQueryParams): URLSearchPara
   const searchParams = new URLSearchParams();
   searchParams.set("lod", (params?.lod ?? 0).toString());
 
-  if (!params?.filters || !Array.isArray(params.filters)) return searchParams;
+  const cleanFilters = sanitizeNonSpatialFilters(params?.filters);
+  if (!cleanFilters.length) return searchParams;
 
-  for (const rule of params.filters) {
+  for (const rule of cleanFilters) {
     if (rule.value === "" || rule.value === undefined || rule.value === null) continue;
 
     const paramKey = rule.operator === "eq" ? rule.field : `${rule.field}__${rule.operator}`;
@@ -44,3 +56,4 @@ export function buildFilterQueryParams(params: StreamQueryParams): URLSearchPara
 
   return searchParams;
 }
+

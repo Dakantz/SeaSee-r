@@ -219,6 +219,18 @@ class PointCloudQueryBuilder:
         return sql, bind_params, expanding_params
 
     @classmethod
+    def has_spatial_filters(cls, filters: Optional[List[FilterCriterion]]) -> bool:
+        """
+        Determines whether any spatial bounding box filters (min_x, max_x, min_y, max_y, min_z, max_z) are present.
+        """
+        if not filters:
+            return False
+        for criterion in filters:
+            if criterion.field in SPATIAL_FILTER_MAP and criterion.value is not None:
+                return True
+        return False
+
+    @classmethod
     def build_summary_query(
         cls,
         filters: Optional[List[FilterCriterion]] = None,
@@ -226,6 +238,7 @@ class PointCloudQueryBuilder:
     ) -> Tuple[str, str, Dict[str, Any], List[str]]:
         """
         Constructs SQL strings for summary metrics and distinct pointcloud FK IDs (/stream-summary).
+        If no spatial filters are applied, queries pointcloud_metadata directly for sub-millisecond execution.
         Returns (summary_sql, distinct_ids_sql, bind_params, expanding_params).
         """
         table_name, patch_where_sql, point_where_sql, bind_params, requires_video_join, expanding_params = cls.build_query_components(
@@ -235,28 +248,51 @@ class PointCloudQueryBuilder:
 
         video_join_clause = "LEFT JOIN video_metadata vm ON pm.video_metadata_id = vm.id" if requires_video_join else ""
 
-        summary_sql = f"""
-            SELECT 
-                COALESCE(SUM(PC_NumPoints(p.patch)), 0) AS total_points,
-                MIN(PC_PatchMin(p.patch, 'X')) AS min_x,
-                MIN(PC_PatchMin(p.patch, 'Y')) AS min_y,
-                MIN(PC_PatchMin(p.patch, 'Z')) AS min_z,
-                MAX(PC_PatchMax(p.patch, 'X')) AS max_x,
-                MAX(PC_PatchMax(p.patch, 'Y')) AS max_y,
-                MAX(PC_PatchMax(p.patch, 'Z')) AS max_z
-            FROM {table_name} p
-            JOIN pointcloud_metadata pm ON p.pointcloud_id = pm.id
-            {video_join_clause}
-            WHERE {patch_where_sql};
-        """
+        if not cls.has_spatial_filters(filters):
+            summary_sql = f"""
+                SELECT 
+                    COALESCE(SUM(pm.number_of_points), 0) AS total_points,
+                    MIN(pm.min_x) AS min_x,
+                    MIN(pm.min_y) AS min_y,
+                    MIN(pm.min_z) AS min_z,
+                    MAX(pm.max_x) AS max_x,
+                    MAX(pm.max_y) AS max_y,
+                    MAX(pm.max_z) AS max_z
+                FROM pointcloud_metadata pm
+                {video_join_clause}
+                WHERE {patch_where_sql};
+            """
 
-        distinct_ids_sql = f"""
-            SELECT DISTINCT p.pointcloud_id
-            FROM {table_name} p
-            JOIN pointcloud_metadata pm ON p.pointcloud_id = pm.id
-            {video_join_clause}
-            WHERE {patch_where_sql};
-        """
+            distinct_ids_sql = f"""
+                SELECT DISTINCT pm.id
+                FROM pointcloud_metadata pm
+                {video_join_clause}
+                WHERE {patch_where_sql};
+            """
+        else:
+            summary_sql = f"""
+                SELECT 
+                    COALESCE(SUM(PC_NumPoints(p.patch)), 0) AS total_points,
+                    MIN(PC_PatchMin(p.patch, 'X')) AS min_x,
+                    MIN(PC_PatchMin(p.patch, 'Y')) AS min_y,
+                    MIN(PC_PatchMin(p.patch, 'Z')) AS min_z,
+                    MAX(PC_PatchMax(p.patch, 'X')) AS max_x,
+                    MAX(PC_PatchMax(p.patch, 'Y')) AS max_y,
+                    MAX(PC_PatchMax(p.patch, 'Z')) AS max_z
+                FROM {table_name} p
+                JOIN pointcloud_metadata pm ON p.pointcloud_id = pm.id
+                {video_join_clause}
+                WHERE {patch_where_sql};
+            """
+
+            distinct_ids_sql = f"""
+                SELECT DISTINCT p.pointcloud_id
+                FROM {table_name} p
+                JOIN pointcloud_metadata pm ON p.pointcloud_id = pm.id
+                {video_join_clause}
+                WHERE {patch_where_sql};
+            """
+
         # logger.info(f"Summary query: {summary_sql}")
         # logger.info(f"Distinct IDs query: {distinct_ids_sql}")
         return summary_sql, distinct_ids_sql, bind_params, expanding_params

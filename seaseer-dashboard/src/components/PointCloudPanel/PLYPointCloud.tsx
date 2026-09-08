@@ -10,10 +10,9 @@ import type { PositionSample } from "../TelemetoryPanel/TelemetryPositionReader"
 export { CustomQueryManager, PointCloudList } from "./CustomQueryManager";
 export { CustomQueryManagerContainer, PointCloudListContainer } from "./CustomQueryManagerContainer";
 export type { CustomQuery, CustomQueryManagerProps, PointCloudItem, PointCloudListProps } from "./CustomQueryManager";
-import { getBoundingBoxCenter, type CustomQuery } from "./CustomQueryManager";
 import { CameraMovementSystem, TARGET_X, TARGET_Y } from "./utils/CameraMovementController";
 import { getPointCloudTransform } from "./utils/pointCloudTransform";
-import DynamicCubicLODController from "./DynamicCubicLODController";
+import DynamicCubicLODController, { BoxOutline } from "./DynamicCubicLODController";
 
 
 // @ts-expect-error - geo-three submodule
@@ -134,10 +133,6 @@ function SceneLighting() {
         </group>
     );
 }
-
-const _colorHovered = new THREE.Color("#ffaa00");
-const _colorDefault = new THREE.Color("#00e5ff");
-
 
 function GeoThreeHeightmap() {
     const { showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider } = usePLYPointCloudContext();
@@ -282,96 +277,161 @@ function GeoThreeHeightmap() {
     return <primitive object={mapView} position={[0, -0.5, 0]} />;
 }
 
+function QuerySummaryOutlines() {
+    const { queries, summaryMap, hoveredId, editingPointcloudId } = usePLYPointCloudContext();
 
+    const outlineItems = useMemo(() => {
+        const items: Array<{
+            id: string;
+            queryId: string;
+            minX: number;
+            minY: number;
+            minZ: number;
+            maxX: number;
+            maxY: number;
+            maxZ: number;
+            transformMatrix?: number[];
+            isHovered: boolean;
+            isSelected: boolean;
+        }> = [];
 
-function PointCloudCenterMarkers() {
-    const {
-        queries,
-        summaryMap,
-        hoveredId,
-        selectPointcloud,
-        hoverPointcloud,
-        focusCameraTarget,
-    } = usePLYPointCloudContext();
+        queries.forEach((q) => {
+            const summary = summaryMap[q.id];
+            if (!summary) return;
 
-    const meshRef = useRef<THREE.InstancedMesh>(null);
-    const dummy = useMemo(() => new THREE.Object3D(), []);
+            const isQueryHovered = q.id === hoveredId;
+            const isQuerySelected = q.id === editingPointcloudId;
 
-    useEffect(() => {
-        if (!meshRef.current || queries.length === 0) return;
+            let hasConnectedOutlines = false;
 
-        if (meshRef.current.geometry) {
-            meshRef.current.geometry.boundingSphere = new THREE.Sphere(
-                new THREE.Vector3(0, 0, 0),
-                Infinity
-            );
-        }
+            // Render a separate bounding box for EVERY Connected Metadata record
+            if (summary.connected_pointclouds && summary.connected_pointclouds.length > 0) {
+                summary.connected_pointclouds.forEach((pc, idx) => {
+                    if (
+                        typeof pc.min_x === "number" && typeof pc.max_x === "number" &&
+                        typeof pc.min_y === "number" && typeof pc.max_y === "number" &&
+                        typeof pc.min_z === "number" && typeof pc.max_z === "number"
+                    ) {
+                        const isPcHovered = isQueryHovered || pc.id === hoveredId;
+                        const isPcSelected = isQuerySelected || pc.id === editingPointcloudId;
 
-        queries.forEach((query, index) => {
-            const [cx, cy, cz] = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, TARGET_Y, 0];
+                        items.push({
+                            id: `connected-pc-bbox-${q.id}-${pc.id || idx}`,
+                            queryId: q.id,
+                            minX: pc.min_x,
+                            minY: pc.min_y,
+                            minZ: pc.min_z,
+                            maxX: pc.max_x,
+                            maxY: pc.max_y,
+                            maxZ: pc.max_z,
+                            transformMatrix: pc.transform_matrix && pc.transform_matrix.length === 16 ? pc.transform_matrix : undefined,
+                            isHovered: isPcHovered,
+                            isSelected: isPcSelected,
+                        });
+                        hasConnectedOutlines = true;
+                    }
+                });
+            }
 
-            const isHovered = query.id === hoveredId;
-
-            // Fixed size in 3D world space
-            const scale = isHovered ? 1.5 : 1.0;
-
-            dummy.position.set(cx, cy, cz);
-            dummy.scale.set(scale, scale, scale);
-            dummy.updateMatrix();
-            meshRef.current!.setMatrixAt(index, dummy.matrix);
-
-            const color = isHovered ? _colorHovered : _colorDefault;
-            meshRef.current!.setColorAt(index, color);
+            // Fallback overall query summary bounding box if present and no connected bounds exist
+            if (
+                !hasConnectedOutlines &&
+                summary.bounding_box &&
+                typeof summary.bounding_box.min_x === "number" &&
+                typeof summary.bounding_box.max_x === "number" &&
+                typeof summary.bounding_box.min_y === "number" &&
+                typeof summary.bounding_box.max_y === "number" &&
+                typeof summary.bounding_box.min_z === "number" &&
+                typeof summary.bounding_box.max_z === "number"
+            ) {
+                items.push({
+                    id: `summary-bbox-${q.id}`,
+                    queryId: q.id,
+                    minX: summary.bounding_box.min_x,
+                    minY: summary.bounding_box.min_y,
+                    minZ: summary.bounding_box.min_z,
+                    maxX: summary.bounding_box.max_x,
+                    maxY: summary.bounding_box.max_y,
+                    maxZ: summary.bounding_box.max_z,
+                    isHovered: isQueryHovered,
+                    isSelected: isQuerySelected,
+                });
+            }
         });
 
-        meshRef.current.instanceMatrix.needsUpdate = true;
-        if (meshRef.current.instanceColor) {
-            meshRef.current.instanceColor.needsUpdate = true;
-        }
-    }, [queries, summaryMap, hoveredId, dummy]);
+        return items;
+    }, [queries, summaryMap, hoveredId, editingPointcloudId]);
 
-    if (queries.length === 0) return null;
-
-    const handleLoadQuery = (query: CustomQuery) => {
-        selectPointcloud(query.id);
-    };
+    if (outlineItems.length === 0) return null;
 
     return (
-        <instancedMesh
-            ref={meshRef}
-            args={[undefined, undefined, queries.length]}
-            onClick={(e) => {
-                e.stopPropagation();
-                if (e.instanceId !== undefined && queries[e.instanceId]) {
-                    const query = queries[e.instanceId];
-                    handleLoadQuery(query);
-                }
-            }}
-            onDoubleClick={(e) => {
-                e.stopPropagation();
-                if (e.instanceId !== undefined && queries[e.instanceId]) {
-                    const query = queries[e.instanceId];
-                    handleLoadQuery(query);
-                    const center = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, TARGET_Y, 0];
-                    focusCameraTarget(center);
-                }
-            }}
-            onPointerOver={(e) => {
-                e.stopPropagation();
-                document.body.style.cursor = "pointer";
-                if (e.instanceId !== undefined && queries[e.instanceId]) {
-                    hoverPointcloud(queries[e.instanceId].id);
-                }
-            }}
-            onPointerOut={(e) => {
-                e.stopPropagation();
-                document.body.style.cursor = "auto";
-                hoverPointcloud(null);
-            }}
-        >
-            <sphereGeometry args={[1, 16, 16]} />
-            <meshStandardMaterial roughness={0.3} metalness={0.2} />
-        </instancedMesh>
+        <group name="query-summary-outlines">
+            {outlineItems.map((item) => {
+                const width = Math.max(0.1, item.maxX - item.minX);
+                const height = Math.max(0.1, item.maxY - item.minY);
+                const depth = Math.max(0.1, item.maxZ - item.minZ);
+
+                const cx = (item.minX + item.maxX) / 2;
+                const cy = (item.minY + item.maxY) / 2;
+                const cz = (item.minZ + item.maxZ) / 2;
+
+                const color = item.isHovered ? "#ffaa00" : item.isSelected ? "#3b82f6" : "#00e5ff";
+
+                return (
+                    <QuerySingleOutlineBox
+                        key={item.id}
+                        cx={cx}
+                        cy={cy}
+                        cz={cz}
+                        width={width}
+                        height={height}
+                        depth={depth}
+                        color={color}
+                        transformMatrix={item.transformMatrix}
+                    />
+                );
+            })}
+        </group>
+    );
+}
+
+function QuerySingleOutlineBox({
+    cx,
+    cy,
+    cz,
+    width,
+    height,
+    depth,
+    color,
+    transformMatrix,
+}: {
+    cx: number;
+    cy: number;
+    cz: number;
+    width: number;
+    height: number;
+    depth: number;
+    color: string;
+    transformMatrix?: number[];
+}) {
+    const groupRef = useRef<THREE.Group>(null);
+
+    useEffect(() => {
+        if (groupRef.current && transformMatrix && transformMatrix.length === 16) {
+            const mat = new THREE.Matrix4().fromArray(transformMatrix);
+            groupRef.current.matrix.copy(mat);
+            groupRef.current.matrixAutoUpdate = false;
+        } else if (groupRef.current) {
+            groupRef.current.matrixAutoUpdate = true;
+        }
+    }, [transformMatrix]);
+
+    return (
+        <group ref={groupRef}>
+            <group position={[cx, cy, cz]}>
+                <BoxOutline width={width} height={height} depth={depth} color={color} />
+            </group>
+        </group>
     );
 }
 
@@ -865,7 +925,7 @@ export default function PLYPointCloud() {
             <ViewportGizmoHelper />
             <SceneLighting />
             <GeoThreeHeightmap />
-            <PointCloudCenterMarkers />
+            <QuerySummaryOutlines />
             <DBCameraTrajectoryDisplay />
 
             <DynamicCubicLODController />

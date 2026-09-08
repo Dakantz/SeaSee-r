@@ -3,7 +3,7 @@ import * as THREE from "three";
 import type { PointCloudMetadataResponse } from "../../client";
 import type { QuerySummaryData, CustomQuery } from "./CustomQueryManager";
 import { fetchPointCloudSummary } from "./utils/pointCloudApi.ts";
-import type { FilterRule } from "./utils/filterUtils.ts";
+import { type FilterRule, sanitizeNonSpatialFilters } from "./utils/filterUtils.ts";
 
 export type MapProviderChoice = "OpenStreetMaps" | "Bathymetry" | "EmodnetWMS" | "EmodnetWCSBilinear" | "EmodnetWCSNearestNeighbour" | "Debug" | "MapTilerBasic" | "MapTilerOutdoor" | "MapTilerSatellite" | "Bing";
 export type HeightProviderChoice = "Bathymetry" | "EmodnetWCSBilinear" | "EmodnetWCSNearestNeighbour" | "None" | "Debug" | "MapTiler" | "Bing";
@@ -189,7 +189,10 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
             if (saved !== null) {
                 const parsed = JSON.parse(saved);
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                    return parsed;
+                    return parsed.map((q: CustomQuery) => ({
+                        ...q,
+                        filters: sanitizeNonSpatialFilters(q.filters),
+                    }));
                 }
             }
         } catch (e) {
@@ -427,7 +430,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
 
             const now = new Date().toISOString();
             const defaultFilters: FilterRule[] = filters !== undefined
-                ? filters
+                ? sanitizeNonSpatialFilters(filters)
                 : targetId
                     ? [{ id: `rule-${Date.now()}`, field: "pointcloud_id", operator: "eq", value: targetId }]
                     : [];

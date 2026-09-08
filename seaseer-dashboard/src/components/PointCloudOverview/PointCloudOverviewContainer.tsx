@@ -4,10 +4,6 @@ import { PointCloudOverview } from "./PointCloudOverview";
 
 export const PointCloudOverviewContainer: React.FC = () => {
     const {
-        keyLightIntensity,
-        fillLightIntensity,
-        hemisphereLightIntensity,
-        ambientLightIntensity,
         showHeightmap,
         heightmapMode,
         heightmapMapProvider,
@@ -15,29 +11,20 @@ export const PointCloudOverviewContainer: React.FC = () => {
         queries,
         summaryMap,
         catalog,
-        hoveredId,
-        showCameraTrajectories,
         editingPointcloudId,
         gizmoMode,
         cameraViewTarget,
-        isCameraUpFixed,
-        pointCount,
         selectPointcloud,
         hoverPointcloud,
         focusCameraTarget,
         updatePointcloudTransform,
         setCameraView,
-        setIsCameraUpFixed,
         setIsGizmoDragging,
-        setPerfTestSummary,
+        setPointCount,
     } = usePLYPointCloudContext();
 
     return (
         <PointCloudOverview
-            keyLightIntensity={keyLightIntensity}
-            fillLightIntensity={fillLightIntensity}
-            hemisphereLightIntensity={hemisphereLightIntensity}
-            ambientLightIntensity={ambientLightIntensity}
             showHeightmap={showHeightmap}
             heightmapMode={heightmapMode}
             heightmapMapProvider={heightmapMapProvider}
@@ -45,13 +32,9 @@ export const PointCloudOverviewContainer: React.FC = () => {
             queries={queries}
             summaryMap={summaryMap}
             catalog={catalog}
-            hoveredId={hoveredId}
-            showCameraTrajectories={showCameraTrajectories}
             editingPointcloudId={editingPointcloudId}
             gizmoMode={gizmoMode}
             cameraViewTarget={cameraViewTarget}
-            isCameraUpFixed={isCameraUpFixed}
-            pointCount={pointCount}
             onSelectPointcloud={selectPointcloud}
             onHoverPointcloud={hoverPointcloud}
             onFocusCameraTarget={focusCameraTarget}
@@ -61,9 +44,8 @@ export const PointCloudOverviewContainer: React.FC = () => {
                     setCameraView(view as { position: [number, number, number]; quaternion?: [number, number, number, number]; fov?: number });
                 }
             }}
-            onSetIsCameraUpFixed={setIsCameraUpFixed}
             onSetIsGizmoDragging={setIsGizmoDragging}
-            onBenchmarkComplete={setPerfTestSummary}
+            onPointCountChange={setPointCount}
         />
     );
 };

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import { QuerySelector } from "./QuerySelector";
-import type { FilterRule } from "./utils/filterUtils.ts";
+import { type FilterRule, sanitizeNonSpatialFilters } from "./utils/filterUtils.ts";
 import { fetchPointCloudSummary } from "./utils/pointCloudApi.ts";
 
 export { QuerySelector } from "./QuerySelector";
@@ -247,13 +247,17 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
       }
     }
 
-    // Deduplicate on initial load
+    // Deduplicate and sanitize on initial load
     const seen = new Set<string>();
     const deduplicated: CustomQuery[] = [];
     for (const item of list) {
-      if (!seen.has(item.id)) {
-        seen.add(item.id);
-        deduplicated.push(item);
+      const cleanItem = {
+        ...item,
+        filters: sanitizeNonSpatialFilters(item.filters),
+      };
+      if (!seen.has(cleanItem.id)) {
+        seen.add(cleanItem.id);
+        deduplicated.push(cleanItem);
       }
     }
     return deduplicated;
@@ -415,7 +419,7 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
     const updatedList = queries.map((q) => {
       if (q.id !== id) return q;
       if (field === "filters") {
-        const filtersList = (value as FilterRule[]) || [];
+        const filtersList = sanitizeNonSpatialFilters((value as FilterRule[]) || []);
         return {
           ...q,
           filters: filtersList,

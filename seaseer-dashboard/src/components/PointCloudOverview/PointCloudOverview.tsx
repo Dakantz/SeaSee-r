@@ -9,28 +9,28 @@ export interface PointCloudOverviewProps extends EngineConfig, EngineCallbacks {
 
 export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
     style, className, onSelectPointcloud, onHoverPointcloud, onFocusCameraTarget,
-    onUpdatePointcloudTransform, onCameraViewChange, onSetIsCameraUpFixed,
-    onSetIsGizmoDragging, onBenchmarkComplete, ...configProps
+    onUpdatePointcloudTransform, onCameraViewChange,
+    onSetIsGizmoDragging, onPointCountChange, ...configProps
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const engineRef = useRef<PointCloudOverviewEngine | null>(null);
 
     const callbacksRef = useRef<EngineCallbacks>({
         onSelectPointcloud, onHoverPointcloud, onFocusCameraTarget,
-        onUpdatePointcloudTransform, onCameraViewChange, onSetIsCameraUpFixed,
-        onSetIsGizmoDragging, onBenchmarkComplete,
+        onUpdatePointcloudTransform, onCameraViewChange,
+        onSetIsGizmoDragging, onPointCountChange,
     });
 
     useEffect(() => {
         callbacksRef.current = {
             onSelectPointcloud, onHoverPointcloud, onFocusCameraTarget,
-            onUpdatePointcloudTransform, onCameraViewChange, onSetIsCameraUpFixed,
-            onSetIsGizmoDragging, onBenchmarkComplete,
+            onUpdatePointcloudTransform, onCameraViewChange,
+            onSetIsGizmoDragging, onPointCountChange,
         };
     }, [
         onSelectPointcloud, onHoverPointcloud, onFocusCameraTarget,
-        onUpdatePointcloudTransform, onCameraViewChange, onSetIsCameraUpFixed,
-        onSetIsGizmoDragging, onBenchmarkComplete,
+        onUpdatePointcloudTransform, onCameraViewChange,
+        onSetIsGizmoDragging, onPointCountChange,
     ]);
 
     useEffect(() => {
@@ -41,9 +41,8 @@ export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
             onFocusCameraTarget: (c) => callbacksRef.current.onFocusCameraTarget?.(c),
             onUpdatePointcloudTransform: (id, m) => callbacksRef.current.onUpdatePointcloudTransform?.(id, m),
             onCameraViewChange: (v) => callbacksRef.current.onCameraViewChange?.(v),
-            onSetIsCameraUpFixed: (f) => callbacksRef.current.onSetIsCameraUpFixed?.(f),
             onSetIsGizmoDragging: (d) => callbacksRef.current.onSetIsGizmoDragging?.(d),
-            onBenchmarkComplete: (s) => callbacksRef.current.onBenchmarkComplete?.(s),
+            onPointCountChange: (c) => callbacksRef.current.onPointCountChange?.(c),
         };
         const engine = new PointCloudOverviewEngine(containerRef.current, proxyCallbacks, configProps);
         engineRef.current = engine;

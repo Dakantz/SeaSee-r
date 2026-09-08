@@ -41,6 +41,22 @@ export default function Toolbar() {
                 </NavLink>
 
                 <NavLink
+                    to="/pointcloud-overview"
+                    style={({ isActive }) => ({
+                        color: isActive ? "#38bdf8" : "#94a3b8",
+                        textDecoration: "none",
+                        padding: "6px 12px",
+                        borderRadius: "6px",
+                        fontSize: "13px",
+                        fontWeight: 500,
+                        background: isActive ? "rgba(56, 189, 248, 0.15)" : "transparent",
+                        border: isActive ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid transparent"
+                    })}
+                >
+                    PointCloud Overview
+                </NavLink>
+
+                <NavLink
                     to="/lod-algorithm-analyzer"
                     style={({ isActive }) => ({
                         color: isActive ? "#38bdf8" : "#94a3b8",
