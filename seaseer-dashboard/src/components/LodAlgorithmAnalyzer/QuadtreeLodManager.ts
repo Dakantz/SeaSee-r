@@ -11,6 +11,13 @@ export interface TileBounds {
   maxZ: number;
 }
 
+export const DEFAULT_DOMAIN_BOUNDS: TileBounds = {
+  minX: -100,
+  maxX: 100,
+  minZ: -100,
+  maxZ: 100,
+};
+
 export interface TileNode {
   id: string;
   depth: number;
@@ -32,8 +39,10 @@ export interface LodManagerConfig {
   maxLOD: number;
   /** Distance multiplier in world units */
   distanceFactor: number;
-  /** Tile eviction distance factor multiplier (for Algorithm 3) */
+  /** Tile eviction distance factor multiplier (for Algorithm 2: Inside Out 3x3) */
   evictionDistanceFactor?: number;
+  /** Distance factor multiplier for switching between inside and outside algorithms (for Algorithm 4: Hybrid Quadtree / Whole) */
+  switchDistanceFactor?: number;
   simulateAsyncLoad: boolean;
   asyncLoadDelayMs: number;
   wireframe: boolean;
@@ -88,7 +97,7 @@ export class QuadtreeLodManager {
     this.scene = scene;
 
     this.config = {
-      bounds: { minX: -100, minZ: -100, maxX: 100, maxZ: 100 },
+      bounds: DEFAULT_DOMAIN_BOUNDS,
       maxLOD: 4,
       distanceFactor: 1.0,
       simulateAsyncLoad: false,

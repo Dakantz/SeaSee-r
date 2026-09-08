@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { QuadtreeLodManager, type ManagerStats } from "./QuadtreeLodManager";
-import { GridCutoutLodManager } from "./GridCutoutLodManager";
+import { QuadtreeLodManager, DEFAULT_DOMAIN_BOUNDS, type ManagerStats } from "./QuadtreeLodManager";
 import { InsideOut3x3LodManager } from "./InsideOut3x3LodManager";
 import { WholeDomainLodManager } from "./WholeDomainLodManager";
+import { HybridWholeDomainLodManager } from "./HybridQuadtreeLodManager";
 
 export type FocalSource = "camera" | "mouse" | "orbit";
-export type LodAlgorithm = "quadtree" | "grid-cutout" | "inside-out-3x3" | "whole-domain";
+export type LodAlgorithm = "quadtree" | "inside-out-3x3" | "whole-domain" | "hybrid-whole-domain";
 
 export function useLodAlgorithmAnalyzer() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -25,7 +25,13 @@ export function useLodAlgorithmAnalyzer() {
   const [maxLOD, setMaxLOD] = useState<number>(4);
   const [distanceFactor, setDistanceFactor] = useState<number>(1.0);
   const [evictionDistanceFactor, setEvictionDistanceFactor] = useState<number>(3);
+  const [switchDistanceFactor, setSwitchDistanceFactor] = useState<number>(1.0);
   const [focalSource, setFocalSource] = useState<FocalSource>("camera");
+  const focalSourceRef = useRef<FocalSource>(focalSource);
+
+  useEffect(() => {
+    focalSourceRef.current = focalSource;
+  }, [focalSource]);
   const [simulateAsync, setSimulateAsync] = useState<boolean>(false);
   const [asyncDelay, setAsyncDelay] = useState<number>(300);
   const [wireframe, setWireframe] = useState<boolean>(false);
@@ -37,7 +43,8 @@ export function useLodAlgorithmAnalyzer() {
   });
 
   // Manager reference
-  const lodManagerRef = useRef<QuadtreeLodManager | GridCutoutLodManager | InsideOut3x3LodManager | WholeDomainLodManager | null>(null);
+  const lodManagerRef = useRef<QuadtreeLodManager | InsideOut3x3LodManager | WholeDomainLodManager | HybridWholeDomainLodManager | null>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
   const resetCameraTriggerRef = useRef<(() => void) | null>(null);
 
   // Sync state changes with LOD Manager
@@ -58,6 +65,12 @@ export function useLodAlgorithmAnalyzer() {
       lodManagerRef.current.setEvictionDistanceFactor(evictionDistanceFactor);
     }
   }, [evictionDistanceFactor]);
+
+  useEffect(() => {
+    if (lodManagerRef.current && lodManagerRef.current instanceof HybridWholeDomainLodManager) {
+      lodManagerRef.current.setSwitchDistanceFactor(switchDistanceFactor);
+    }
+  }, [switchDistanceFactor]);
 
   useEffect(() => {
     if (lodManagerRef.current) {
@@ -84,6 +97,7 @@ export function useLodAlgorithmAnalyzer() {
     // 1. Three.js 2D Scene Setup
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x090d16);
+    sceneRef.current = scene;
 
     const width = container.clientWidth;
     const height = container.clientHeight;
@@ -139,7 +153,7 @@ export function useLodAlgorithmAnalyzer() {
 
     // LOD Tile Manager Config Setup
     const managerConfig = {
-      bounds: { minX: -500, minZ: -100, maxX: 100, maxZ: 100 },
+      bounds: DEFAULT_DOMAIN_BOUNDS,
       maxLOD,
       distanceFactor,
       evictionDistanceFactor,
@@ -168,17 +182,7 @@ export function useLodAlgorithmAnalyzer() {
     centerRing.position.set(bboxCenter.x, 0.05, bboxCenter.z);
     scene.add(centerRing);
 
-    // 7. LOD Tile Manager Setup (Algorithm 1: Quadtree, Algorithm 2: Grid-Cutout, Algorithm 3: Inside Out 3x3)
-    const lodManager =
-      lodAlgorithm === "inside-out-3x3"
-        ? new InsideOut3x3LodManager(scene, managerConfig)
-        : lodAlgorithm === "grid-cutout"
-        ? new GridCutoutLodManager(scene, managerConfig)
-        : lodAlgorithm === "whole-domain"
-        ? new WholeDomainLodManager(scene, managerConfig)
-        : new QuadtreeLodManager(scene, managerConfig);
-
-    lodManagerRef.current = lodManager;
+    // 7. LOD Tile Manager is dynamically created and updated in a dedicated effect below
 
     // 8. 2D Focal Point Target Ring
     const focalRingGeo = new THREE.RingGeometry(1.5, 2.5, 32);
@@ -259,11 +263,11 @@ export function useLodAlgorithmAnalyzer() {
       }
 
       // Determine active 2D focal position based on user setting
-      if (focalSource === "mouse") {
+      if (focalSourceRef.current === "mouse") {
         focalPos.copy(mouseWorldPos);
-      } else if (focalSource === "orbit") {
-        focalPos.x = Math.sin(timeSec * 0.8) * 65;
-        focalPos.z = Math.sin(timeSec * 1.6) * 45;
+      } else if (focalSourceRef.current === "orbit") {
+        focalPos.x = Math.sin(timeSec * 0.08) * 6500;
+        focalPos.z = Math.sin(timeSec * 0.16) * 4500;
       } else {
         // Camera 2D target (where camera is panning)
         focalPos.set(controls.target.x, 0, controls.target.z);
@@ -285,10 +289,11 @@ export function useLodAlgorithmAnalyzer() {
       connectorLine.computeLineDistances();
 
       // Update Active LOD Manager
-      lodManager.update(focalPos, timeSec);
+      if (lodManagerRef.current) {
+        lodManagerRef.current.update(focalPos, timeSec);
+        setStats(lodManagerRef.current.getStats());
+      }
 
-      // Update HUD stats
-      setStats(lodManager.getStats());
       setFocalDistance(parseFloat(focalPos.distanceTo(bboxCenter).toFixed(2)));
       setCameraPosText(`${controls.target.x.toFixed(1)}, ${controls.target.z.toFixed(1)}`);
       setFocalPosText(`${focalPos.x.toFixed(1)}, ${focalPos.z.toFixed(1)}`);
@@ -334,10 +339,50 @@ export function useLodAlgorithmAnalyzer() {
       focalCoreMat.dispose();
       lineGeo.dispose();
       lineMat.dispose();
-      lodManager.dispose();
+      lodManagerRef.current?.dispose();
       lodManagerRef.current = null;
+      sceneRef.current = null;
     };
-  }, [focalSource, lodAlgorithm]);
+  }, []);
+
+  // Dedicated effect to swap LOD Manager when switching algorithms without tearing down scene/camera
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    if (lodManagerRef.current) {
+      lodManagerRef.current.dispose();
+      lodManagerRef.current = null;
+    }
+
+    const managerConfig = {
+      bounds: DEFAULT_DOMAIN_BOUNDS,
+      maxLOD,
+      distanceFactor,
+      evictionDistanceFactor,
+      switchDistanceFactor,
+      simulateAsyncLoad: simulateAsync,
+      asyncLoadDelayMs: asyncDelay,
+      wireframe,
+      showStatusOverlays,
+    };
+
+    switch (lodAlgorithm) {
+      case "hybrid-whole-domain":
+        lodManagerRef.current = new HybridWholeDomainLodManager(scene, managerConfig);
+        break;
+      case "inside-out-3x3":
+        lodManagerRef.current = new InsideOut3x3LodManager(scene, managerConfig);
+        break;
+      case "whole-domain":
+        lodManagerRef.current = new WholeDomainLodManager(scene, managerConfig);
+        break;
+      case "quadtree":
+      default:
+        lodManagerRef.current = new QuadtreeLodManager(scene, managerConfig);
+        break;
+    }
+  }, [lodAlgorithm]);
 
   const handleRecenter = () => {
     resetCameraTriggerRef.current?.();
@@ -363,6 +408,8 @@ export function useLodAlgorithmAnalyzer() {
     setDistanceFactor,
     evictionDistanceFactor,
     setEvictionDistanceFactor,
+    switchDistanceFactor,
+    setSwitchDistanceFactor,
     focalSource,
     setFocalSource,
     simulateAsync,

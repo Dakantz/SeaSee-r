@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { getStatusTexture } from "./StatusTextures";
 import {
+  DEFAULT_DOMAIN_BOUNDS,
   type TileBounds,
   type ManagerStats,
   type LodManagerConfig,
@@ -44,7 +45,7 @@ export class InsideOut3x3LodManager {
   constructor(scene: THREE.Scene, config?: Partial<LodManagerConfig>) {
     this.scene = scene;
     this.config = {
-      bounds: { minX: -120, minZ: -120, maxX: 120, maxZ: 120 },
+      bounds: DEFAULT_DOMAIN_BOUNDS,
       maxLOD: 4,
       distanceFactor: 1.0,
       evictionDistanceFactor: 3,
@@ -61,7 +62,7 @@ export class InsideOut3x3LodManager {
   }
 
   /**
-   * Main per-frame update loop for Algorithm 3 (Inside Out 3x3 LOD)
+   * Main per-frame update loop for Algorithm 2 (Inside Out 3x3 LOD)
    */
   public update(focalPosition: THREE.Vector3, timeSeconds: number = performance.now() * 0.001): void {
     const { maxLOD } = this.config;

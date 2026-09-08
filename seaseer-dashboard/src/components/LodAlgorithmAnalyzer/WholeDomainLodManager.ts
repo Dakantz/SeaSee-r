@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { getStatusTexture } from "./StatusTextures";
 import {
+  DEFAULT_DOMAIN_BOUNDS,
   type TileBounds,
   type ManagerStats,
   type LodManagerConfig,
@@ -21,7 +22,7 @@ export interface WholeDomainTileNode {
 }
 
 /**
- * Whole Domain LOD Manager (Algorithm 4)
+ * Whole Domain LOD Manager (Algorithm 3)
  * 
  * Manages the original domain bounds (`config.bounds`) as a single unbroken rectangle without splitting into subrectangles.
  * Dynamically adjusts the LOD level of the entire rectangle based on the distance between the focal position and the domain rectangle.
@@ -41,7 +42,7 @@ export class WholeDomainLodManager {
   constructor(scene: THREE.Scene, config?: Partial<LodManagerConfig>) {
     this.scene = scene;
     this.config = {
-      bounds: { minX: -120, minZ: -120, maxX: 120, maxZ: 120 },
+      bounds: DEFAULT_DOMAIN_BOUNDS,
       maxLOD: 4,
       distanceFactor: 1.0,
       simulateAsyncLoad: false,
@@ -515,3 +516,6 @@ export class WholeDomainLodManager {
     this.edgesGeometryCache.clear();
   }
 }
+
+export { HybridWholeDomainLodManager, HybridQuadtreeWholeDomainLodManager } from "./HybridQuadtreeLodManager";
+

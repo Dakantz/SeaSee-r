@@ -20,6 +20,8 @@ export default function LodAlgorithmAnalyzerPage() {
     setDistanceFactor,
     evictionDistanceFactor,
     setEvictionDistanceFactor,
+    switchDistanceFactor,
+    setSwitchDistanceFactor,
     focalSource,
     setFocalSource,
     simulateAsync,
@@ -71,37 +73,37 @@ export default function LodAlgorithmAnalyzerPage() {
               1. Quadtree Split
             </button>
             <button
-              className={`toggle-btn ${lodAlgorithm === "grid-cutout" ? "active" : ""}`}
-              onClick={() => setLodAlgorithm("grid-cutout")}
-            >
-              2. Grid Cutout
-            </button>
-            <button
               className={`toggle-btn ${lodAlgorithm === "inside-out-3x3" ? "active" : ""}`}
               onClick={() => setLodAlgorithm("inside-out-3x3")}
             >
-              3. Inside Out 3x3
+              2. Inside Out 3x3
             </button>
             <button
               className={`toggle-btn ${lodAlgorithm === "whole-domain" ? "active" : ""}`}
               onClick={() => setLodAlgorithm("whole-domain")}
             >
-              4. Whole Domain
+              3. Whole Domain
+            </button>
+            <button
+              className={`toggle-btn ${lodAlgorithm === "hybrid-whole-domain" ? "active" : ""}`}
+              onClick={() => setLodAlgorithm("hybrid-whole-domain")}
+            >
+              4. Hybrid Quadtree / Whole
             </button>
           </div>
-          {lodAlgorithm === "grid-cutout" && (
-            <div className="algorithm-info-banner">
-              💡 <strong>Algorithm 2 (Grid Cutout):</strong> Combination of Quadtree base bounds and Inside-Out concentric 2x2 grids. Concentric 2x2 grids scale per LOD level around the focal point, while remaining strictly clipped within the base domain bounds.
-            </div>
-          )}
           {lodAlgorithm === "inside-out-3x3" && (
             <div className="algorithm-info-banner">
-              💡 <strong>Algorithm 3 (Inside Out 3x3):</strong> 2D adaptation of the 3D Dynamic Cubic LOD controller. Concentric 3x3 grids center around the focal point, scaling by 3× per LOD level from finest detail (LOD 0) outwards to coarsest detail (LOD {maxLOD}).
+              💡 <strong>Algorithm 2 (Inside Out 3x3):</strong> 2D adaptation of the 3D Dynamic Cubic LOD controller. Concentric 3x3 grids center around the focal point, scaling by 3× per LOD level from finest detail (LOD 0) outwards to coarsest detail (LOD {maxLOD}).
             </div>
           )}
           {lodAlgorithm === "whole-domain" && (
             <div className="algorithm-info-banner">
-              💡 <strong>Algorithm 4 (Whole Domain):</strong> Keeps the entire domain as a single unbroken rectangle. When the focal point is inside the bounding box, LOD is strictly 0 (finest detail). Moving outside the bounding box scales the LOD level through exponentially growing distance thresholds (LOD 1 spans a 3x3 size of the original bounding box).
+              💡 <strong>Algorithm 3 (Whole Domain):</strong> Keeps the entire domain as a single unbroken rectangle. When the focal point is inside the bounding box, LOD is strictly 0 (finest detail). Moving outside the bounding box scales the LOD level through exponentially growing distance thresholds (LOD 1 spans a 3x3 size of the original bounding box).
+            </div>
+          )}
+          {lodAlgorithm === "hybrid-whole-domain" && (
+            <div className="algorithm-info-banner">
+              💡 <strong>Algorithm 4 (Hybrid Quadtree / Whole Domain):</strong> Splits Max LOD into 2 halves. When focal point is inside the switching threshold ({switchDistanceFactor.toFixed(1)}× domain metric), Quadtree Split is used to render fine detail down to LOD 0. When outside, Whole Domain algorithm is used to render a single unbroken rectangle with coarse LOD levels up to LOD {maxLOD}.
             </div>
           )}
         </div>
@@ -216,6 +218,25 @@ export default function LodAlgorithmAnalyzerPage() {
                 step="1"
                 value={evictionDistanceFactor}
                 onChange={(e) => setEvictionDistanceFactor(parseInt(e.target.value, 10))}
+                className="range-input"
+              />
+            </div>
+          )}
+
+          {/* Switch Distance Factor Slider (Algorithm 5: Hybrid Quadtree / Whole Domain) */}
+          {lodAlgorithm === "hybrid-whole-domain" && (
+            <div className="control-row">
+              <div className="control-label">
+                <span>Switch Distance Factor:</span>
+                <span className="control-val">{switchDistanceFactor.toFixed(1)}×</span>
+              </div>
+              <input
+                type="range"
+                min="0.1"
+                max="5.0"
+                step="0.1"
+                value={switchDistanceFactor}
+                onChange={(e) => setSwitchDistanceFactor(parseFloat(e.target.value))}
                 className="range-input"
               />
             </div>
