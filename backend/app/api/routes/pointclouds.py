@@ -25,6 +25,7 @@ from app.core.database import get_db_session
 from app.models.job import Job
 from app.models.pointcloud import PointCloudMetadata
 from app.models.camera import CameraHeader, CameraFrame
+from app.services.worker.handlers.opensfm import _find_opensfm_pointcloud
 
 class TransformUpdate(BaseModel):
     matrix: conlist(float, min_length=16, max_length=16)
@@ -238,15 +239,15 @@ async def ingest_opensfm_init(
             
         folder_path = os.path.join(ingestion_dir, f_name)
         if os.path.isdir(folder_path):
-            fused_laz_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz")
-            if os.path.isfile(fused_laz_path):
+            pc_file_path = _find_opensfm_pointcloud(folder_path)
+            if pc_file_path and os.path.isfile(pc_file_path):
                 # Determine grid offset step sizes
                 step_x = offset_step_x
                 step_y = offset_step_y
                 if step_x is None or step_y is None:
                     try:
                         from app.services.pointcloud.pdal import get_pointcloud_stats
-                        bbox, _ = await get_pointcloud_stats(fused_laz_path)
+                        bbox, _ = await get_pointcloud_stats(pc_file_path)
                         width_x = abs(bbox.get("max_x", 0.0) - bbox.get("min_x", 0.0))
                         height_y = abs(bbox.get("max_y", 0.0) - bbox.get("min_y", 0.0))
                         if step_x is None:
@@ -273,9 +274,10 @@ async def ingest_opensfm_init(
                             payload={
                                 "filename": name_suffix,
                                 "safe_filename": f"{file_uuid_str}.laz",
-                                "total_bytes": os.path.getsize(fused_laz_path),
+                                "total_bytes": os.path.getsize(pc_file_path),
                                 "file_id": file_uuid_str,
                                 "folder_path": folder_path,
+                                "file_path": pc_file_path,
                                 "offset_x": grid_offset_x,
                                 "offset_y": grid_offset_y,
                                 "grid_x": ix,
@@ -361,10 +363,10 @@ async def ingest_opensfm_append(
             
         folder_path = os.path.join(ingestion_dir, f_name)
         if os.path.isdir(folder_path):
-            fused_laz_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz")
-            if os.path.isfile(fused_laz_path):
+            pc_file_path = _find_opensfm_pointcloud(folder_path)
+            if pc_file_path and os.path.isfile(pc_file_path):
                 try:
-                    cand_bbox, cand_points, cand_srs = await get_pointcloud_srs_and_stats(fused_laz_path)
+                    cand_bbox, cand_points, cand_srs = await get_pointcloud_srs_and_stats(pc_file_path)
                 except Exception as e:
                     skipped_folders.append({"folder": f_name, "reason": f"Failed to parse PDAL stats: {str(e)}"})
                     continue
@@ -386,10 +388,11 @@ async def ingest_opensfm_append(
                     payload={
                         "filename": f_name,
                         "folder_path": folder_path,
+                        "file_path": pc_file_path,
                         "existing_id": str(existing_pc.id),
                         "file_id": str(existing_pc.id),
                         "is_append": True,
-                        "total_bytes": os.path.getsize(fused_laz_path)
+                        "total_bytes": os.path.getsize(pc_file_path)
                     },
                     status="PENDING",
                     progress=0.0

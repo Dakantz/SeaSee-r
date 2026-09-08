@@ -1,3 +1,4 @@
+import uuid
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -20,6 +21,7 @@ class BaseTaskHandler(ABC):
         result: Optional[dict] = None
     ) -> None:
         """Updates job status, progress percentage, error message, and results in PostgreSQL."""
+        job_uuid = uuid.UUID(str(job_id_str)) if isinstance(job_id_str, (str, uuid.UUID)) else job_id_str
         async with async_session() as session:
             values = {
                 "status": status,
@@ -33,7 +35,7 @@ class BaseTaskHandler(ABC):
             elif status in ("COMPLETED", "FAILED"):
                 values["completed_at"] = datetime.utcnow()
 
-            stmt = update(Job).where(Job.id == job_id_str).values(**values)
+            stmt = update(Job).where(Job.id == job_uuid).values(**values)
             await session.execute(stmt)
             await session.commit()
 
