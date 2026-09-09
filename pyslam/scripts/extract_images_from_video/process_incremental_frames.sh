@@ -15,7 +15,7 @@ STEP="${4:-100}"
 FRAME_INTERVAL="${5:-1}"
 
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-PROCESS_SCRIPT="${SCRIPT_DIR}/process_fixed_number_of_frames.sh"
+PROCESS_SCRIPT="${SCRIPT_DIR}/process_fixed_number_of_frames_entire_video.sh"
 
 # Check if target directory exists
 if [ ! -d "$TARGET_DIR" ]; then
@@ -23,7 +23,7 @@ if [ ! -d "$TARGET_DIR" ]; then
     exit 1
 fi
 
-# Check if process_fixed_number_of_frames.sh exists
+# Check if process_fixed_number_of_frames_entire_video.sh exists
 if [ ! -f "$PROCESS_SCRIPT" ]; then
     echo "Error: Required script '$PROCESS_SCRIPT' not found."
     exit 1
@@ -56,7 +56,7 @@ for (( NUM_FRAMES=START_FRAMES; NUM_FRAMES<=END_FRAMES; NUM_FRAMES+=STEP )); do
     echo "Processing iteration: NUM_FRAMES = $NUM_FRAMES"
     echo "=================================================="
 
-    "$PROCESS_SCRIPT" "$TARGET_DIR" "$NUM_FRAMES" "$FRAME_INTERVAL"
+    "$PROCESS_SCRIPT" "$TARGET_DIR" "$NUM_FRAMES" #"$FRAME_INTERVAL"
     
     EXIT_CODE=$?
     if [ $EXIT_CODE -ne 0 ]; then

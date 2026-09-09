@@ -8,9 +8,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postgis \
     && rm -rf /var/lib/apt/lists/*
 
-# Install PDAL, Entwine, and Python 3.11 from conda-forge
-RUN mamba install -y -c conda-forge pdal entwine python=3.11 && \
+# Install PDAL, Entwine, and Python 3.11 from conda-forge in a dedicated environment
+RUN mamba create -n app_env -y -c conda-forge python=3.11 pdal entwine && \
     mamba clean -ya
+
+ENV PATH=/opt/conda/envs/app_env/bin:$PATH
 
 WORKDIR /app
 

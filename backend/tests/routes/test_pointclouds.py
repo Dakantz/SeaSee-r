@@ -505,6 +505,47 @@ def test_ingest_opensfm_init_laz_file():
             app.dependency_overrides.clear()
 
 
+def test_ingest_opensfm_init_multiple_reconstructions():
+    mock_db = MagicMock()
+    mock_db.commit = AsyncMock()
+    mock_db.refresh = AsyncMock()
+
+    from app.core.database import get_db_session
+    app.dependency_overrides[get_db_session] = lambda: mock_db
+
+    folder_dir_0 = os.path.join(settings.opensfm_ingestion_dir, "multi_rec_folder", "undistorted", "depthmaps")
+    folder_dir_1 = os.path.join(settings.opensfm_ingestion_dir, "multi_rec_folder", "undistorted_1", "depthmaps")
+    os.makedirs(folder_dir_0, exist_ok=True)
+    os.makedirs(folder_dir_1, exist_ok=True)
+    
+    laz_file_0 = os.path.join(folder_dir_0, "fused.laz")
+    laz_file_1 = os.path.join(folder_dir_1, "fused.laz")
+    with open(laz_file_0, "w") as f:
+        f.write("dummy laz content 0")
+    with open(laz_file_1, "w") as f:
+        f.write("dummy laz content 1")
+
+    from unittest.mock import patch
+    with patch("app.api.routes.pointclouds.Redis.from_url"), \
+         patch("app.api.routes.pointclouds.Queue"):
+        try:
+            response = client.post("/pointclouds/ingest-opensfm/init?folder_name=multi_rec_folder")
+            assert response.status_code == 200
+            data = response.json()
+            assert "jobs" in data
+            assert len(data["jobs"]) == 2
+            subfolders = [j["subfolder"] for j in data["jobs"]]
+            assert "undistorted" in subfolders
+            assert "undistorted_1" in subfolders
+            indices = [j["reconstruction_index"] for j in data["jobs"]]
+            assert 0 in indices
+            assert 1 in indices
+        finally:
+            shutil.rmtree(os.path.join(settings.opensfm_ingestion_dir, "multi_rec_folder"), ignore_errors=True)
+            app.dependency_overrides.clear()
+
+
+
 def test_endpoint_get_camera_routes_ordering():
     import uuid
     mock_db = MagicMock()

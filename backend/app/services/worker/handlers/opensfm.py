@@ -23,6 +23,8 @@ class OpenSfMTaskHandler(BaseTaskHandler):
         file_id: str,
         job_id: Optional[str] = None,
         folder_path: Optional[str] = None,
+        subfolder: str = "undistorted",
+        reconstruction_index: int = 0,
         is_append: bool = False,
         offset_x: float = 0.0,
         offset_y: float = 0.0
@@ -48,7 +50,10 @@ class OpenSfMTaskHandler(BaseTaskHandler):
                     await self.update_job_status(job_id, "COMPLETED", 100.0)
                 return {"status": "success", "file_id": file_id}
 
-            shots_geojson_path = os.path.join(folder_path, "shots.geojson")
+            shots_geojson_path = os.path.join(folder_path, subfolder, "shots.geojson")
+            if not os.path.exists(shots_geojson_path):
+                shots_geojson_path = os.path.join(folder_path, "shots.geojson")
+
             reconstruction_json_path = os.path.join(folder_path, "reconstruction.json")
 
             from app.models.camera import CameraHeader, CameraFrame
@@ -70,7 +75,11 @@ class OpenSfMTaskHandler(BaseTaskHandler):
             elif os.path.exists(reconstruction_json_path):
                 reconstructions = parse_reconstruction_json(reconstruction_json_path)
                 if reconstructions:
-                    data = reconstructions[0]
+                    if 0 <= reconstruction_index < len(reconstructions):
+                        data = reconstructions[reconstruction_index]
+                    else:
+                        data = reconstructions[0]
+
                     cameras = data.get("cameras", {})
                     first_cam_key = next(iter(cameras), "v2 unknown unknown 3840 2160 brown 0.85") if cameras else "v2 unknown unknown 3840 2160 brown 0.85"
                     cam_data = cameras.get(first_cam_key, {}) if cameras else {}
@@ -148,18 +157,37 @@ class OpenSfMTaskHandler(BaseTaskHandler):
 
     async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:
         folder_path = payload.get("folder_path")
+        subfolder = payload.get("subfolder", "undistorted")
+        reconstruction_index = int(payload.get("reconstruction_index", 0))
         is_append = payload.get("is_append", False) or (task_type == "opensfm_append")
         file_id = (payload.get("existing_id") or payload.get("file_id")) if is_append else (payload.get("file_id") or job_id)
-        fused_laz_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz") if folder_path else payload.get("file_path")
+        
+        file_path = payload.get("file_path")
+        if not file_path and folder_path:
+            cand1 = os.path.join(folder_path, subfolder, "depthmaps", "fused.laz")
+            cand2 = os.path.join(folder_path, subfolder, "depthmaps", "merged.ply")
+            cand3 = os.path.join(folder_path, subfolder, "fused.laz")
+            if os.path.isfile(cand1):
+                file_path = cand1
+            elif os.path.isfile(cand2):
+                file_path = cand2
+            elif os.path.isfile(cand3):
+                file_path = cand3
+            else:
+                file_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz")
+
         offset_x = float(payload.get("offset_x", 0.0))
         offset_y = float(payload.get("offset_y", 0.0))
 
         return await self.process_opensfm(
-            file_path=fused_laz_path,
+            file_path=file_path,
             file_id=file_id,
             job_id=job_id,
             folder_path=folder_path,
+            subfolder=subfolder,
+            reconstruction_index=reconstruction_index,
             is_append=is_append,
             offset_x=offset_x,
             offset_y=offset_y
         )
+
