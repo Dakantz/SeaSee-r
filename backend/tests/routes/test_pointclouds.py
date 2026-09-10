@@ -469,6 +469,11 @@ def test_ingest_opensfm_init_laz_file():
     with open(laz_file, "w") as f:
         f.write("dummy laz content")
 
+    rec_json_path = os.path.join(settings.opensfm_ingestion_dir, "test_folder", "reconstruction.json")
+    import json
+    with open(rec_json_path, "w") as f:
+        json.dump([{"shots": {f"img_{i}.jpg": {} for i in range(10)}}], f)
+
     from unittest.mock import patch
     with patch("app.api.routes.pointclouds.Redis.from_url"), \
          patch("app.api.routes.pointclouds.Queue"):
@@ -525,6 +530,14 @@ def test_ingest_opensfm_init_multiple_reconstructions():
     with open(laz_file_1, "w") as f:
         f.write("dummy laz content 1")
 
+    rec_json_path = os.path.join(settings.opensfm_ingestion_dir, "multi_rec_folder", "reconstruction.json")
+    import json
+    with open(rec_json_path, "w") as f:
+        json.dump([
+            {"shots": {f"img_{i}.jpg": {} for i in range(10)}},
+            {"shots": {f"img_{i}.jpg": {} for i in range(15)}}
+        ], f)
+
     from unittest.mock import patch
     with patch("app.api.routes.pointclouds.Redis.from_url"), \
          patch("app.api.routes.pointclouds.Queue"):
@@ -543,6 +556,40 @@ def test_ingest_opensfm_init_multiple_reconstructions():
         finally:
             shutil.rmtree(os.path.join(settings.opensfm_ingestion_dir, "multi_rec_folder"), ignore_errors=True)
             app.dependency_overrides.clear()
+
+
+def test_discover_opensfm_reconstructions_shot_count_filter():
+    from app.api.routes.pointclouds import discover_opensfm_reconstructions
+    import json
+
+    test_dir = tempfile.mkdtemp()
+    try:
+        # Create undistorted folder with 5 shots (< 10)
+        u0_dir = os.path.join(test_dir, "undistorted", "depthmaps")
+        os.makedirs(u0_dir, exist_ok=True)
+        with open(os.path.join(u0_dir, "fused.laz"), "w") as f:
+            f.write("dummy")
+
+        # Create undistorted_1 folder with 10 shots (>= 10)
+        u1_dir = os.path.join(test_dir, "undistorted_1", "depthmaps")
+        os.makedirs(u1_dir, exist_ok=True)
+        with open(os.path.join(u1_dir, "fused.laz"), "w") as f:
+            f.write("dummy")
+
+        rec_json_path = os.path.join(test_dir, "reconstruction.json")
+        with open(rec_json_path, "w") as f:
+            json.dump([
+                {"shots": {f"img_{i}.jpg": {} for i in range(5)}},   # rec 0: 5 shots
+                {"shots": {f"img_{i}.jpg": {} for i in range(10)}}   # rec 1: 10 shots
+            ], f)
+
+        recs = discover_opensfm_reconstructions(test_dir)
+        # Should only discover undistorted_1 (rec 1)
+        assert len(recs) == 1
+        assert recs[0][0] == "undistorted_1"
+        assert recs[0][1] == 1
+    finally:
+        shutil.rmtree(test_dir, ignore_errors=True)
 
 
 

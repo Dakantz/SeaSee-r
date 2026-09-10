@@ -1,9 +1,12 @@
+import logging
+
 import os
+import json
 import uuid
 from redis import Redis
 from rq import Queue
 
-from typing import List, Union, Optional
+from typing import List, Tuple, Union, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
@@ -209,9 +212,76 @@ async def update_transform(
     
     return {"transform_matrix": pointcloud.transform_matrix}
 
+def get_reconstruction_shot_count(folder_path: str, subfolder_name: str, rec_idx: int) -> int:
+    """
+    Helper function to determine shot count of a reconstruction component.
+    Checks reconstruction.json in folder_path or subfolder, as well as shots.geojson.
+    """
+    main_rec_json = os.path.join(folder_path, "reconstruction.json")
+    if os.path.isfile(main_rec_json):
+        try:
+            with open(main_rec_json, "r") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                if 0 <= rec_idx < len(data):
+                    shots = data[rec_idx].get("shots", {})
+                    if isinstance(shots, (dict, list)):
+                        return len(shots)
+            elif isinstance(data, dict):
+                shots = data.get("shots", {})
+                if isinstance(shots, (dict, list)):
+                    return len(shots)
+        except Exception:
+            pass
+
+    sub_rec_json = os.path.join(folder_path, subfolder_name, "reconstruction.json")
+    if os.path.isfile(sub_rec_json):
+        try:
+            with open(sub_rec_json, "r") as f:
+                data = json.load(f)
+            if isinstance(data, list) and len(data) > 0:
+                if 0 <= rec_idx < len(data):
+                    shots = data[rec_idx].get("shots", {})
+                else:
+                    shots = data[0].get("shots", {})
+                if isinstance(shots, (dict, list)):
+                    return len(shots)
+            elif isinstance(data, dict):
+                shots = data.get("shots", {})
+                if isinstance(shots, (dict, list)):
+                    return len(shots)
+        except Exception:
+            pass
+
+    sub_geojson = os.path.join(folder_path, subfolder_name, "shots.geojson")
+    if os.path.isfile(sub_geojson):
+        try:
+            with open(sub_geojson, "r") as f:
+                data = json.load(f)
+            features = data.get("features", [])
+            if isinstance(features, list):
+                return len(features)
+        except Exception:
+            pass
+
+    main_geojson = os.path.join(folder_path, "shots.geojson")
+    if os.path.isfile(main_geojson):
+        try:
+            with open(main_geojson, "r") as f:
+                data = json.load(f)
+            features = data.get("features", [])
+            if isinstance(features, list):
+                return len(features)
+        except Exception:
+            pass
+
+    return 0
+
+
 def discover_opensfm_reconstructions(folder_path: str) -> List[Tuple[str, int, str]]:
     """
     Finds all undistorted subfolders in an OpenSfM folder and matches them to reconstruction indices and point cloud paths.
+    Only adds reconstructions with a shot count of 10 or greater.
     Returns a list of tuples: (subfolder_name, reconstruction_index, pointcloud_file_path).
     """
     results = []
@@ -260,7 +330,10 @@ def discover_opensfm_reconstructions(folder_path: str) -> List[Tuple[str, int, s
                     break
 
             if pc_file:
-                results.append((entry, rec_idx, pc_file))
+                shot_count = get_reconstruction_shot_count(folder_path, entry, rec_idx)
+                logging.info(f"File: {folder_path}, {entry}, {rec_idx}, {shot_count}")
+                if shot_count >= 10:
+                    results.append((entry, rec_idx, pc_file))
 
     return results
 
