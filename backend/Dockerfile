@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     postgresql-client \
     postgis \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install PDAL, Entwine, and Python 3.11 from conda-forge in a dedicated environment

@@ -30,5 +30,8 @@ def test_global_task_registry_contains_default_handlers():
     assert task_registry.get_handler("pointcloud_upload") is not None
     assert task_registry.get_handler("video_upload") is not None
     assert task_registry.get_handler("opensfm_ingest") is not None
+    assert task_registry.get_handler("opensfm_reconstruct") is not None
     assert task_registry.get_handler("emodnet_ingest") is not None
     assert task_registry.get_handler("emodnet_csv_ingest") is not None
+    assert task_registry.get_handler("frame_extraction") is not None
+    assert task_registry.get_handler("video_frame_extraction") is not None

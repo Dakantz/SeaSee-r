@@ -18,10 +18,12 @@ router = APIRouter(
     tags=["Job System"]
 )
 
-def _enqueue_job_to_redis(job_id: UUID) -> None:
+def _enqueue_job_to_redis(job_id: UUID, task_type: Optional[str] = None) -> None:
     try:
+        from app.services.worker.queue_utils import get_queue_name_for_task_type
         redis_conn = Redis.from_url(settings.redis_url)
-        q = Queue("pointcloud_tasks", connection=redis_conn)
+        queue_name = get_queue_name_for_task_type(task_type)
+        q = Queue(queue_name, connection=redis_conn)
         q.enqueue(
             "app.services.worker.tasks.run_background_job",
             str(job_id),
@@ -66,7 +68,7 @@ async def create_job(
     await db.refresh(job)
 
     if job.status == JobStatus.PENDING:
-        _enqueue_job_to_redis(job.id)
+        _enqueue_job_to_redis(job.id, job.task_type)
 
     return job
 
@@ -97,12 +99,30 @@ async def create_pipeline(
     )
     pipeline_db = result.scalar_one()
 
+    # Check for blocked jobs whose dependencies are already COMPLETED
+    for j in pipeline_db.jobs:
+        if j.status == JobStatus.BLOCKED and j.depends_on:
+            parent_uuids = []
+            for d in j.depends_on:
+                try:
+                    parent_uuids.append(UUID(str(d)))
+                except (ValueError, TypeError):
+                    pass
+            if parent_uuids:
+                p_res = await db.execute(select(Job.status).where(Job.id.in_(parent_uuids)))
+                parent_statuses = p_res.scalars().all()
+                if len(parent_statuses) == len(parent_uuids) and all(s == JobStatus.COMPLETED for s in parent_statuses):
+                    j.status = JobStatus.PENDING
+
+    await db.commit()
+
     # Enqueue jobs that are immediately ready (PENDING status)
     for j in pipeline_db.jobs:
         if j.status == JobStatus.PENDING:
-            _enqueue_job_to_redis(j.id)
+            _enqueue_job_to_redis(j.id, j.task_type)
 
     return pipeline_db
+
 
 
 @router.get("/pipelines", response_model=List[PipelineResponse])
@@ -184,7 +204,7 @@ async def retry_pipeline(
     await db.commit()
 
     for job in failed_jobs:
-        _enqueue_job_to_redis(job.id)
+        _enqueue_job_to_redis(job.id, job.task_type)
 
     # Reload pipeline
     result = await db.execute(
@@ -241,7 +261,7 @@ async def delete_pending_jobs(
     # Clear pending jobs from Redis Queues
     try:
         redis_conn = Redis.from_url(settings.redis_url)
-        for queue_name in ["pointcloud_tasks", "job_tasks", "default"]:
+        for queue_name in ["opensfm_tasks", "pointcloud_tasks", "job_tasks", "default"]:
             q = Queue(queue_name, connection=redis_conn)
             q.empty()
     except Exception as e:
@@ -297,6 +317,6 @@ async def retry_job(
     await db.commit()
     await db.refresh(job)
 
-    _enqueue_job_to_redis(job.id)
+    _enqueue_job_to_redis(job.id, job.task_type)
 
     return job

@@ -89,6 +89,7 @@ services:
     container_name: seasee-r-opensfm
     volumes:
       - ./backend:/app
+      - ./openSfM/openSfM_core:/source/OpenSfM
       - uploads_data:/app/data/uploads
     command: ["conda", "run", "-n", "opensfm", "--no-capture-output", "rq", "worker", "opensfm_tasks", "pointcloud_tasks", "job_tasks", "default", "--url", "${REDIS_URL}"]
     env_file:

@@ -163,18 +163,62 @@ class OpenSfMTaskHandler(BaseTaskHandler):
         file_id = (payload.get("existing_id") or payload.get("file_id")) if is_append else (payload.get("file_id") or job_id)
         
         file_path = payload.get("file_path")
+
+        # If file_path and folder_path are missing, look up parent job results in DB
+        if not file_path and not folder_path and job_id:
+            try:
+                from sqlalchemy import select
+                from app.models.job import Job
+                async with async_session() as session:
+                    j_res = await session.execute(select(Job).where(Job.id == uuid.UUID(job_id)))
+                    job_rec = j_res.scalar_one_or_none()
+                    if job_rec and job_rec.depends_on:
+                        parent_uuids = [uuid.UUID(d) for d in job_rec.depends_on if isinstance(d, str)]
+                        if parent_uuids:
+                            p_res = await session.execute(select(Job).where(Job.id.in_(parent_uuids)))
+                            parents = p_res.scalars().all()
+                            for p in parents:
+                                if p.result and isinstance(p.result, dict):
+                                    folder_path = p.result.get("dataset_dir") or p.result.get("folder_path")
+                                    if folder_path:
+                                        logger.info(f"Retrieved folder_path '{folder_path}' from parent job {p.id}")
+                                        break
+            except Exception as lookup_err:
+                logger.warning(f"Could not look up parent job result for job {job_id}: {lookup_err}")
+
+        # Fallback to default dataset directory if folder_path is still missing
+        if not file_path and not folder_path:
+            num_frames = payload.get("num_frames", 500)
+            dataset_name = payload.get("dataset_name") or f"video_dataset_fixed_{num_frames}_frames_entire_video"
+            folder_path = os.path.join(settings.opensfm_ingestion_dir, dataset_name)
+
         if not file_path and folder_path:
             cand1 = os.path.join(folder_path, subfolder, "depthmaps", "fused.laz")
             cand2 = os.path.join(folder_path, subfolder, "depthmaps", "merged.ply")
             cand3 = os.path.join(folder_path, subfolder, "fused.laz")
+            cand4 = os.path.join(folder_path, "depthmaps", "fused.laz")
+            cand5 = os.path.join(folder_path, "depthmaps", "merged.ply")
+            cand6 = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz")
             if os.path.isfile(cand1):
                 file_path = cand1
             elif os.path.isfile(cand2):
                 file_path = cand2
             elif os.path.isfile(cand3):
                 file_path = cand3
+            elif os.path.isfile(cand4):
+                file_path = cand4
+            elif os.path.isfile(cand5):
+                file_path = cand5
+            elif os.path.isfile(cand6):
+                file_path = cand6
             else:
-                file_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz")
+                file_path = cand1
+
+        if not file_path or not os.path.exists(file_path):
+            err_msg = f"Point cloud file not found at '{file_path}'. Ensure OpenSfM reconstruction finished and generated fused.laz or merged.ply."
+            logger.error(err_msg)
+            await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)
+            raise RuntimeError(err_msg)
 
         offset_x = float(payload.get("offset_x", 0.0))
         offset_y = float(payload.get("offset_y", 0.0))
@@ -190,4 +234,5 @@ class OpenSfMTaskHandler(BaseTaskHandler):
             offset_x=offset_x,
             offset_y=offset_y
         )
+
 

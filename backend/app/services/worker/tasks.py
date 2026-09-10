@@ -77,8 +77,10 @@ async def _process_job_dependency_updates(session, job_id_str: str, status: str)
 
                         # Auto-enqueue dependent job
                         try:
+                            from app.services.worker.queue_utils import get_queue_name_for_task_type
+                            queue_name = get_queue_name_for_task_type(dep_job.task_type)
                             redis_conn = Redis.from_url(settings.redis_url)
-                            q = Queue("pointcloud_tasks", connection=redis_conn)
+                            q = Queue(queue_name, connection=redis_conn)
                             q.enqueue(
                                 "app.services.worker.tasks.run_background_job",
                                 str(dep_job.id),

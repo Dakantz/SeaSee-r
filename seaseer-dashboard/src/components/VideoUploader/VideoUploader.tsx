@@ -3,7 +3,7 @@ import { BaseUploader } from '../common/BaseUploader';
 import { useTusUpload, formatUuid } from '../common/useTusUpload';
 import type { TusUploadConfig } from '../common/useTusUpload';
 import { JobProgress } from '../JobProgress';
-import { createJob } from '../../client';
+import { createPipeline } from '../../client';
 
 export interface VideoUploaderProps {
   onUploadSuccess?: (fileIds: string[]) => void;
@@ -50,7 +50,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
         onUploadSuccess(videoIds);
       }
 
-      // Automatically create a job for each uploaded video file
+      // Automatically create a job pipeline for each uploaded video file
       try {
         const createdJobIds: string[] = [];
         const newJobFileMap: Record<string, string> = {};
@@ -59,29 +59,61 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
           const fileId = formatUuid(rawFileId);
           const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
           const safeFilename = fileId ? `${fileId}${ext}` : file.name;
+          const datasetName = `dataset_${fileId.replace(/-/g, '_')}`;
 
-          const jobRes = await createJob({
+          const pipelineRes = await createPipeline({
             body: {
-              name: `Video Reconstruction (PySLAM): ${file.name}`,
-              task_type: 'video_reconstruction',
-              payload: {
-                filename: file.name,
-                safe_filename: safeFilename,
-                total_bytes: file.size,
-                file_id: fileId,
-                batch_id: batchId,
-                video_ids: videoIds,
-                video_files: videoFiles.map(v => v.name),
-                metadata_files: metadataFiles.map(m => m.name)
-              }
+              name: `Video OpenSfM Pipeline: ${file.name}`,
+              jobs: [
+                {
+                  id_key: 'frame_extraction',
+                  name: `Frame Extraction: ${file.name}`,
+                  task_type: 'frame_extraction',
+                  payload: {
+                    filename: file.name,
+                    safe_filename: safeFilename,
+                    video_files: [safeFilename, file.name],
+                    num_frames: 500,
+                    dataset_name: datasetName,
+                    batch_id: batchId
+                  },
+                  depends_on: []
+                },
+                {
+                  id_key: 'opensfm_reconstruct',
+                  name: `OpenSfM Reconstruction: ${file.name}`,
+                  task_type: 'opensfm_reconstruct',
+                  payload: {
+                    dataset_name: datasetName,
+                    file_id: fileId,
+                    batch_id: batchId
+                  },
+                  depends_on: ['frame_extraction']
+                },
+                {
+                  id_key: 'opensfm_ingest',
+                  name: `OpenSfM Pointcloud Ingestion: ${file.name}`,
+                  task_type: 'opensfm_ingest',
+                  payload: {
+                    dataset_name: datasetName,
+                    file_id: fileId,
+                    batch_id: batchId
+                  },
+                  depends_on: ['opensfm_reconstruct']
+                }
+              ]
             }
           });
 
-          if (jobRes.data?.id) {
-            createdJobIds.push(jobRes.data.id);
-            newJobFileMap[jobRes.data.id] = file.name;
-            if (onJobCreated) {
-              onJobCreated(jobRes.data.id);
+          if (pipelineRes.data?.jobs) {
+            for (const job of pipelineRes.data.jobs) {
+              if (job.id) {
+                createdJobIds.push(job.id);
+                newJobFileMap[job.id] = `${file.name} (${job.name})`;
+                if (onJobCreated) {
+                  onJobCreated(job.id);
+                }
+              }
             }
           }
         }
@@ -90,7 +122,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
           setJobFileMap(prev => ({ ...prev, ...newJobFileMap }));
         }
       } catch (err) {
-        console.warn('Could not auto-create background job:', err);
+        console.warn('Could not auto-create background job pipeline:', err);
       }
     },
     onUploadError,
