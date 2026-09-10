@@ -28,6 +28,8 @@ def test_create_job(client):
         from datetime import datetime
         instance.id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
         instance.created_at = datetime.utcnow()
+        instance.pipeline_id = None
+        instance.depends_on = []
     mock_db_session.refresh.side_effect = mock_refresh
 
 
@@ -53,6 +55,8 @@ def test_list_jobs(client):
     mock_job.created_at = "2026-07-15T11:00:00Z"
     mock_job.started_at = None
     mock_job.completed_at = None
+    mock_job.pipeline_id = None
+    mock_job.depends_on = []
 
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = [mock_job]
@@ -78,6 +82,8 @@ def test_get_job(client):
     mock_job.created_at = "2026-07-15T11:00:00Z"
     mock_job.started_at = None
     mock_job.completed_at = None
+    mock_job.pipeline_id = None
+    mock_job.depends_on = []
 
     mock_db_session.execute.return_value.scalar_one_or_none.return_value = mock_job
 
@@ -107,8 +113,11 @@ def test_retry_job_success(client):
     mock_job.created_at = "2026-07-15T11:00:00Z"
     mock_job.started_at = None
     mock_job.completed_at = None
+    mock_job.pipeline_id = None
+    mock_job.depends_on = []
 
     mock_db_session.execute.return_value.scalar_one_or_none.return_value = mock_job
+
 
     response = client.post("/jobs/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/retry")
     assert response.status_code == 200
@@ -126,5 +135,41 @@ def test_retry_job_not_failed(client):
 
     response = client.post("/jobs/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/retry")
     assert response.status_code == 400
-    assert "Only failed jobs can be retried" in response.json()["detail"]
+    assert "Only failed or cancelled jobs can be retried" in response.json()["detail"]
+
+def test_create_pipeline_cycle_error(client):
+    payload = {
+        "name": "Cycle Pipeline",
+        "jobs": [
+            {"id_key": "step1", "name": "Task 1", "depends_on": ["step2"]},
+            {"id_key": "step2", "name": "Task 2", "depends_on": ["step1"]}
+        ]
+    }
+    response = client.post("/jobs/pipeline", json=payload)
+    assert response.status_code == 400
+    assert "Circular dependency detected" in response.json()["detail"]
+
+def test_create_pipeline_success(client):
+    mock_pipeline = MagicMock()
+    mock_pipeline.id = "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
+    mock_pipeline.name = "Test Pipeline"
+    mock_pipeline.status = "PENDING"
+    mock_pipeline.created_at = "2026-07-15T11:00:00Z"
+    mock_pipeline.updated_at = "2026-07-15T11:00:00Z"
+    mock_pipeline.jobs = []
+
+    mock_db_session.execute.return_value.scalar_one.return_value = mock_pipeline
+
+    payload = {
+        "name": "Test Pipeline",
+        "jobs": [
+            {"id_key": "step1", "name": "Task 1"},
+            {"id_key": "step2", "name": "Task 2", "depends_on": ["step1"]}
+        ]
+    }
+    response = client.post("/jobs/pipeline", json=payload)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["name"] == "Test Pipeline"
+
 

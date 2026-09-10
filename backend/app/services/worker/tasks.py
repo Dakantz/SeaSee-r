@@ -16,7 +16,7 @@ async def _update_job_status(
     error_message: Optional[str] = None,
     result: Optional[dict] = None
 ):
-    """Updates job status, progress percentage, error message, and results in PostgreSQL."""
+    """Updates job status, progress percentage, error message, and results in PostgreSQL, and processes dependency queues."""
     async with async_session() as session:
         values = {
             "status": status,
@@ -27,12 +27,107 @@ async def _update_job_status(
             values["result"] = result
         if status == "RUNNING":
             values["started_at"] = datetime.utcnow()
-        elif status in ("COMPLETED", "FAILED"):
+        elif status in ("COMPLETED", "FAILED", "CANCELLED"):
             values["completed_at"] = datetime.utcnow()
 
         stmt = update(Job).where(Job.id == job_id_str).values(**values)
         await session.execute(stmt)
         await session.commit()
+
+        # Process dependency updates and pipeline status
+        await _process_job_dependency_updates(session, job_id_str, status)
+
+
+async def _process_job_dependency_updates(session, job_id_str: str, status: str):
+    import uuid
+    from redis import Redis
+    from rq import Queue
+    from app.core.config import settings
+    from app.models.job import Job, JobStatus, Pipeline, PipelineStatus
+
+    try:
+        job_uuid = uuid.UUID(job_id_str)
+    except (ValueError, TypeError):
+        return
+
+    job_res = await session.execute(select(Job).where(Job.id == job_uuid))
+    job = job_res.scalar_one_or_none()
+    pipeline_id = job.pipeline_id if job else None
+
+    if status == "COMPLETED":
+        res = await session.execute(select(Job).where(Job.status == JobStatus.BLOCKED))
+        blocked_jobs = res.scalars().all()
+
+        for dep_job in blocked_jobs:
+            deps = dep_job.depends_on or []
+            if job_id_str in deps or str(job_uuid) in deps:
+                parent_uuids = []
+                for d in deps:
+                    try:
+                        parent_uuids.append(uuid.UUID(str(d)))
+                    except (ValueError, TypeError):
+                        pass
+
+                if parent_uuids:
+                    p_res = await session.execute(select(Job.status).where(Job.id.in_(parent_uuids)))
+                    parent_statuses = p_res.scalars().all()
+                    if all(s == JobStatus.COMPLETED for s in parent_statuses):
+                        dep_job.status = JobStatus.PENDING
+                        await session.commit()
+
+                        # Auto-enqueue dependent job
+                        try:
+                            redis_conn = Redis.from_url(settings.redis_url)
+                            q = Queue("pointcloud_tasks", connection=redis_conn)
+                            q.enqueue(
+                                "app.services.worker.tasks.run_background_job",
+                                str(dep_job.id),
+                                job_id=str(dep_job.id),
+                                job_timeout=settings.job_timeout
+                            )
+                        except Exception as e:
+                            logger.warning(f"Could not enqueue dependent job {dep_job.id} to Redis Queue: {e}")
+
+    elif status in ("FAILED", "CANCELLED"):
+        queue_to_fail = [job_id_str]
+        visited = set()
+
+        while queue_to_fail:
+            curr_id = queue_to_fail.pop(0)
+            if curr_id in visited:
+                continue
+            visited.add(curr_id)
+
+            res = await session.execute(
+                select(Job).where(Job.status.in_([JobStatus.BLOCKED, JobStatus.PENDING]))
+            )
+            candidates = res.scalars().all()
+
+            for cand in candidates:
+                deps = cand.depends_on or []
+                if curr_id in deps:
+                    cand.status = JobStatus.FAILED
+                    cand.error_message = f"Parent dependency job {curr_id} failed."
+                    queue_to_fail.append(str(cand.id))
+
+            await session.commit()
+
+    if pipeline_id:
+        p_res = await session.execute(select(Pipeline).where(Pipeline.id == pipeline_id))
+        pipeline = p_res.scalar_one_or_none()
+        if pipeline:
+            pj_res = await session.execute(select(Job).where(Job.pipeline_id == pipeline_id))
+            pipeline_jobs = pj_res.scalars().all()
+
+            if any(j.status in (JobStatus.FAILED, JobStatus.CANCELLED) for j in pipeline_jobs):
+                pipeline.status = PipelineStatus.FAILED
+            elif all(j.status == JobStatus.COMPLETED for j in pipeline_jobs):
+                pipeline.status = PipelineStatus.COMPLETED
+            elif any(j.status in (JobStatus.RUNNING, JobStatus.PENDING) for j in pipeline_jobs):
+                pipeline.status = PipelineStatus.RUNNING
+
+            await session.commit()
+
 
 
 def run_background_job(job_id_str: str) -> Dict[str, Any]:
