@@ -81,6 +81,29 @@ services:
       timeout: 5s
       retries: 3
 
+  # OpenSfM Dedicated Worker
+  opensfm:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.opensfm-worker
+    container_name: seasee-r-opensfm
+    volumes:
+      - ./backend:/app
+      - uploads_data:/app/data/uploads
+    command: ["conda", "run", "-n", "opensfm", "--no-capture-output", "rq", "worker", "opensfm_tasks", "pointcloud_tasks", "job_tasks", "default", "--url", "${REDIS_URL}"]
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "rq info -u $${REDIS_URL} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   # TUSD Resumable Upload Server
   tusd:
     image: tusproject/tusd:latest

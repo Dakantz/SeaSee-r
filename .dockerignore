@@ -1,0 +1,52 @@
+# Version control and IDE files
+.git
+.gitignore
+.gitmodules
+.idea
+.vscode
+.junie
+.obsidian
+.agents
+
+# Documentation & notes
+GSoC_Notes
+
+# Frontend dashboard
+seaseer-dashboard
+
+# Heavy binary dependencies & submodules not needed for backend/opensfm builds
+pyslam
+
+# Data & Output directories (large videos, point clouds, LAZ, PLY, images)
+data/
+output/
+backend/data/
+backend/uploads/
+*.laz
+*.ply
+*.bin
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.jpg
+*.jpeg
+*.png
+
+# Python / Build caches & virtual environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.venv/
+venv/
+env/
+
+# C++ Build outputs in OpenSfM
+openSfM/openSfM_core/cmake_build/
+openSfM/openSfM_core/build/
+openSfM/openSfM_core/dist/
