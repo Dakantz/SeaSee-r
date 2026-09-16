@@ -76,5 +76,6 @@ env.bak/
 venv.bak/
 /.python3.10/*
 # App Data
-backend/data/
+backend/data/*
+!backend/data/.gitkeep
 

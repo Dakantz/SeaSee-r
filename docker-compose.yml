@@ -38,12 +38,14 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        USER_ID: ${UID:-1000}
+        GROUP_ID: ${GID:-1000}
     container_name: seasee-r-backend
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - uploads_data:/app/data/uploads
     env_file:
       - .env
     healthcheck:
@@ -63,10 +65,12 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        USER_ID: ${UID:-1000}
+        GROUP_ID: ${GID:-1000}
     container_name: seasee-r-worker
     volumes:
       - ./backend:/app
-      - uploads_data:/app/data/uploads
     # Instead of hardcoding the URL in command, reference the env variable
     command: ["rq", "worker", "pointcloud_tasks", "job_tasks", "default", "--url", "${REDIS_URL}"]
 
@@ -86,11 +90,13 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile.opensfm-worker
+      args:
+        USER_ID: ${UID:-1000}
+        GROUP_ID: ${GID:-1000}
     container_name: seasee-r-opensfm
     volumes:
       - ./backend:/app
       - ./openSfM/openSfM_core:/source/OpenSfM
-      - uploads_data:/app/data/uploads
     command: ["conda", "run", "-n", "opensfm", "--no-capture-output", "rq", "worker", "opensfm_tasks", "pointcloud_tasks", "job_tasks", "default", "--url", "${REDIS_URL}"]
     env_file:
       - .env
@@ -108,6 +114,7 @@ services:
   # TUSD Resumable Upload Server
   tusd:
     image: tusproject/tusd:latest
+    user: "${UID:-1000}:${GID:-1000}"
     container_name: seasee-r-tusd
     ports:
       - "8080:8080"
@@ -119,7 +126,7 @@ services:
       -hooks-http-forward-headers Cookie,Authorization
       -hooks-enabled-events post-create,post-finish,post-terminate
     volumes:
-      - uploads_data:/srv/tusd-data
+      - ./backend/data/uploads:/srv/tusd-data
     depends_on:
       backend:
         condition: service_healthy
@@ -127,4 +134,4 @@ services:
 volumes:
   pgdata:
   redisdata:
-  uploads_data:
+
