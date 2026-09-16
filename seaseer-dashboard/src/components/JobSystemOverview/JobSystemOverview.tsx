@@ -520,22 +520,9 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
               return st === 'FAILED' || st === 'CANCELLED';
             });
 
-            // Segmented Progress Calculation
-            const totalPipeJobs = Math.max(1, pipeJobs.length);
-            const compPipeCount = pipeJobs.filter((j) => (optimisticJobStatuses[j.id] || j.status) === 'COMPLETED').length;
-            const runPipeCount = pipeJobs.filter((j) => (optimisticJobStatuses[j.id] || j.status) === 'RUNNING').length;
-            const failPipeCount = pipeJobs.filter((j) => {
-              const st = optimisticJobStatuses[j.id] || j.status;
-              return st === 'FAILED' || st === 'CANCELLED';
-            }).length;
-
-            const passPercent = (compPipeCount / totalPipeJobs) * 100;
-            const runPercent = (runPipeCount / totalPipeJobs) * 100;
-            const failPercent = (failPipeCount / totalPipeJobs) * 100;
-
             return (
               <div key={pipeline.id} className="jso-pipeline-card">
-                {/* Pipeline Run Header with Segmented Progress */}
+                {/* Pipeline Run Header */}
                 <div className="jso-pipe-header">
                   <div className="jso-pipe-info">
                     <span className="jso-pipe-branch" title="Pipeline Workflow Branch">
@@ -586,13 +573,6 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
                       <span>🗑</span>
                     </button>
                   </div>
-                </div>
-
-                {/* Segmented Progress Bar */}
-                <div className="jso-segmented-progress" title={`Passed: ${compPipeCount}, Running: ${runPipeCount}, Failed: ${failPipeCount}`}>
-                  <div className="jso-seg-fill pass" style={{ width: `${passPercent}%` }} />
-                  <div className="jso-seg-fill run" style={{ width: `${runPercent}%` }} />
-                  <div className="jso-seg-fill fail" style={{ width: `${failPercent}%` }} />
                 </div>
 
                 {/* Visual DAG Graph with Bezier Connectors */}
@@ -688,13 +668,20 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
                     </td>
                     <td>
                       <div className="jso-matrix-progress-cell">
-                        <div className="jso-matrix-progress-bar">
-                          <div
-                            className={`jso-matrix-progress-fill status-${effectiveStatus.toLowerCase()}`}
-                            style={{ width: `${Math.min(100, Math.max(0, job.progress || 0))}%` }}
-                          />
-                        </div>
-                        <span>{(job.progress || 0).toFixed(0)}%</span>
+                        {(() => {
+                          const progVal = effectiveStatus === 'COMPLETED' ? 100 : Math.min(100, Math.max(0, job.progress || 0));
+                          return (
+                            <>
+                              <div className="jso-matrix-progress-bar">
+                                <div
+                                  className={`jso-matrix-progress-fill status-${effectiveStatus.toLowerCase()}`}
+                                  style={{ width: `${progVal}%` }}
+                                />
+                              </div>
+                              <span>{progVal.toFixed(0)}%</span>
+                            </>
+                          );
+                        })()}
                       </div>
                     </td>
                     <td className="jso-matrix-time">

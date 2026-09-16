@@ -172,6 +172,8 @@
 
 .jobs-sidebar-content {
     flex: 1;
+    height: 100%;
+    min-height: 0;
     overflow-y: auto;
     padding: var(--spacing-md);
     display: flex;

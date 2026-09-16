@@ -81,7 +81,11 @@ export const JobNode: React.FC<JobNodeProps> = ({
   const isBlocked = job.status === 'BLOCKED';
   const isFailed = job.status === 'FAILED';
   const isCancelled = job.status === 'CANCELLED';
-  const progressValue = Math.min(100, Math.max(0, job.progress || 0));
+  const isCompleted = job.status === 'COMPLETED';
+  const progressValue = isCompleted
+    ? 100
+    : Math.min(100, Math.max(0, job.progress || 0));
+  const durationStr = calculateDuration(job.started_at || job.created_at, job.completed_at);
 
   return (
     <div
@@ -89,7 +93,7 @@ export const JobNode: React.FC<JobNodeProps> = ({
       data-job-id={job.id}
       className={`jso-job-node ${getJobStatusClass(job.status)} ${isSelected ? 'selected' : ''} ${isOptimistic ? 'optimistic' : ''}`}
       onClick={() => onSelect(job)}
-      title={`Job: ${job.name}\nStatus: ${job.status}\nClick to view drawer details`}
+      title={`Job: ${job.name}\nStatus: ${job.status}\nProgress: ${progressValue.toFixed(0)}%\nClick to view drawer details`}
     >
       <div className="jso-node-header">
         <span className={`jso-node-icon status-${job.status.toLowerCase()}`}>
@@ -107,21 +111,17 @@ export const JobNode: React.FC<JobNodeProps> = ({
           </span>
         )}
         <span className="jso-node-duration">
-          {isRunning
-            ? `${progressValue.toFixed(0)}%`
-            : calculateDuration(job.started_at || job.created_at, job.completed_at)}
+          {progressValue.toFixed(0)}%{durationStr !== '-' ? ` • ${durationStr}` : ''}
         </span>
       </div>
 
-      {/* Progress track on running job */}
-      {isRunning && (
-        <div className="jso-node-progress-track">
-          <div
-            className="jso-node-progress-fill"
-            style={{ width: `${progressValue}%` }}
-          />
-        </div>
-      )}
+      {/* Progress track on every individual job - always displayed */}
+      <div className="jso-node-progress-track" title={`Progress: ${progressValue.toFixed(0)}%`}>
+        <div
+          className={`jso-node-progress-fill status-${job.status.toLowerCase()}`}
+          style={{ width: `${progressValue}%` }}
+        />
+      </div>
 
       {/* Quick Actions Hover Trigger */}
       <div className="jso-node-quick-actions">
