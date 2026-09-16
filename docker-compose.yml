@@ -97,7 +97,18 @@ services:
     volumes:
       - ./backend:/app
       - ./openSfM/openSfM_core:/source/OpenSfM
-    command: ["conda", "run", "-n", "opensfm", "--no-capture-output", "rq", "worker", "opensfm_tasks", "pointcloud_tasks", "job_tasks", "default", "--url", "${REDIS_URL}"]
+    command: ["conda", "run", "-n", "opensfm", "--no-capture-output", "bash", "-c", "cd /source/OpenSfM && pip install --no-cache-dir -e . && cd /app && rq worker opensfm_tasks pointcloud_tasks job_tasks default --url $${REDIS_URL}"]
+    environment:
+      - PYTHONPATH=/app
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, utility, compute]
     env_file:
       - .env
     depends_on:
@@ -106,8 +117,8 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "rq info -u $${REDIS_URL} || exit 1"]
-      interval: 10s
+      test: ["CMD-SHELL", "rq info -u $${REDIS_URL} && python -c 'import opensfm, opensfm.pygeometry, opensfm.pymap, opensfm.pybundle; from opensfm import pydense; assert pydense.DepthmapClusterEstimator.is_available()' || exit 1"]
+      interval: 15s
       timeout: 5s
       retries: 3
 

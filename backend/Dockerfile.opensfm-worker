@@ -11,7 +11,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postgis \
     libgl1 \
     libglib2.0-0 \
+    ocl-icd-libopencl1 \
+    ocl-icd-opencl-dev \
+    opencl-headers \
+    clinfo \
     && rm -rf /var/lib/apt/lists/*
+
+# Register NVIDIA OpenCL vendor library for ocl-icd loader
+RUN mkdir -p /etc/OpenCL/vendors && echo "libnvidia-opencl.so.1" > /etc/OpenCL/vendors/nvidia.icd
 
 WORKDIR /source/OpenSfM
 

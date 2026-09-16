@@ -22,8 +22,7 @@ To run the installation, execute the following command from the project root:
 
 Build and launch the backend services (PostgreSQL with PostGIS/pgPointCloud, FastAPI, TUS server) via Docker:
 ```bash
-cd backend
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 ### Running the Dashboard Visualizer
