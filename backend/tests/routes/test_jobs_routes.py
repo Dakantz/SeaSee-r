@@ -173,3 +173,50 @@ def test_create_pipeline_success(client):
     assert data["name"] == "Test Pipeline"
 
 
+def test_cancel_job_success(client):
+    mock_job = MagicMock()
+    mock_job.id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    mock_job.name = "test_job"
+    mock_job.task_type = "pointcloud_upload"
+    mock_job.status = JobStatus.RUNNING
+    mock_job.progress = 45.0
+    mock_job.payload = None
+    mock_job.result = None
+    mock_job.error_message = None
+    mock_job.created_at = "2026-07-15T11:00:00Z"
+    mock_job.started_at = "2026-07-15T11:01:00Z"
+    mock_job.completed_at = None
+    mock_job.pipeline_id = None
+    mock_job.depends_on = []
+
+    mock_db_session.execute.return_value.scalar_one_or_none.return_value = mock_job
+
+    response = client.post("/jobs/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/cancel")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "CANCELLED"
+    assert data["error_message"] == "Job was cancelled by user."
+
+
+def test_cancel_job_already_completed(client):
+    mock_job = MagicMock()
+    mock_job.id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    mock_job.name = "test_job"
+    mock_job.status = JobStatus.COMPLETED
+
+    mock_db_session.execute.return_value.scalar_one_or_none.return_value = mock_job
+
+    response = client.post("/jobs/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/cancel")
+    assert response.status_code == 400
+    assert "Only active jobs (PENDING, RUNNING, BLOCKED) can be cancelled" in response.json()["detail"]
+
+
+def test_cancel_job_not_found(client):
+    mock_db_session.execute.return_value.scalar_one_or_none.return_value = None
+
+    response = client.post("/jobs/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/cancel")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Job not found."
+
+
+

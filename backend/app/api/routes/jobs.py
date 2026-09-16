@@ -320,3 +320,42 @@ async def retry_job(
     _enqueue_job_to_redis(job.id, job.task_type)
 
     return job
+
+
+@router.post("/{job_id}/cancel", response_model=JobResponse)
+async def cancel_job(
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Cancel an active job (PENDING, RUNNING, or BLOCKED). Sets status to CANCELLED and cascades to dependent jobs.
+    """
+    from datetime import datetime
+    from app.services.worker.tasks import _process_job_dependency_updates
+
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+
+    if job.status not in (JobStatus.PENDING, JobStatus.RUNNING, JobStatus.BLOCKED):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only active jobs (PENDING, RUNNING, BLOCKED) can be cancelled. Current job status: '{job.status}'"
+        )
+
+    job.status = JobStatus.CANCELLED
+    job.completed_at = datetime.utcnow()
+    if not job.error_message:
+        job.error_message = "Job was cancelled by user."
+
+    await db.commit()
+    await db.refresh(job)
+
+    try:
+        await _process_job_dependency_updates(db, str(job.id), "CANCELLED")
+    except Exception as e:
+        print(f"Warning: Failed to process dependency updates for cancelled job {job.id}: {e}")
+
+    return job
+

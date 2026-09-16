@@ -73,7 +73,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
                     filename: file.name,
                     safe_filename: safeFilename,
                     video_files: [safeFilename, file.name],
-                    num_frames: 500,
+                    num_frames: 20,
                     dataset_name: datasetName,
                     batch_id: batchId
                   },

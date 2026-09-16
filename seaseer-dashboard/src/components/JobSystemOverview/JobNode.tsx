@@ -1,0 +1,153 @@
+import React from 'react';
+import type { JobResponse, JobStatus } from '../../client';
+
+export interface JobNodeProps {
+  job: JobResponse;
+  isSelected?: boolean;
+  isOptimistic?: boolean;
+  onSelect: (job: JobResponse) => void;
+  onRetry?: (jobId: string, e: React.MouseEvent) => void;
+  onCancel?: (jobId: string, e: React.MouseEvent) => void;
+  retryingJobId?: string | null;
+  cancellingJobId?: string | null;
+}
+
+const getJobStatusClass = (status: JobStatus): string => {
+  switch (status) {
+    case 'COMPLETED':
+      return 'jso-node-completed';
+    case 'RUNNING':
+      return 'jso-node-running';
+    case 'BLOCKED':
+      return 'jso-node-blocked';
+    case 'PENDING':
+      return 'jso-node-pending';
+    case 'FAILED':
+      return 'jso-node-failed';
+    case 'CANCELLED':
+      return 'jso-node-cancelled';
+    default:
+      return 'jso-node-pending';
+  }
+};
+
+const getStatusIcon = (status: JobStatus): string => {
+  switch (status) {
+    case 'COMPLETED':
+      return '✓';
+    case 'RUNNING':
+      return '↻';
+    case 'BLOCKED':
+      return '🔒';
+    case 'PENDING':
+      return '⏳';
+    case 'FAILED':
+      return '✕';
+    case 'CANCELLED':
+      return '⛔';
+    default:
+      return '•';
+  }
+};
+
+const calculateDuration = (startStr?: string | null, endStr?: string | null): string => {
+  if (!startStr) return '-';
+  const start = new Date(startStr).getTime();
+  if (isNaN(start)) return '-';
+
+  const end = endStr ? new Date(endStr).getTime() : Date.now();
+  if (isNaN(end)) return '-';
+
+  const diffMs = Math.max(0, end - start);
+  const totalSeconds = Math.floor(diffMs / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds}s`;
+};
+
+export const JobNode: React.FC<JobNodeProps> = ({
+  job,
+  isSelected = false,
+  isOptimistic = false,
+  onSelect,
+  onRetry,
+  onCancel,
+  retryingJobId,
+  cancellingJobId,
+}) => {
+  const isRunning = job.status === 'RUNNING';
+  const isPending = job.status === 'PENDING';
+  const isBlocked = job.status === 'BLOCKED';
+  const isFailed = job.status === 'FAILED';
+  const isCancelled = job.status === 'CANCELLED';
+  const progressValue = Math.min(100, Math.max(0, job.progress || 0));
+
+  return (
+    <div
+      id={`job-node-${job.id}`}
+      data-job-id={job.id}
+      className={`jso-job-node ${getJobStatusClass(job.status)} ${isSelected ? 'selected' : ''} ${isOptimistic ? 'optimistic' : ''}`}
+      onClick={() => onSelect(job)}
+      title={`Job: ${job.name}\nStatus: ${job.status}\nClick to view drawer details`}
+    >
+      <div className="jso-node-header">
+        <span className={`jso-node-icon status-${job.status.toLowerCase()}`}>
+          {getStatusIcon(job.status)}
+        </span>
+        <span className="jso-node-name" title={job.name}>
+          {job.name}
+        </span>
+      </div>
+
+      <div className="jso-node-meta">
+        {job.task_type && (
+          <span className="jso-node-tag">
+            {job.task_type.replace('opensfm_', '').replace('_tasks', '')}
+          </span>
+        )}
+        <span className="jso-node-duration">
+          {isRunning
+            ? `${progressValue.toFixed(0)}%`
+            : calculateDuration(job.started_at || job.created_at, job.completed_at)}
+        </span>
+      </div>
+
+      {/* Progress track on running job */}
+      {isRunning && (
+        <div className="jso-node-progress-track">
+          <div
+            className="jso-node-progress-fill"
+            style={{ width: `${progressValue}%` }}
+          />
+        </div>
+      )}
+
+      {/* Quick Actions Hover Trigger */}
+      <div className="jso-node-quick-actions">
+        {(isRunning || isPending || isBlocked) && onCancel && (
+          <button
+            type="button"
+            className="jso-node-action-btn cancel"
+            onClick={(e) => onCancel(job.id, e)}
+            disabled={cancellingJobId === job.id}
+            title="Cancel Job"
+          >
+            ⛔
+          </button>
+        )}
+        {(isFailed || isCancelled) && onRetry && (
+          <button
+            type="button"
+            className="jso-node-action-btn retry"
+            onClick={(e) => onRetry(job.id, e)}
+            disabled={retryingJobId === job.id}
+            title="Retry Job"
+          >
+            ↻
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
