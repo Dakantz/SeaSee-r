@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PointCloudMetadataResponse } from "../../client";
 import { usePLYPointCloudContext, type MapProviderChoice, type HeightProviderChoice } from "./PLYPointCloudContext";
+import OpenSfMConfigModal from "../OpenSfMConfigModal/OpenSfMConfigModal";
 
 export interface PLYPointCloudSidebarProps {
     renderMode?: "points" | "mesh";
@@ -38,6 +39,7 @@ export interface PLYPointCloudSidebarProps {
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
+    const [isOpenSfMModalOpen, setIsOpenSfMModalOpen] = useState(false);
     let contextState: ReturnType<typeof usePLYPointCloudContext> | null = null;
     try {
         contextState = usePLYPointCloudContext();
@@ -105,9 +107,31 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
 
     return (
         <div className="pointcloud-sidebar">
-            <div className="pointcloud-sidebar__header">
-                DebugControls
+            <div className="pointcloud-sidebar__header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>DebugControls</span>
+                <button
+                    type="button"
+                    onClick={() => setIsOpenSfMModalOpen(true)}
+                    style={{
+                        background: "rgba(56, 189, 248, 0.15)",
+                        border: "1px solid rgba(56, 189, 248, 0.4)",
+                        color: "#38bdf8",
+                        borderRadius: "4px",
+                        padding: "3px 8px",
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        cursor: "pointer"
+                    }}
+                    title="Open OpenSfM configuration popup"
+                >
+                    ⚙️ OpenSfM Setup
+                </button>
             </div>
+            <OpenSfMConfigModal
+                isOpen={isOpenSfMModalOpen}
+                onClose={() => setIsOpenSfMModalOpen(false)}
+            />
+
 
             {/* Multi-PointCloud Catalog List */}
             <div className="pointcloud-sidebar__section">

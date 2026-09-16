@@ -16,4 +16,4 @@ psutil
 pillow
 numpy
 geoalchemy2
-
+pyyaml

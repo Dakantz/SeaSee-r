@@ -1,109 +1,143 @@
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
+import OpenSfMConfigModal from "./OpenSfMConfigModal/OpenSfMConfigModal";
 
 export default function Toolbar() {
+    const [isOpenSfMOpen, setIsOpenSfMOpen] = useState(false);
+
     return (
-        <header
-            style={{
-                height: "60px",
-                background: "#0f172a",
-                borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
-                color: "white",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                paddingLeft: "20px",
-                paddingRight: "20px",
-                fontWeight: "bold",
-                zIndex: 100
-            }}
-        >
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <span style={{ fontSize: "16px", color: "#38bdf8", letterSpacing: "0.5px" }}>
-                    SeaSeer Dashboard
-                </span>
-            </div>
+        <>
+            <header
+                style={{
+                    height: "60px",
+                    background: "#0f172a",
+                    borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
+                    color: "white",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    paddingLeft: "20px",
+                    paddingRight: "20px",
+                    fontWeight: "bold",
+                    zIndex: 100
+                }}
+            >
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <span style={{ fontSize: "16px", color: "#38bdf8", letterSpacing: "0.5px" }}>
+                        SeaSeer Dashboard
+                    </span>
+                </div>
 
-            <nav style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <NavLink
-                    to="/"
-                    style={({ isActive }) => ({
-                        color: isActive ? "#38bdf8" : "#94a3b8",
-                        textDecoration: "none",
-                        padding: "6px 12px",
-                        borderRadius: "6px",
-                        fontSize: "13px",
-                        fontWeight: 500,
-                        background: isActive ? "rgba(56, 189, 248, 0.15)" : "transparent",
-                        border: isActive ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid transparent"
-                    })}
-                >
-                    Workspace
-                </NavLink>
+                <nav style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <NavLink
+                        to="/"
+                        style={({ isActive }) => ({
+                            color: isActive ? "#38bdf8" : "#94a3b8",
+                            textDecoration: "none",
+                            padding: "6px 12px",
+                            borderRadius: "6px",
+                            fontSize: "13px",
+                            fontWeight: 500,
+                            background: isActive ? "rgba(56, 189, 248, 0.15)" : "transparent",
+                            border: isActive ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid transparent"
+                        })}
+                    >
+                        Workspace
+                    </NavLink>
 
-                <NavLink
-                    to="/pointcloud-overview"
-                    style={({ isActive }) => ({
-                        color: isActive ? "#38bdf8" : "#94a3b8",
-                        textDecoration: "none",
-                        padding: "6px 12px",
-                        borderRadius: "6px",
-                        fontSize: "13px",
-                        fontWeight: 500,
-                        background: isActive ? "rgba(56, 189, 248, 0.15)" : "transparent",
-                        border: isActive ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid transparent"
-                    })}
-                >
-                    PointCloud Overview
-                </NavLink>
+                    <NavLink
+                        to="/pointcloud-overview"
+                        style={({ isActive }) => ({
+                            color: isActive ? "#38bdf8" : "#94a3b8",
+                            textDecoration: "none",
+                            padding: "6px 12px",
+                            borderRadius: "6px",
+                            fontSize: "13px",
+                            fontWeight: 500,
+                            background: isActive ? "rgba(56, 189, 248, 0.15)" : "transparent",
+                            border: isActive ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid transparent"
+                        })}
+                    >
+                        PointCloud Overview
+                    </NavLink>
 
-                <NavLink
-                    to="/lod-algorithm-analyzer"
-                    style={({ isActive }) => ({
-                        color: isActive ? "#38bdf8" : "#94a3b8",
-                        textDecoration: "none",
-                        padding: "6px 12px",
-                        borderRadius: "6px",
-                        fontSize: "13px",
-                        fontWeight: 500,
-                        background: isActive ? "rgba(56, 189, 248, 0.15)" : "transparent",
-                        border: isActive ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid transparent"
-                    })}
-                >
-                    LOD Analyzer
-                </NavLink>
+                    <NavLink
+                        to="/lod-algorithm-analyzer"
+                        style={({ isActive }) => ({
+                            color: isActive ? "#38bdf8" : "#94a3b8",
+                            textDecoration: "none",
+                            padding: "6px 12px",
+                            borderRadius: "6px",
+                            fontSize: "13px",
+                            fontWeight: 500,
+                            background: isActive ? "rgba(56, 189, 248, 0.15)" : "transparent",
+                            border: isActive ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid transparent"
+                        })}
+                    >
+                        LOD Analyzer
+                    </NavLink>
 
-                <NavLink
-                    to="/pointcloud-editor"
-                    style={({ isActive }) => ({
-                        color: isActive ? "#38bdf8" : "#94a3b8",
-                        textDecoration: "none",
-                        padding: "6px 12px",
-                        borderRadius: "6px",
-                        fontSize: "13px",
-                        fontWeight: 500,
-                        background: isActive ? "rgba(56, 189, 248, 0.15)" : "transparent",
-                        border: isActive ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid transparent"
-                    })}
-                >
-                    PointCloud Editor
-                </NavLink>
+                    <NavLink
+                        to="/pointcloud-editor"
+                        style={({ isActive }) => ({
+                            color: isActive ? "#38bdf8" : "#94a3b8",
+                            textDecoration: "none",
+                            padding: "6px 12px",
+                            borderRadius: "6px",
+                            fontSize: "13px",
+                            fontWeight: 500,
+                            background: isActive ? "rgba(56, 189, 248, 0.15)" : "transparent",
+                            border: isActive ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid transparent"
+                        })}
+                    >
+                        PointCloud Editor
+                    </NavLink>
 
-                <NavLink
-                    to="/test-rover"
-                    style={({ isActive }) => ({
-                        color: isActive ? "#38bdf8" : "#94a3b8",
-                        textDecoration: "none",
-                        padding: "6px 12px",
-                        borderRadius: "6px",
-                        fontSize: "13px",
-                        fontWeight: 500,
-                        background: isActive ? "rgba(56, 189, 248, 0.15)" : "transparent",
-                        border: isActive ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid transparent"
-                    })}
-                >
-                    Test Rover
-                </NavLink>
-            </nav>
-        </header>
+                    <NavLink
+                        to="/test-rover"
+                        style={({ isActive }) => ({
+                            color: isActive ? "#38bdf8" : "#94a3b8",
+                            textDecoration: "none",
+                            padding: "6px 12px",
+                            borderRadius: "6px",
+                            fontSize: "13px",
+                            fontWeight: 500,
+                            background: isActive ? "rgba(56, 189, 248, 0.15)" : "transparent",
+                            border: isActive ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid transparent"
+                        })}
+                    >
+                        Test Rover
+                    </NavLink>
+
+                    <button
+                        type="button"
+                        onClick={() => setIsOpenSfMOpen(true)}
+                        style={{
+                            color: "#f8fafc",
+                            padding: "6px 12px",
+                            borderRadius: "6px",
+                            fontSize: "13px",
+                            fontWeight: 500,
+                            background: "linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(2, 132, 199, 0.3))",
+                            border: "1px solid rgba(56, 189, 248, 0.4)",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            marginLeft: "8px",
+                            transition: "all 0.2s ease"
+                        }}
+                        title="Configure OpenSfM settings"
+                    >
+                        ⚙️ OpenSfM Setup
+                    </button>
+                </nav>
+            </header>
+
+            <OpenSfMConfigModal
+                isOpen={isOpenSfMOpen}
+                onClose={() => setIsOpenSfMOpen(false)}
+            />
+        </>
     );
 }

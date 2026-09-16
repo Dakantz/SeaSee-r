@@ -1,0 +1,325 @@
+/* OpenSfM Configuration Modal Overlay */
+.opensfm-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: var(--color-bg-overlay, rgba(0, 0, 0, 0.65));
+  backdrop-filter: var(--backdrop-blur-md, blur(8px));
+  -webkit-backdrop-filter: var(--backdrop-blur-md, blur(8px));
+  z-index: var(--z-modal, 1000);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.opensfm-modal-dialog {
+  background: var(--color-bg-surface, #0f172a);
+  border: 1px solid var(--color-border-strong, rgba(255, 255, 255, 0.15));
+  border-radius: var(--radius-2xl, 12px);
+  width: 90%;
+  max-width: 680px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-xl, 0 10px 30px rgba(0, 0, 0, 0.4));
+  color: var(--color-text-primary, #f8fafc);
+  overflow: hidden;
+  animation: modalScaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalScaleUp {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Modal Header */
+.opensfm-modal-header {
+  padding: var(--spacing-xl, 16px) var(--spacing-2xl, 20px);
+  background: var(--color-bg-panel, #181818);
+  border-bottom: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.1));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.opensfm-modal-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md, 10px);
+}
+
+.opensfm-modal-title {
+  font-size: var(--font-size-lg, 15px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-accent-text, #38bdf8);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.opensfm-modal-subtitle {
+  font-size: var(--font-size-xs, 11px);
+  color: var(--color-text-muted, #94a3b8);
+  margin-top: 2px;
+}
+
+.opensfm-modal-close-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 18px;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md, 6px);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition-fast, all 0.15s ease);
+}
+
+.opensfm-modal-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text-contrast, #ffffff);
+}
+
+/* Tabs Navigation */
+.opensfm-modal-tabs {
+  display: flex;
+  background: var(--color-bg-subtle, rgba(15, 23, 42, 0.4));
+  border-bottom: 1px solid var(--color-border-light, rgba(255, 255, 255, 0.05));
+  padding: 4px 16px 0 16px;
+  gap: 8px;
+}
+
+.opensfm-tab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-muted, #94a3b8);
+  padding: 8px 14px;
+  font-size: var(--font-size-sm, 12px);
+  font-weight: var(--font-weight-medium, 500);
+  cursor: pointer;
+  transition: var(--transition-fast, all 0.15s ease);
+}
+
+.opensfm-tab-btn:hover {
+  color: var(--color-text-secondary, #e2e8f0);
+}
+
+.opensfm-tab-btn.active {
+  color: var(--color-accent-text, #38bdf8);
+  border-bottom-color: var(--color-accent-text, #38bdf8);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+/* Modal Content Area */
+.opensfm-modal-body {
+  padding: var(--spacing-2xl, 20px);
+  overflow-y: auto;
+  flex: 1;
+}
+
+.opensfm-grid-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.opensfm-field-card {
+  background: var(--color-bg-card, rgba(30, 41, 59, 0.7));
+  border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-lg, 8px);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: var(--transition-fast, all 0.15s ease);
+}
+
+.opensfm-field-card:focus-within {
+  border-color: var(--color-primary-border, rgba(59, 130, 246, 0.4));
+  background: var(--color-bg-card-hover, rgba(30, 41, 59, 0.9));
+}
+
+.opensfm-field-label {
+  font-size: var(--font-size-xs, 11px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-secondary, #e2e8f0);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.opensfm-field-desc {
+  font-size: var(--font-size-2xs, 10px);
+  color: var(--color-text-muted, #94a3b8);
+  line-height: 1.3;
+}
+
+.opensfm-field-input {
+  background: var(--color-bg-app, #090d16);
+  border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-md, 6px);
+  color: var(--color-text-primary, #f8fafc);
+  padding: 6px 10px;
+  font-size: var(--font-size-sm, 12px);
+  font-family: var(--font-mono, monospace);
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.opensfm-field-input:focus {
+  border-color: var(--color-accent-text, #38bdf8);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15);
+}
+
+/* Raw YAML View */
+.opensfm-yaml-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+}
+
+.opensfm-yaml-textarea {
+  width: 100%;
+  min-height: 280px;
+  background: var(--color-bg-app, #090d16);
+  border: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-lg, 8px);
+  color: #e0e7ff;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-sm, 12px);
+  padding: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.opensfm-yaml-textarea:focus {
+  border-color: var(--color-accent-text, #38bdf8);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15);
+}
+
+/* Status Notifications */
+.opensfm-status-banner {
+  padding: 8px 12px;
+  border-radius: var(--radius-md, 6px);
+  font-size: var(--font-size-xs, 11px);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.opensfm-status-banner.success {
+  background: var(--color-success-subtle, rgba(16, 185, 129, 0.15));
+  border: 1px solid var(--color-success-border, rgba(16, 185, 129, 0.3));
+  color: var(--color-success-text, #34d399);
+}
+
+.opensfm-status-banner.error {
+  background: var(--color-danger-subtle, rgba(239, 68, 68, 0.15));
+  border: 1px solid var(--color-danger-border, rgba(239, 68, 68, 0.3));
+  color: var(--color-danger-text, #f87171);
+}
+
+.opensfm-status-banner.info {
+  background: var(--color-primary-subtle, rgba(59, 130, 246, 0.15));
+  border: 1px solid var(--color-primary-border, rgba(59, 130, 246, 0.3));
+  color: var(--color-primary-text, #60a5fa);
+}
+
+/* File Path Footer */
+.opensfm-filepath-info {
+  font-size: var(--font-size-2xs, 10px);
+  color: var(--color-text-subtle, #64748b);
+  word-break: break-all;
+  font-family: var(--font-mono, monospace);
+  margin-top: 12px;
+}
+
+/* Modal Footer */
+.opensfm-modal-footer {
+  padding: 12px 20px;
+  background: var(--color-bg-panel, #181818);
+  border-top: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.1));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.opensfm-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.opensfm-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.opensfm-btn {
+  padding: 6px 14px;
+  border-radius: var(--radius-md, 6px);
+  font-size: var(--font-size-sm, 12px);
+  font-weight: var(--font-weight-medium, 500);
+  cursor: pointer;
+  transition: var(--transition-normal, all 0.2s ease);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+}
+
+.opensfm-btn-primary {
+  background: var(--color-primary, #3b82f6);
+  color: #ffffff;
+}
+
+.opensfm-btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover, #2563eb);
+}
+
+.opensfm-btn-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text-secondary, #e2e8f0);
+  border-color: var(--color-border-default, rgba(255, 255, 255, 0.12));
+}
+
+.opensfm-btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.opensfm-btn-danger {
+  background: var(--color-danger-subtle, rgba(239, 68, 68, 0.15));
+  color: var(--color-danger-text, #f87171);
+  border-color: var(--color-danger-border, rgba(239, 68, 68, 0.3));
+}
+
+.opensfm-btn-danger:hover:not(:disabled) {
+  background: var(--color-danger, #ef4444);
+  color: #ffffff;
+}
+
+.opensfm-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

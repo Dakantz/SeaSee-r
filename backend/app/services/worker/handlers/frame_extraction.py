@@ -61,7 +61,7 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
     async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:
         await self.update_job_status(job_id, "RUNNING", 5.0)
 
-        num_frames = int(payload.get("num_frames", 500))
+        num_frames = int(payload.get("num_frames", 50))
         video_dir = settings.video_dir
         output_dir = settings.opensfm_ingestion_dir
         opensfm_bin = payload.get("opensfm_bin", OPENSFM_DEFAULT_BIN)
