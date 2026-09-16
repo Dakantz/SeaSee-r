@@ -97,7 +97,7 @@ services:
     volumes:
       - ./backend:/app
       - ./openSfM/openSfM_core:/source/OpenSfM
-    command: ["conda", "run", "-n", "opensfm", "--no-capture-output", "bash", "-c", "cd /source/OpenSfM && pip install --no-cache-dir -e . && cd /app && rq worker opensfm_tasks pointcloud_tasks job_tasks default --url $${REDIS_URL}"]
+    command: ["conda", "run", "-n", "opensfm", "--no-capture-output", "bash", "-c", "cd /source/OpenSfM && pip install --no-cache-dir -e . && cd /app && rq worker opensfm_tasks --url $${REDIS_URL}"]
     environment:
       - PYTHONPATH=/app
       - NVIDIA_VISIBLE_DEVICES=all

@@ -93,12 +93,12 @@ const formatTime = (dateStr?: string | null): string => {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 };
 
-const calculateDuration = (startStr?: string | null, endStr?: string | null): string => {
+const calculateDuration = (startStr?: string | null, endStr?: string | null, nowMs: number = Date.now()): string => {
   if (!startStr) return '-';
   const start = new Date(startStr).getTime();
   if (isNaN(start)) return '-';
 
-  const end = endStr ? new Date(endStr).getTime() : Date.now();
+  const end = endStr ? new Date(endStr).getTime() : nowMs;
   if (isNaN(end)) return '-';
 
   const diffMs = Math.max(0, end - start);
@@ -140,6 +140,24 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
   const [viewMode, setViewMode] = useState<ViewMode>('pipeline');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedJob, setSelectedJob] = useState<JobResponse | null>(null);
+
+  // Live timer tick for active pipelines and jobs
+  const [now, setNow] = useState<number>(Date.now());
+
+  const hasActivePipelineOrJob = useMemo(() => {
+    const activePipeline = pipelines.some((p) => p.status === 'RUNNING' || p.status === 'PENDING');
+    const activeJob = jobs.some((j) => j.status === 'RUNNING' || j.status === 'PENDING');
+    return activePipeline || activeJob;
+  }, [pipelines, jobs]);
+
+  useEffect(() => {
+    if (!hasActivePipelineOrJob) return;
+    setNow(Date.now());
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [hasActivePipelineOrJob]);
 
   // Optimistic job statuses map
   const [optimisticJobStatuses, setOptimisticJobStatuses] = useState<Record<string, JobStatus>>({});
@@ -538,7 +556,11 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
 
                   <div className="jso-pipe-meta-actions">
                     <span className="jso-pipe-time" title={`Created ${formatTime(pipeline.created_at)}`}>
-                      ⏱ {calculateDuration(pipeline.created_at, pipeline.updated_at)}
+                      ⏱ {calculateDuration(
+                        pipeline.created_at,
+                        pipeline.status === 'RUNNING' || pipeline.status === 'PENDING' ? null : pipeline.updated_at,
+                        now
+                      )}
                     </span>
 
                     {hasFailedJob && (
@@ -685,7 +707,7 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
                       </div>
                     </td>
                     <td className="jso-matrix-time">
-                      {calculateDuration(job.started_at || job.created_at, job.completed_at)}
+                      {calculateDuration(job.started_at || job.created_at, job.completed_at, now)}
                     </td>
                     <td>
                       <div className="jso-matrix-actions" onClick={(e) => e.stopPropagation()}>

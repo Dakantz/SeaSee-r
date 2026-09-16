@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import type { JobResponse, JobStatus } from '../../client';
 
 export interface JobNodeProps {
@@ -50,12 +50,12 @@ const getStatusIcon = (status: JobStatus): string => {
   }
 };
 
-const calculateDuration = (startStr?: string | null, endStr?: string | null): string => {
+const calculateDuration = (startStr?: string | null, endStr?: string | null, nowMs: number = Date.now()): string => {
   if (!startStr) return '-';
   const start = new Date(startStr).getTime();
   if (isNaN(start)) return '-';
 
-  const end = endStr ? new Date(endStr).getTime() : Date.now();
+  const end = endStr ? new Date(endStr).getTime() : nowMs;
   if (isNaN(end)) return '-';
 
   const diffMs = Math.max(0, end - start);
@@ -82,10 +82,22 @@ export const JobNode: React.FC<JobNodeProps> = ({
   const isFailed = job.status === 'FAILED';
   const isCancelled = job.status === 'CANCELLED';
   const isCompleted = job.status === 'COMPLETED';
+
+  const [now, setNow] = useState<number>(Date.now());
+
+  useEffect(() => {
+    if (!isRunning) return;
+    setNow(Date.now());
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isRunning]);
+
   const progressValue = isCompleted
     ? 100
     : Math.min(100, Math.max(0, job.progress || 0));
-  const durationStr = calculateDuration(job.started_at || job.created_at, job.completed_at);
+  const durationStr = calculateDuration(job.started_at || job.created_at, job.completed_at, now);
 
   return (
     <div

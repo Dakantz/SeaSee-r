@@ -74,4 +74,4 @@ def test_video_upload_pipeline_dag_building():
     assert job3.task_type == "opensfm_ingest"
     assert job3.status == JobStatus.BLOCKED
     assert job3.depends_on == [str(job2.id)]
-    assert get_queue_name_for_task_type(job3.task_type) == "opensfm_tasks"
+    assert get_queue_name_for_task_type(job3.task_type) == "pointcloud_tasks"

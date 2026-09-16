@@ -585,6 +585,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
 }
 
 .jso-node-icon {
@@ -613,7 +614,8 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 110px;
+  flex: 1;
+  min-width: 0;
 }
 
 .jso-node-meta {

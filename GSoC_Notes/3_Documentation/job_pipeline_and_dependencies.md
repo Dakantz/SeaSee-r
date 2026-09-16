@@ -42,5 +42,5 @@ The 3D point cloud reconstruction workflow is decoupled into a 3-stage job pipel
 
 1. **`frame_extraction`** (Queue: `pointcloud_tasks`): Extracts image frames from input video files into `settings.opensfm_ingestion_dir/<dataset_name>/images` via `ffmpeg`.
 2. **`opensfm_reconstruct`** (Queue: `opensfm_tasks`): Executes OpenSfM (`opensfm_run_all`) inside the dedicated `seasee-r-opensfm` Docker container worker to generate 3D point cloud (`fused.laz`) and camera trajectory files.
-3. **`opensfm_ingest`** (Queue: `opensfm_tasks`): Parses the generated `fused.laz` and camera metadata (`shots.geojson` / `reconstruction.json`) and ingests them into the PostGIS database.
+3. **`opensfm_ingest`** (Queue: `pointcloud_tasks`): Parses the generated `fused.laz` and camera metadata (`shots.geojson` / `reconstruction.json`) and ingests them into the PostGIS database.
 

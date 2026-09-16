@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { JobResponse, JobStatus } from '../../client';
 import { TerminalConsole } from './TerminalConsole';
@@ -39,12 +39,12 @@ const formatTime = (dateStr?: string | null): string => {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 };
 
-const calculateDuration = (startStr?: string | null, endStr?: string | null): string => {
+const calculateDuration = (startStr?: string | null, endStr?: string | null, nowMs: number = Date.now()): string => {
   if (!startStr) return '-';
   const start = new Date(startStr).getTime();
   if (isNaN(start)) return '-';
 
-  const end = endStr ? new Date(endStr).getTime() : Date.now();
+  const end = endStr ? new Date(endStr).getTime() : nowMs;
   if (isNaN(end)) return '-';
 
   const diffMs = Math.max(0, end - start);
@@ -65,6 +65,18 @@ export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
   cancellingJobId,
 }) => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [now, setNow] = useState<number>(Date.now());
+
+  const isRunning = job?.status === 'RUNNING';
+
+  useEffect(() => {
+    if (!isOpen || !isRunning) return;
+    setNow(Date.now());
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isOpen, isRunning, job?.id]);
 
   // Sync state to URL search params when drawer opens or closes
   useEffect(() => {
@@ -87,7 +99,6 @@ export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
 
   if (!isOpen || !job) return null;
 
-  const isRunning = job.status === 'RUNNING';
   const isPending = job.status === 'PENDING';
   const isBlocked = job.status === 'BLOCKED';
   const isFailed = job.status === 'FAILED';
@@ -150,7 +161,7 @@ export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
             <div className="jso-meta-card">
               <span className="jso-meta-lbl">Runtime</span>
               <span className="jso-meta-val">
-                {calculateDuration(job.started_at || job.created_at, job.completed_at)}
+                {calculateDuration(job.started_at || job.created_at, job.completed_at, now)}
               </span>
             </div>
           </div>
