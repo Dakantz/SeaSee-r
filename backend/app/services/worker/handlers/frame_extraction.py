@@ -4,6 +4,7 @@ import glob
 import logging
 import asyncio
 from typing import Dict, Any, List, Optional
+import cv2
 
 from app.core.config import settings
 from app.services.worker.handlers.base import BaseTaskHandler
@@ -13,8 +14,9 @@ logger = logging.getLogger(__name__)
 
 class FrameExtractionTaskHandler(BaseTaskHandler):
     """
-    Worker task handler for extracting fixed-number image frames from videos using ffmpeg
-    and saving output into settings.opensfm_ingestion_dir.
+    Worker task handler for extracting fixed-number image frames from videos using ffmpeg,
+    filtering out blurry/obscured frames using Laplacian variance, and saving clean output
+    into settings.opensfm_ingestion_dir.
     """
     task_types = ["frame_extraction", "video_frame_extraction"]
 
@@ -43,7 +45,6 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
             logger.warning(f"ffprobe execution failed: {e}")
 
         try:
-            import cv2
             cap = cv2.VideoCapture(video_path)
             fps = cap.get(cv2.CAP_PROP_FPS)
             frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
@@ -60,6 +61,7 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
         await self.update_job_status(job_id, "RUNNING", 5.0)
 
         num_frames = int(payload.get("num_frames", 500))
+        blur_threshold = float(payload.get("blur_threshold", 100.0))
         video_dir = settings.video_dir
         output_dir = settings.opensfm_ingestion_dir
         opensfm_config = payload.get("opensfm_config") or settings.opensfm_config
@@ -161,7 +163,42 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
             raise RuntimeError(err_msg)
 
         logger.info(f"Job {job_id}: Total images saved to {images_dir}: {total_extracted}")
-        await self.update_job_status(job_id, "RUNNING", 80.0)
+        await self.update_job_status(job_id, "RUNNING", 75.0)
+
+        # Part 2: Blur / frame quality filtering using Laplacian variance method
+        logger.info(f"Job {job_id}: Filtering blurry/obscured images (blur_threshold={blur_threshold})")
+        reject_dir = os.path.join(dataset_dir, "rejected_images")
+
+        extracted_images = [
+            f for f in glob.glob(os.path.join(images_dir, "*"))
+            if f.lower().endswith((".png", ".jpg", ".jpeg", ".tif", ".tiff"))
+        ]
+
+        kept_count = 0
+        rejected_count = 0
+
+        for img_path in sorted(extracted_images):
+            img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                continue
+
+            focus_measure = cv2.Laplacian(img, cv2.CV_64F).var()
+            if focus_measure < blur_threshold:
+                logger.info(f"Filtering out {os.path.basename(img_path)} (Score: {focus_measure:.2f} < {blur_threshold})")
+                os.makedirs(reject_dir, exist_ok=True)
+                shutil.move(img_path, os.path.join(reject_dir, os.path.basename(img_path)))
+                rejected_count += 1
+            else:
+                kept_count += 1
+
+        if kept_count == 0 and total_extracted > 0:
+            err_msg = f"All {total_extracted} extracted frames were filtered out as blurry (threshold={blur_threshold})."
+            logger.error(err_msg)
+            await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)
+            raise RuntimeError(err_msg)
+
+        logger.info(f"Job {job_id}: Blur filtering complete. Kept: {kept_count}, Rejected: {rejected_count}")
+        await self.update_job_status(job_id, "RUNNING", 90.0)
 
         # Copy OpenSfM config if present
         if os.path.exists(opensfm_config):
@@ -169,16 +206,20 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
             if not os.path.exists(target_config):
                 shutil.copy(opensfm_config, target_config)
 
-
         res_data = {
             "status": "success",
             "job_id": job_id,
             "dataset_name": dataset_name,
             "dataset_dir": dataset_dir,
             "images_dir": images_dir,
+            "rejected_dir": reject_dir if rejected_count > 0 else None,
             "total_extracted": total_extracted,
+            "kept_images": kept_count,
+            "rejected_images": rejected_count,
+            "blur_threshold": blur_threshold,
             "num_frames_requested": num_frames
         }
 
         await self.update_job_status(job_id, "COMPLETED", 100.0, result=res_data)
         return res_data
+
