@@ -31,19 +31,18 @@ async def test_opensfm_reconstruct_missing_images_raises(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_opensfm_reconstruct_missing_binary_raises(tmp_path):
+async def test_opensfm_reconstruct_missing_opensfm_library_raises(tmp_path):
     handler = OpenSfMReconstructTaskHandler()
     dataset_dir = tmp_path / "dataset"
     images_dir = dataset_dir / "images"
     images_dir.mkdir(parents=True)
     (images_dir / "img1.png").write_text("dummy")
 
-    payload = {"dataset_dir": str(dataset_dir), "opensfm_bin": "/non/existent/bin"}
+    payload = {"dataset_dir": str(dataset_dir)}
 
     with patch.object(handler, "update_job_status", new_callable=AsyncMock) as mock_update, \
-         patch("shutil.which", return_value=None), \
-         patch("os.path.exists", side_effect=lambda p: True if p in (str(dataset_dir), str(images_dir)) else False):
-        with pytest.raises(RuntimeError, match="No executable OpenSfM binary found"):
+         patch("app.services.worker.handlers.opensfm_reconstruct.HAS_OPENSFM", False):
+        with pytest.raises(RuntimeError, match="OpenSfM Python library is not available"):
             await handler.execute("job-123", payload)
         assert mock_update.called
 
@@ -56,21 +55,14 @@ async def test_opensfm_reconstruct_success(tmp_path):
     images_dir.mkdir(parents=True)
     (images_dir / "img1.png").write_text("dummy")
 
-    fake_bin = tmp_path / "opensfm_run_all"
-    fake_bin.write_text("#!/bin/bash\nexit 0")
-    fake_bin.chmod(0o755)
-
-    payload = {"dataset_dir": str(dataset_dir), "opensfm_bin": str(fake_bin)}
-
-    mock_proc = AsyncMock()
-    mock_proc.returncode = 0
-    mock_proc.communicate = AsyncMock(return_value=(b"Success", b""))
+    payload = {"dataset_dir": str(dataset_dir)}
 
     with patch.object(handler, "update_job_status", new_callable=AsyncMock) as mock_update, \
-         patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
+         patch("app.services.worker.handlers.opensfm_reconstruct.HAS_OPENSFM", True), \
+         patch.object(handler, "_run_opensfm_pipeline") as mock_pipeline:
         res = await handler.execute("job-123", payload)
 
         assert res["status"] == "success"
         assert res["dataset_dir"] == str(dataset_dir)
-        mock_exec.assert_called_once()
+        mock_pipeline.assert_called_once()
         mock_update.assert_any_call("job-123", "COMPLETED", 100.0, result=res)

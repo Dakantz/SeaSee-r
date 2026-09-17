@@ -10,8 +10,6 @@ from app.services.worker.handlers.base import BaseTaskHandler
 
 logger = logging.getLogger(__name__)
 
-OPENSFM_DEFAULT_BIN = "/home/tastegger/Documents/SeaSee-r/openSfM/openSfM_core/bin/opensfm_run_all"
-
 
 class FrameExtractionTaskHandler(BaseTaskHandler):
     """
@@ -64,7 +62,6 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
         num_frames = int(payload.get("num_frames", 500))
         video_dir = settings.video_dir
         output_dir = settings.opensfm_ingestion_dir
-        opensfm_bin = payload.get("opensfm_bin", OPENSFM_DEFAULT_BIN)
         opensfm_config = payload.get("opensfm_config") or settings.opensfm_config
 
         if not os.path.exists(video_dir):

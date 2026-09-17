@@ -14,22 +14,113 @@ from app.services.worker.handlers.base import BaseTaskHandler
 
 logger = logging.getLogger(__name__)
 
-OPENSFM_DEFAULT_BIN = "/home/tastegger/Documents/SeaSee-r/openSfM/openSfM_core/bin/opensfm_run_all"
+try:
+    import opensfm
+    import opensfm.dataset
+    import opensfm.actions.extract_metadata
+    import opensfm.actions.detect_features
+    import opensfm.actions.match_features
+    import opensfm.actions.create_tracks
+    import opensfm.actions.reconstruct
+    import opensfm.actions.mesh
+    import opensfm.actions.undistort
+    import opensfm.actions.dense_clustering
+    import opensfm.actions.compute_depthmaps
+    import opensfm.actions.fuse_depthmaps
+    import opensfm.actions.dense_merging
+    import opensfm.actions.compute_statistics
+    import opensfm.actions.export_report
+    from opensfm import actions, reconstruction
+    from opensfm.dataset import DataSet
+    HAS_OPENSFM = True
+except ImportError:
+    HAS_OPENSFM = False
 
 
 class OpenSfMReconstructTaskHandler(BaseTaskHandler):
     """
-    Worker task handler for running OpenSfM 3D reconstruction (opensfm_run_all)
-    on a dataset directory containing extracted images.
+    Worker task handler for running OpenSfM 3D reconstruction
+    directly via Python API on a dataset directory containing extracted images.
     Targeted to execute inside the dedicated OpenSfM worker container.
     """
     task_types = ["opensfm_reconstruct"]
+
+    def _run_opensfm_pipeline(self, dataset_dir: str, loop: asyncio.AbstractEventLoop, job_id: str) -> None:
+        """
+        Executes all OpenSfM pipeline steps sequentially via Python API.
+        Progress updates are dispatched back to the main event loop.
+        """
+        dataset = DataSet(dataset_dir)
+
+        def update_progress(pct: float, step_name: str) -> None:
+            logger.info(f"OpenSfM step: {step_name} ({pct}%)")
+            asyncio.run_coroutine_threadsafe(
+                self.update_job_status(job_id, "RUNNING", pct),
+                loop
+            )
+
+        # 1. Extraction, Detection, Matching, Tracks
+        update_progress(30.0, "extract_metadata")
+        actions.extract_metadata.run_dataset(dataset)
+
+        update_progress(35.0, "detect_features")
+        actions.detect_features.run_dataset(dataset)
+
+        update_progress(40.0, "match_features")
+        actions.match_features.run_dataset(dataset)
+
+        update_progress(45.0, "create_tracks")
+        actions.create_tracks.run_dataset(dataset)
+
+        # 2. Incremental SfM Reconstruction & Mesh
+        update_progress(50.0, "reconstruct")
+        actions.reconstruct.run_dataset(dataset, algorithm=reconstruction.ReconstructionAlgorithm.INCREMENTAL)
+
+        update_progress(65.0, "mesh")
+        actions.mesh.run_dataset(dataset)
+
+        # 3. Dense reconstruction for primary reconstruction component (index 0)
+        update_progress(70.0, "undistort (component 0)")
+        actions.undistort.run_dataset(dataset, reconstruction_index=0, output="undistorted")
+
+        update_progress(75.0, "dense_clustering (component 0)")
+        actions.dense_clustering.run_dataset(dataset, subfolder="undistorted")
+
+        update_progress(80.0, "compute_depthmaps (component 0)")
+        actions.compute_depthmaps.run_dataset(dataset, subfolder="undistorted", interactive=False)
+
+        update_progress(85.0, "fuse_depthmaps (component 0)")
+        actions.fuse_depthmaps.run_dataset(dataset, subfolder="undistorted")
+
+        update_progress(88.0, "dense_merging (component 0)")
+        actions.dense_merging.run_dataset(dataset, subfolder="undistorted")
+
+        # Process additional reconstruction components if present
+        if dataset.reconstruction_exists():
+            reconstructions = dataset.load_reconstruction()
+            num_recs = len(reconstructions)
+            if num_recs > 1:
+                logger.info(f"OpenSfM found {num_recs} reconstruction component(s).")
+            for i in range(1, num_recs):
+                subfolder = f"undistorted_{i}"
+                logger.info(f"Processing Reconstruction Component {i} -> Folder: {subfolder}")
+                actions.undistort.run_dataset(dataset, reconstruction_index=i, output=subfolder)
+                actions.dense_clustering.run_dataset(dataset, subfolder=subfolder)
+                actions.compute_depthmaps.run_dataset(dataset, subfolder=subfolder, interactive=False)
+                actions.fuse_depthmaps.run_dataset(dataset, subfolder=subfolder)
+                actions.dense_merging.run_dataset(dataset, subfolder=subfolder)
+
+        # 4. Statistics and Report
+        update_progress(92.0, "compute_statistics")
+        actions.compute_statistics.run_dataset(dataset)
+
+        update_progress(96.0, "export_report")
+        actions.export_report.run_dataset(dataset)
 
     async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:
         await self.update_job_status(job_id, "RUNNING", 10.0)
 
         dataset_dir = payload.get("dataset_dir") or payload.get("folder_path")
-        opensfm_bin = payload.get("opensfm_bin", OPENSFM_DEFAULT_BIN)
         opensfm_config = payload.get("opensfm_config") or settings.opensfm_config
 
         # If dataset_dir is missing, check parent job results in DB
@@ -79,42 +170,22 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
         if not os.path.exists(target_config) and os.path.exists(opensfm_config):
             shutil.copy(opensfm_config, target_config)
 
-        # Resolve OpenSfM binary path
-        bin_candidates = [
-            opensfm_bin,
-            "/source/OpenSfM/bin/opensfm_run_all",
-            shutil.which("opensfm_run_all"),
-            "/opt/conda/envs/opensfm/bin/opensfm_run_all",
-            "/home/tastegger/Documents/SeaSee-r/openSfM/openSfM_core/bin/opensfm_run_all"
-        ]
-        resolved_bin = None
-        for b in bin_candidates:
-            if b and os.path.exists(b) and os.access(b, os.X_OK):
-                resolved_bin = b
-                break
-
-        if not resolved_bin:
-            err_msg = f"No executable OpenSfM binary found among candidates: {bin_candidates}. Ensure task is running on OpenSfM worker container."
+        if not HAS_OPENSFM:
+            err_msg = "OpenSfM Python library is not available in current Python environment. Ensure task is running inside OpenSfM worker container."
             logger.error(err_msg)
             await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)
             raise RuntimeError(err_msg)
 
-        logger.info(f"Executing OpenSfM binary '{resolved_bin}' on dataset: {dataset_dir}")
-        await self.update_job_status(job_id, "RUNNING", 40.0)
+        logger.info(f"Executing OpenSfM reconstruction via Python API on dataset: {dataset_dir}")
+        loop = asyncio.get_running_loop()
 
-        proc = await asyncio.create_subprocess_exec(
-            resolved_bin,
-            dataset_dir,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await proc.communicate()
-
-        if proc.returncode != 0:
-            err_msg = f"OpenSfM reconstruction returned error code {proc.returncode}: {stderr.decode()}"
-            logger.error(err_msg)
+        try:
+            await asyncio.to_thread(self._run_opensfm_pipeline, dataset_dir, loop, job_id)
+        except Exception as proc_err:
+            err_msg = f"OpenSfM reconstruction failed: {proc_err}"
+            logger.error(err_msg, exc_info=True)
             await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)
-            raise RuntimeError(err_msg)
+            raise RuntimeError(err_msg) from proc_err
 
         logger.info(f"OpenSfM reconstruction completed successfully for {dataset_dir}")
         res_data = {
@@ -126,3 +197,4 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
 
         await self.update_job_status(job_id, "COMPLETED", 100.0, result=res_data)
         return res_data
+

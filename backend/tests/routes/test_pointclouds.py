@@ -198,8 +198,7 @@ def test_ingest_emodnet_append_tiff_file():
         f.write("dummy")
 
     from unittest.mock import patch
-    with patch("app.api.routes.pointclouds.Redis.from_url"), \
-         patch("app.api.routes.pointclouds.Queue"), \
+    with patch("app.api.routes.pointclouds.enqueue_job"), \
          patch("app.services.pointcloud.pdal.get_pointcloud_srs_and_stats", new=AsyncMock(return_value=({"min_x": -5, "max_x": 5, "min_y": -5, "max_y": 5, "min_z": -5, "max_z": 5}, 100, "1"))), \
          patch("app.services.pointcloud.pdal.check_bbox_within_or_overlapping", return_value=True), \
          patch("app.services.pointcloud.pdal.check_coordinate_systems_match", return_value=True), \
@@ -475,8 +474,7 @@ def test_ingest_opensfm_init_laz_file():
         json.dump([{"shots": {f"img_{i}.jpg": {} for i in range(10)}}], f)
 
     from unittest.mock import patch
-    with patch("app.api.routes.pointclouds.Redis.from_url"), \
-         patch("app.api.routes.pointclouds.Queue"):
+    with patch("app.api.routes.pointclouds.enqueue_job"):
         try:
             response = client.post("/pointclouds/ingest-opensfm/init?folder_name=test_folder")
             assert response.status_code == 200
@@ -539,8 +537,7 @@ def test_ingest_opensfm_init_multiple_reconstructions():
         ], f)
 
     from unittest.mock import patch
-    with patch("app.api.routes.pointclouds.Redis.from_url"), \
-         patch("app.api.routes.pointclouds.Queue"):
+    with patch("app.api.routes.pointclouds.enqueue_job"):
         try:
             response = client.post("/pointclouds/ingest-opensfm/init?folder_name=multi_rec_folder")
             assert response.status_code == 200

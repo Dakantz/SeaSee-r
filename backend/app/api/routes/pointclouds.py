@@ -3,8 +3,7 @@ import logging
 import os
 import json
 import uuid
-from redis import Redis
-from rq import Queue
+from app.utils.queue_utils import enqueue_job
 
 from typing import List, Tuple, Union, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -356,9 +355,6 @@ async def ingest_opensfm_init(
     if not os.path.exists(ingestion_dir) or not os.path.isdir(ingestion_dir):
         raise HTTPException(status_code=404, detail="OpenSfM ingestion directory not found.")
 
-    redis_conn = Redis.from_url(settings.redis_url)
-    q = Queue("pointcloud_tasks", connection=redis_conn)
-
     jobs_created = []
 
     for f_name in os.listdir(ingestion_dir):
@@ -421,12 +417,7 @@ async def ingest_opensfm_init(
                         await db.commit()
                         await db.refresh(job_record)
                         
-                        q.enqueue(
-                            "app.services.worker.tasks.run_background_job",
-                            str(job_record.id),
-                            job_id=str(job_record.id),
-                            job_timeout=settings.job_timeout
-                        )
+                        enqueue_job(job_record.id, job_record.task_type)
                         
                         jobs_created.append({
                             "folder": f_name,
@@ -486,9 +477,6 @@ async def ingest_opensfm_append(
     }
     existing_srs = str(existing_pc.pcid)
 
-    redis_conn = Redis.from_url(settings.redis_url)
-    q = Queue("pointcloud_tasks", connection=redis_conn)
-
     jobs_created = []
     skipped_folders = []
 
@@ -540,12 +528,7 @@ async def ingest_opensfm_append(
                 await db.commit()
                 await db.refresh(job_record)
 
-                q.enqueue(
-                    "app.services.worker.tasks.run_background_job",
-                    str(job_record.id),
-                    job_id=str(job_record.id),
-                    job_timeout=settings.job_timeout
-                )
+                enqueue_job(job_record.id, job_record.task_type)
 
                 jobs_created.append({
                     "folder": f_name,
@@ -592,9 +575,6 @@ async def ingest_emodnet_init(
     if not os.path.exists(ingestion_dir) or not os.path.isdir(ingestion_dir):
         raise HTTPException(status_code=404, detail="EMODnet ingestion directory not found.")
 
-    redis_conn = Redis.from_url(settings.redis_url)
-    q = Queue("pointcloud_tasks", connection=redis_conn)
-
     target_name = file_name or filename or file_path or folder_name
 
     items_to_process = []
@@ -635,12 +615,7 @@ async def ingest_emodnet_init(
             await db.commit()
             await db.refresh(job_record)
 
-            q.enqueue(
-                "app.services.worker.tasks.run_background_job",
-                str(job_record.id),
-                job_id=str(job_record.id),
-                job_timeout=settings.job_timeout
-            )
+            enqueue_job(job_record.id, job_record.task_type)
 
             jobs_created.append({
                 "folder": f_name,
@@ -698,9 +673,6 @@ async def ingest_emodnet_append(
         "max_z": existing_pc.max_z,
     }
     existing_srs = str(existing_pc.pcid)
-
-    redis_conn = Redis.from_url(settings.redis_url)
-    q = Queue("pointcloud_tasks", connection=redis_conn)
 
     target_name = file_name or filename or file_path or folder_name
 
@@ -760,12 +732,7 @@ async def ingest_emodnet_append(
             await db.commit()
             await db.refresh(job_record)
 
-            q.enqueue(
-                "app.services.worker.tasks.run_background_job",
-                str(job_record.id),
-                job_id=str(job_record.id),
-                job_timeout=settings.job_timeout
-            )
+            enqueue_job(job_record.id, job_record.task_type)
 
             jobs_created.append({
                 "folder": f_name,

@@ -77,16 +77,8 @@ async def _process_job_dependency_updates(session, job_id_str: str, status: str)
 
                         # Auto-enqueue dependent job
                         try:
-                            from app.services.worker.queue_utils import get_queue_name_for_task_type
-                            queue_name = get_queue_name_for_task_type(dep_job.task_type)
-                            redis_conn = Redis.from_url(settings.redis_url)
-                            q = Queue(queue_name, connection=redis_conn)
-                            q.enqueue(
-                                "app.services.worker.tasks.run_background_job",
-                                str(dep_job.id),
-                                job_id=str(dep_job.id),
-                                job_timeout=settings.job_timeout
-                            )
+                            from app.utils.queue_utils import enqueue_job
+                            enqueue_job(dep_job.id, dep_job.task_type)
                         except Exception as e:
                             logger.warning(f"Could not enqueue dependent job {dep_job.id} to Redis Queue: {e}")
 
@@ -131,6 +123,64 @@ async def _process_job_dependency_updates(session, job_id_str: str, status: str)
             await session.commit()
 
 
+def handle_rq_job_failure(job, connection, type, value, traceback):
+    """
+    Callback invoked by the parent RQ worker process whenever a job fails
+    (including when a child work-horse process crashes abruptly via SIGABRT/SIGSEGV).
+    Ensures PostgreSQL database and downstream dependencies reflect JobStatus.FAILED.
+    """
+    job_id_str = str(job.id)
+    error_msg = str(value) if value else (str(type) if type else "Job execution failed in Redis Queue")
+    if job.exc_info and str(job.exc_info) not in error_msg:
+        error_msg = f"{error_msg} | {job.exc_info}"
+
+    logger.error(f"RQ failure callback triggered for job {job_id_str}: {error_msg}")
+    try:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        coro = _update_job_status(job_id_str, "FAILED", error_message=error_msg)
+        if loop and loop.is_running():
+            asyncio.create_task(coro)
+        else:
+            asyncio.run(coro)
+    except Exception as e:
+        logger.error(f"Failed to update DB job status in RQ on_failure callback for {job_id_str}: {e}")
+
+
+
+async def sync_job_status_from_redis(session, job: Job) -> bool:
+    """
+    Reconciles PostgreSQL job record with Redis RQ status.
+    If DB status is PENDING or RUNNING but Redis RQ status is FAILED,
+    updates DB status to FAILED and invokes dependency updates.
+    Returns True if status was updated, False otherwise.
+    """
+    from app.models.job import JobStatus
+    if job.status not in (JobStatus.PENDING, JobStatus.RUNNING):
+        return False
+
+    try:
+        from redis import Redis
+        from rq.job import Job as RQJob
+        from app.core.config import settings
+
+        redis_conn = Redis.from_url(settings.redis_url)
+        rq_job = RQJob.fetch(str(job.id), connection=redis_conn)
+        if rq_job and rq_job.is_failed:
+            err_msg = rq_job.exc_info or "Job failed in Redis Queue / worker process terminated"
+            job.status = JobStatus.FAILED
+            job.error_message = err_msg
+            job.completed_at = datetime.utcnow()
+            await session.commit()
+            await _process_job_dependency_updates(session, str(job.id), "FAILED")
+            return True
+    except Exception as e:
+        logger.debug(f"Redis status check skipped for job {job.id}: {e}")
+    return False
+
 
 def run_background_job(job_id_str: str) -> Dict[str, Any]:
     """
@@ -169,4 +219,5 @@ async def _run_background_job_async(job_id_str: str) -> Dict[str, Any]:
         except Exception as update_err:
             logger.error(f"Failed to update job status for {job_id_str}: {update_err}")
         raise
+
 

@@ -20,18 +20,11 @@ router = APIRouter(
 
 def _enqueue_job_to_redis(job_id: UUID, task_type: Optional[str] = None) -> None:
     try:
-        from app.services.worker.queue_utils import get_queue_name_for_task_type
-        redis_conn = Redis.from_url(settings.redis_url)
-        queue_name = get_queue_name_for_task_type(task_type)
-        q = Queue(queue_name, connection=redis_conn)
-        q.enqueue(
-            "app.services.worker.tasks.run_background_job",
-            str(job_id),
-            job_id=str(job_id),
-            job_timeout=settings.job_timeout
-        )
+        from app.utils.queue_utils import enqueue_job
+        enqueue_job(job_id, task_type)
     except Exception as e:
         print(f"Warning: Could not enqueue job {job_id} to Redis Queue: {e}")
+
 
 
 @router.post("", response_model=JobResponse, status_code=201)
@@ -221,11 +214,15 @@ async def list_jobs(
     """
     Retrieve a list of all jobs. Optionally filter by pipeline_id.
     """
+    from app.services.worker.tasks import sync_job_status_from_redis
     stmt = select(Job).order_by(Job.created_at.desc())
     if pipeline_id:
         stmt = stmt.where(Job.pipeline_id == pipeline_id)
     result = await db.execute(stmt)
-    return result.scalars().all()
+    jobs = result.scalars().all()
+    for j in jobs:
+        await sync_job_status_from_redis(db, j)
+    return jobs
 
 
 @router.get("/{job_id}", response_model=JobResponse)
@@ -236,11 +233,14 @@ async def get_job(
     """
     Get details and current status of a specific job.
     """
+    from app.services.worker.tasks import sync_job_status_from_redis
     result = await db.execute(select(Job).where(Job.id == job_id))
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
+    await sync_job_status_from_redis(db, job)
     return job
+
 
 
 @router.delete("/pending", status_code=200)

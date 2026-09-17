@@ -51,7 +51,8 @@ RUN userdel -f ubuntu || true && \
 # Copy backend application code
 COPY --chown=appuser:appuser backend /app
 
-# Add opensfm conda environment binaries to PATH
+# Add opensfm conda environment binaries to PATH and preload libtcmalloc (mandatory for OpenSfM C++ bindings)
 ENV PATH=/opt/conda/envs/opensfm/bin:$PATH
+ENV LD_PRELOAD=/opt/conda/envs/opensfm/lib/libtcmalloc.so
 
 USER appuser

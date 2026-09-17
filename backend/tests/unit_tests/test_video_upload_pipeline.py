@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 from app.models.job import JobStatus, PipelineStatus
 from app.schemas.job import PipelineCreate, PipelineJobCreate
 from app.services.worker.pipeline_service import build_pipeline_and_jobs
-from app.services.worker.queue_utils import get_queue_name_for_task_type
+from app.utils.queue_utils import get_queue_name_for_task_type
 
 def test_video_upload_pipeline_dag_building():
     file_name = "test_rov_video.mp4"

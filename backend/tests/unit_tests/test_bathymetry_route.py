@@ -83,8 +83,7 @@ def test_upload_emodnet_csv_success():
     app.dependency_overrides[get_db_session] = lambda: mock_db
 
     try:
-        with patch("app.api.routes.bathymetry.Redis.from_url"), \
-             patch("app.api.routes.bathymetry.Queue"):
+        with patch("app.api.routes.bathymetry.enqueue_job"):
             response = client.post(
                 "/bathymetry/upload-emodnet-csv",
                 files={"file": ("test.csv", b"X,Y,Z\n1,2,3\n", "text/csv")}
