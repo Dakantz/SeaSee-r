@@ -28,8 +28,8 @@ The Job Pipeline and Dependency system allows batch creation of tasks, defining 
 ## API Endpoints
 
 - `POST /jobs`: Create a single job with optional `depends_on` parent UUID list.
-- `POST /jobs/{job_id}/cancel`: Cancel an active job (`RUNNING`, `PENDING`, or `BLOCKED`) and cascade updates to dependent jobs.
-- `POST /jobs/{job_id}/retry`: Retry a failed or cancelled job.
+- `POST /jobs/{job_id}/cancel`: Cancel a job. If the job is part of a pipeline, cancels all uncompleted jobs (`PENDING`, `RUNNING`, `BLOCKED`, `FAILED`) in that pipeline. Otherwise, cancels the standalone job and cascades to dependent jobs.
+- `POST /jobs/{job_id}/retry`: Retry a job. If the job is part of a pipeline, retries all uncompleted jobs in that pipeline by resetting their progress/error state and re-evaluating DAG dependencies (`PENDING` if dependencies are met, `BLOCKED` otherwise). Otherwise, retries the standalone job.
 - `POST /jobs/pipeline`: Create a multi-job pipeline with dependency resolution.
 - `GET /jobs/pipelines`: List all job pipelines.
 - `GET /jobs/pipelines/{pipeline_id}`: Retrieve a specific pipeline and its constituent jobs.

@@ -166,14 +166,10 @@ async def delete_pipeline(
     return None
 
 
-@router.post("/pipelines/{pipeline_id}/retry", response_model=PipelineResponse)
-async def retry_pipeline(
+async def _execute_pipeline_retry(
     pipeline_id: UUID,
-    db: AsyncSession = Depends(get_db_session)
-):
-    """
-    Retry all failed jobs within a pipeline and re-evaluate dependent jobs.
-    """
+    db: AsyncSession
+) -> Pipeline:
     result = await db.execute(
         select(Pipeline).options(selectinload(Pipeline.jobs)).where(Pipeline.id == pipeline_id)
     )
@@ -181,29 +177,60 @@ async def retry_pipeline(
     if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found.")
 
-    failed_jobs = [j for j in pipeline.jobs if j.status in (JobStatus.FAILED, JobStatus.CANCELLED)]
-    if not failed_jobs:
-        raise HTTPException(status_code=400, detail="Pipeline has no failed or cancelled jobs to retry.")
+    uncompleted_jobs = [j for j in pipeline.jobs if j.status != JobStatus.COMPLETED]
+    if not uncompleted_jobs:
+        raise HTTPException(status_code=400, detail="Pipeline has no uncompleted jobs to retry.")
 
-    for job in failed_jobs:
-        job.status = JobStatus.PENDING
+    all_parent_uuids = set()
+    for j in uncompleted_jobs:
+        for dep in (j.depends_on or []):
+            all_parent_uuids.add(str(dep))
+
+    pipeline_job_ids = {str(j.id) for j in pipeline.jobs}
+    external_parent_uuids = [UUID(u) for u in all_parent_uuids if u not in pipeline_job_ids]
+
+    completed_parent_ids = {str(j.id) for j in pipeline.jobs if j.status == JobStatus.COMPLETED}
+    if external_parent_uuids:
+        ext_res = await db.execute(select(Job.id, Job.status).where(Job.id.in_(external_parent_uuids)))
+        for ext_id, ext_status in ext_res.all():
+            if ext_status == JobStatus.COMPLETED:
+                completed_parent_ids.add(str(ext_id))
+
+    for job in uncompleted_jobs:
         job.progress = 0.0
         job.error_message = None
         job.started_at = None
         job.completed_at = None
         job.result = None
 
+    ready_jobs = []
+    for job in uncompleted_jobs:
+        parent_uuids = [str(dep) for dep in (job.depends_on or [])]
+        if not parent_uuids or all(dep in completed_parent_ids for dep in parent_uuids):
+            job.status = JobStatus.PENDING
+            ready_jobs.append(job)
+        else:
+            job.status = JobStatus.BLOCKED
+
     pipeline.status = PipelineStatus.RUNNING
     await db.commit()
 
-    for job in failed_jobs:
+    for job in ready_jobs:
         _enqueue_job_to_redis(job.id, job.task_type)
 
-    # Reload pipeline
-    result = await db.execute(
-        select(Pipeline).options(selectinload(Pipeline.jobs)).where(Pipeline.id == pipeline_id)
-    )
-    return result.scalar_one()
+    return pipeline
+
+
+@router.post("/pipelines/{pipeline_id}/retry", response_model=PipelineResponse)
+async def retry_pipeline(
+    pipeline_id: UUID,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Retry all uncompleted jobs within a pipeline and re-evaluate dependent jobs.
+    """
+    return await _execute_pipeline_retry(pipeline_id, db)
+
 
 
 @router.get("", response_model=List[JobResponse])
@@ -294,32 +321,38 @@ async def retry_job(
     db: AsyncSession = Depends(get_db_session)
 ):
     """
-    Retry a job that has failed. Resets status to PENDING and re-enqueues it in Redis RQ.
+    Retry a job. If the job belongs to a pipeline, retries all uncompleted jobs in that pipeline,
+    re-evaluating their DAG dependencies. Otherwise, retries the standalone job.
     """
     result = await db.execute(select(Job).where(Job.id == job_id))
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
 
-    if job.status not in (JobStatus.FAILED, JobStatus.CANCELLED):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Only failed or cancelled jobs can be retried. Current job status: '{job.status}'"
-        )
+    if job.pipeline_id is not None:
+        await _execute_pipeline_retry(job.pipeline_id, db)
+        await db.refresh(job)
+        return job
+    else:
+        if job.status not in (JobStatus.FAILED, JobStatus.CANCELLED):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Only failed or cancelled jobs can be retried. Current job status: '{job.status}'"
+            )
 
-    job.status = JobStatus.PENDING
-    job.progress = 0.0
-    job.error_message = None
-    job.started_at = None
-    job.completed_at = None
-    job.result = None
+        job.status = JobStatus.PENDING
+        job.progress = 0.0
+        job.error_message = None
+        job.started_at = None
+        job.completed_at = None
+        job.result = None
 
-    await db.commit()
-    await db.refresh(job)
+        await db.commit()
+        await db.refresh(job)
 
-    _enqueue_job_to_redis(job.id, job.task_type)
+        _enqueue_job_to_redis(job.id, job.task_type)
 
-    return job
+        return job
 
 
 @router.post("/{job_id}/cancel", response_model=JobResponse)
@@ -328,7 +361,8 @@ async def cancel_job(
     db: AsyncSession = Depends(get_db_session)
 ):
     """
-    Cancel an active job (PENDING, RUNNING, or BLOCKED). Sets status to CANCELLED and cascades to dependent jobs.
+    Cancel a job. If the job belongs to a pipeline, cancels all uncompleted jobs in that pipeline.
+    Otherwise, cancels the active standalone job and cascades to dependent jobs.
     """
     from datetime import datetime
     from app.services.worker.tasks import _process_job_dependency_updates
@@ -338,24 +372,53 @@ async def cancel_job(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
 
-    if job.status not in (JobStatus.PENDING, JobStatus.RUNNING, JobStatus.BLOCKED):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Only active jobs (PENDING, RUNNING, BLOCKED) can be cancelled. Current job status: '{job.status}'"
+    if job.pipeline_id is not None:
+        p_res = await db.execute(
+            select(Pipeline).options(selectinload(Pipeline.jobs)).where(Pipeline.id == job.pipeline_id)
         )
+        pipeline = p_res.scalar_one_or_none()
+        if not pipeline:
+            raise HTTPException(status_code=404, detail="Pipeline not found.")
 
-    job.status = JobStatus.CANCELLED
-    job.completed_at = datetime.utcnow()
-    if not job.error_message:
-        job.error_message = "Job was cancelled by user."
+        uncompleted_jobs = [j for j in pipeline.jobs if j.status != JobStatus.COMPLETED]
+        if not uncompleted_jobs:
+            raise HTTPException(
+                status_code=400,
+                detail="Pipeline has no uncompleted jobs to cancel."
+            )
 
-    await db.commit()
-    await db.refresh(job)
+        now = datetime.utcnow()
+        for j in uncompleted_jobs:
+            j.status = JobStatus.CANCELLED
+            if not j.completed_at:
+                j.completed_at = now
+            if not j.error_message:
+                j.error_message = "Job was cancelled by user."
 
-    try:
-        await _process_job_dependency_updates(db, str(job.id), "CANCELLED")
-    except Exception as e:
-        print(f"Warning: Failed to process dependency updates for cancelled job {job.id}: {e}")
+        pipeline.status = PipelineStatus.CANCELLED
+        await db.commit()
+        await db.refresh(job)
 
-    return job
+        return job
+    else:
+        if job.status not in (JobStatus.PENDING, JobStatus.RUNNING, JobStatus.BLOCKED):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Only active jobs (PENDING, RUNNING, BLOCKED) can be cancelled. Current job status: '{job.status}'"
+            )
+
+        job.status = JobStatus.CANCELLED
+        job.completed_at = datetime.utcnow()
+        if not job.error_message:
+            job.error_message = "Job was cancelled by user."
+
+        await db.commit()
+        await db.refresh(job)
+
+        try:
+            await _process_job_dependency_updates(db, str(job.id), "CANCELLED")
+        except Exception as e:
+            print(f"Warning: Failed to process dependency updates for cancelled job {job.id}: {e}")
+
+        return job
 

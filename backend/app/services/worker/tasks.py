@@ -113,11 +113,13 @@ async def _process_job_dependency_updates(session, job_id_str: str, status: str)
             pj_res = await session.execute(select(Job).where(Job.pipeline_id == pipeline_id))
             pipeline_jobs = pj_res.scalars().all()
 
-            if any(j.status in (JobStatus.FAILED, JobStatus.CANCELLED) for j in pipeline_jobs):
+            if any(j.status == JobStatus.FAILED for j in pipeline_jobs):
                 pipeline.status = PipelineStatus.FAILED
+            elif any(j.status == JobStatus.CANCELLED for j in pipeline_jobs):
+                pipeline.status = PipelineStatus.CANCELLED
             elif all(j.status == JobStatus.COMPLETED for j in pipeline_jobs):
                 pipeline.status = PipelineStatus.COMPLETED
-            elif any(j.status in (JobStatus.RUNNING, JobStatus.PENDING) for j in pipeline_jobs):
+            elif any(j.status in (JobStatus.RUNNING, JobStatus.PENDING, JobStatus.BLOCKED) for j in pipeline_jobs):
                 pipeline.status = PipelineStatus.RUNNING
 
             await session.commit()

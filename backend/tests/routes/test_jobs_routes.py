@@ -130,6 +130,7 @@ def test_retry_job_not_failed(client):
     mock_job.id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
     mock_job.name = "test_job"
     mock_job.status = "RUNNING"
+    mock_job.pipeline_id = None
 
     mock_db_session.execute.return_value.scalar_one_or_none.return_value = mock_job
 
@@ -203,6 +204,7 @@ def test_cancel_job_already_completed(client):
     mock_job.id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
     mock_job.name = "test_job"
     mock_job.status = JobStatus.COMPLETED
+    mock_job.pipeline_id = None
 
     mock_db_session.execute.return_value.scalar_one_or_none.return_value = mock_job
 
@@ -217,6 +219,146 @@ def test_cancel_job_not_found(client):
     response = client.post("/jobs/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/cancel")
     assert response.status_code == 404
     assert response.json()["detail"] == "Job not found."
+
+
+def test_cancel_job_in_pipeline(client):
+    pipeline_id = "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
+    job1_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    job2_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
+    job3_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33"
+
+    mock_job1 = MagicMock()
+    mock_job1.id = job1_id
+    mock_job1.name = "job1"
+    mock_job1.task_type = "task"
+    mock_job1.status = JobStatus.COMPLETED
+    mock_job1.progress = 100.0
+    mock_job1.created_at = "2026-07-15T11:00:00Z"
+    mock_job1.started_at = None
+    mock_job1.completed_at = "2026-07-15T11:00:00Z"
+    mock_job1.payload = None
+    mock_job1.result = None
+    mock_job1.error_message = None
+    mock_job1.pipeline_id = pipeline_id
+    mock_job1.depends_on = []
+
+    mock_job2 = MagicMock()
+    mock_job2.id = job2_id
+    mock_job2.name = "job2"
+    mock_job2.task_type = "task"
+    mock_job2.status = JobStatus.RUNNING
+    mock_job2.progress = 50.0
+    mock_job2.created_at = "2026-07-15T11:00:00Z"
+    mock_job2.started_at = None
+    mock_job2.completed_at = None
+    mock_job2.payload = None
+    mock_job2.result = None
+    mock_job2.error_message = None
+    mock_job2.pipeline_id = pipeline_id
+    mock_job2.depends_on = [job1_id]
+
+    mock_job3 = MagicMock()
+    mock_job3.id = job3_id
+    mock_job3.name = "job3"
+    mock_job3.task_type = "task"
+    mock_job3.status = JobStatus.BLOCKED
+    mock_job3.progress = 0.0
+    mock_job3.created_at = "2026-07-15T11:00:00Z"
+    mock_job3.started_at = None
+    mock_job3.completed_at = None
+    mock_job3.payload = None
+    mock_job3.result = None
+    mock_job3.error_message = None
+    mock_job3.pipeline_id = pipeline_id
+    mock_job3.depends_on = [job2_id]
+
+    mock_pipeline = MagicMock()
+    mock_pipeline.id = pipeline_id
+    mock_pipeline.jobs = [mock_job1, mock_job2, mock_job3]
+    mock_pipeline.status = "RUNNING"
+
+    mock_db_session.execute.side_effect = [
+        MagicMock(scalar_one_or_none=MagicMock(return_value=mock_job2)),
+        MagicMock(scalar_one_or_none=MagicMock(return_value=mock_pipeline))
+    ]
+
+    response = client.post(f"/jobs/{job2_id}/cancel")
+    assert response.status_code == 200
+
+    assert mock_job1.status == JobStatus.COMPLETED
+    assert mock_job2.status == JobStatus.CANCELLED
+    assert mock_job3.status == JobStatus.CANCELLED
+    assert mock_pipeline.status == "CANCELLED"
+
+
+def test_retry_job_in_pipeline(client):
+    pipeline_id = "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
+    job1_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    job2_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
+    job3_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33"
+
+    mock_job1 = MagicMock()
+    mock_job1.id = job1_id
+    mock_job1.name = "job1"
+    mock_job1.task_type = "task"
+    mock_job1.status = JobStatus.COMPLETED
+    mock_job1.progress = 100.0
+    mock_job1.created_at = "2026-07-15T11:00:00Z"
+    mock_job1.started_at = None
+    mock_job1.completed_at = None
+    mock_job1.payload = None
+    mock_job1.result = None
+    mock_job1.error_message = None
+    mock_job1.pipeline_id = pipeline_id
+    mock_job1.depends_on = []
+
+    mock_job2 = MagicMock()
+    mock_job2.id = job2_id
+    mock_job2.name = "job2"
+    mock_job2.task_type = "task"
+    mock_job2.status = JobStatus.FAILED
+    mock_job2.progress = 0.0
+    mock_job2.created_at = "2026-07-15T11:00:00Z"
+    mock_job2.started_at = None
+    mock_job2.completed_at = None
+    mock_job2.payload = None
+    mock_job2.result = None
+    mock_job2.error_message = "Error"
+    mock_job2.pipeline_id = pipeline_id
+    mock_job2.depends_on = [job1_id]
+
+    mock_job3 = MagicMock()
+    mock_job3.id = job3_id
+    mock_job3.name = "job3"
+    mock_job3.task_type = "task"
+    mock_job3.status = JobStatus.FAILED
+    mock_job3.progress = 0.0
+    mock_job3.created_at = "2026-07-15T11:00:00Z"
+    mock_job3.started_at = None
+    mock_job3.completed_at = None
+    mock_job3.payload = None
+    mock_job3.result = None
+    mock_job3.error_message = "Parent error"
+    mock_job3.pipeline_id = pipeline_id
+    mock_job3.depends_on = [job2_id]
+
+    mock_pipeline = MagicMock()
+    mock_pipeline.id = pipeline_id
+    mock_pipeline.jobs = [mock_job1, mock_job2, mock_job3]
+
+    mock_db_session.execute.side_effect = [
+        MagicMock(scalar_one_or_none=MagicMock(return_value=mock_job2)),
+        MagicMock(scalar_one_or_none=MagicMock(return_value=mock_pipeline))
+    ]
+
+    response = client.post(f"/jobs/{job2_id}/retry")
+    assert response.status_code == 200
+
+    assert mock_job1.status == JobStatus.COMPLETED
+    assert mock_job2.status == JobStatus.PENDING
+    assert mock_job3.status == JobStatus.BLOCKED
+    assert mock_pipeline.status == "RUNNING"
+
 
 
 
