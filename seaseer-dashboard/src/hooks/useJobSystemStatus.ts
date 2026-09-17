@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { listJobs, listPipelines } from '../client';
+import { listPipelines } from '../client';
 import type { JobResponse, PipelineResponse } from '../client';
 
 export interface UseJobSystemStatusOptions {
   /**
-   * Maximum number of recent jobs to fetch.
-   * Appended to GET /jobs?limit=X to optimize payload size.
+   * Maximum number of recent pipelines to fetch.
    * @default 10
    */
   limit?: number;
@@ -35,7 +34,7 @@ export interface UseJobSystemStatusOptions {
 }
 
 export interface UseJobSystemStatusReturn {
-  /** List of recent jobs */
+  /** List of all jobs from pipelines */
   jobs: JobResponse[];
 
   /** List of job pipelines */
@@ -104,30 +103,9 @@ export function useJobSystemStatus({
     }
 
     try {
-      // Fetch both jobs and pipelines in parallel
-      const [jobsRes, pipelinesRes] = await Promise.all([
-        listJobs({ query: { limit } as any }).catch(() => null),
-        listPipelines().catch(() => null),
-      ]);
-
-      if (!isMountedRef.current) return;
-
-      let fetchedJobs: JobResponse[] = [];
       let fetchedPipelines: PipelineResponse[] = [];
 
-      if (jobsRes?.data && Array.isArray(jobsRes.data)) {
-        fetchedJobs = [...jobsRes.data].sort(
-          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-      } else {
-        // Direct fetch fallback for jobs
-        try {
-          const fbJobsRes = await fetch(`/jobs?limit=${limit}`);
-          if (fbJobsRes.ok) {
-            fetchedJobs = await fbJobsRes.json();
-          }
-        } catch (_) {}
-      }
+      const pipelinesRes = await listPipelines().catch(() => null);
 
       if (pipelinesRes?.data && Array.isArray(pipelinesRes.data)) {
         fetchedPipelines = [...pipelinesRes.data].sort(
@@ -142,6 +120,15 @@ export function useJobSystemStatus({
           }
         } catch (_) {}
       }
+
+      if (limit > 0 && fetchedPipelines.length > limit) {
+        fetchedPipelines = fetchedPipelines.slice(0, limit);
+      }
+
+      // Extract all constituent jobs from pipelines
+      const fetchedJobs = fetchedPipelines.flatMap((p) => p.jobs || []);
+
+      if (!isMountedRef.current) return;
 
       setJobs(fetchedJobs);
       setPipelines(fetchedPipelines);
@@ -201,4 +188,3 @@ export function useJobSystemStatus({
     refetch: fetchData,
   };
 }
-

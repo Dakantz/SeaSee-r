@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional
 from sqlalchemy import update, select
 
 from app.core.database import async_session
-from app.models.job import Job
+from app.models.job import Job, JobStatus
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +15,24 @@ async def _update_job_status(
     progress: float = 0.0,
     error_message: Optional[str] = None,
     result: Optional[dict] = None
-):
-    """Updates job status, progress percentage, error message, and results in PostgreSQL, and processes dependency queues."""
+) -> bool:
+    """Updates job status, progress percentage, error message, and results in PostgreSQL, and processes dependency queues.
+    Returns True if status update succeeded, or False if job is CANCELLED and non-CANCELLED update was ignored.
+    """
+    import uuid
     async with async_session() as session:
+        try:
+            job_uuid = uuid.UUID(job_id_str)
+            res = await session.execute(select(Job.status).where(Job.id == job_uuid))
+            current_status = res.scalar_one_or_none()
+            if current_status == JobStatus.CANCELLED and status not in ("CANCELLED",):
+                logger.info(f"Job {job_id_str} is CANCELLED. Ignoring status update to '{status}'.")
+                return False
+        except (ValueError, TypeError, AttributeError):
+            pass
+        except Exception as check_err:
+            logger.warning(f"Could not verify job status for {job_id_str}: {check_err}")
+
         values = {
             "status": status,
             "progress": round(progress, 2),
@@ -36,6 +51,7 @@ async def _update_job_status(
 
         # Process dependency updates and pipeline status
         await _process_job_dependency_updates(session, job_id_str, status)
+        return True
 
 
 async def _process_job_dependency_updates(session, job_id_str: str, status: str):
@@ -55,7 +71,7 @@ async def _process_job_dependency_updates(session, job_id_str: str, status: str)
     pipeline_id = job.pipeline_id if job else None
 
     if status == "COMPLETED":
-        res = await session.execute(select(Job).where(Job.status == JobStatus.BLOCKED))
+        res = await session.execute(select(Job).where(Job.status.in_([JobStatus.BLOCKED, JobStatus.PENDING])))
         blocked_jobs = res.scalars().all()
 
         for dep_job in blocked_jobs:

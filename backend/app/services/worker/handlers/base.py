@@ -19,9 +19,9 @@ class BaseTaskHandler(ABC):
         progress: float = 0.0,
         error_message: Optional[str] = None,
         result: Optional[dict] = None
-    ) -> None:
-        """Updates job status, progress percentage, error message, and results in PostgreSQL."""
-        await _update_job_status(
+    ) -> bool:
+        """Updates job status, progress percentage, error message, and results in PostgreSQL. Returns False if job is CANCELLED."""
+        return await _update_job_status(
             job_id_str=job_id_str,
             status=status,
             progress=progress,

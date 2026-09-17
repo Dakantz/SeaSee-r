@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.database import async_session
-from app.models.job import Job
+from app.models.job import Job, JobStatus
 from app.services.worker.handlers.base import BaseTaskHandler
 
 logger = logging.getLogger(__name__)
@@ -54,10 +54,19 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
 
         def update_progress(pct: float, step_name: str) -> None:
             logger.info(f"OpenSfM step: {step_name} ({pct}%)")
-            asyncio.run_coroutine_threadsafe(
+            fut = asyncio.run_coroutine_threadsafe(
                 self.update_job_status(job_id, "RUNNING", pct),
                 loop
             )
+            try:
+                is_active = fut.result()
+                if is_active is False:
+                    logger.info(f"Job {job_id} was cancelled. Stopping OpenSfM reconstruction immediately.")
+                    raise RuntimeError(f"Job {job_id} was cancelled by user.")
+            except RuntimeError:
+                raise
+            except Exception as fut_err:
+                logger.warning(f"Failed to check progress status for job {job_id}: {fut_err}")
 
         # 1. Extraction, Detection, Matching, Tracks
         update_progress(30.0, "extract_metadata")
@@ -104,10 +113,15 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
             for i in range(1, num_recs):
                 subfolder = f"undistorted_{i}"
                 logger.info(f"Processing Reconstruction Component {i} -> Folder: {subfolder}")
+                update_progress(88.0 + (i / num_recs) * 4.0, f"undistort (component {i})")
                 actions.undistort.run_dataset(dataset, reconstruction_index=i, output=subfolder)
+                update_progress(88.0 + (i / num_recs) * 4.0, f"dense_clustering (component {i})")
                 actions.dense_clustering.run_dataset(dataset, subfolder=subfolder)
+                update_progress(88.0 + (i / num_recs) * 4.0, f"compute_depthmaps (component {i})")
                 actions.compute_depthmaps.run_dataset(dataset, subfolder=subfolder, interactive=False)
+                update_progress(88.0 + (i / num_recs) * 4.0, f"fuse_depthmaps (component {i})")
                 actions.fuse_depthmaps.run_dataset(dataset, subfolder=subfolder)
+                update_progress(88.0 + (i / num_recs) * 4.0, f"dense_merging (component {i})")
                 actions.dense_merging.run_dataset(dataset, subfolder=subfolder)
 
         # 4. Statistics and Report
@@ -118,7 +132,14 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
         actions.export_report.run_dataset(dataset)
 
     async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:
-        await self.update_job_status(job_id, "RUNNING", 10.0)
+        is_active = await self.update_job_status(job_id, "RUNNING", 10.0)
+        if is_active is False:
+            logger.info(f"Job {job_id} is cancelled. Aborting OpenSfM reconstruction execution.")
+            return {
+                "status": "cancelled",
+                "job_id": job_id,
+                "message": "OpenSfM reconstruction stopped due to job cancellation."
+            }
 
         dataset_dir = payload.get("dataset_dir") or payload.get("folder_path")
         opensfm_config = payload.get("opensfm_config") or settings.opensfm_config
@@ -182,6 +203,28 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
         try:
             await asyncio.to_thread(self._run_opensfm_pipeline, dataset_dir, loop, job_id)
         except Exception as proc_err:
+            if "cancelled" in str(proc_err).lower():
+                logger.info(f"OpenSfM reconstruction execution stopped for cancelled job {job_id}.")
+                return {
+                    "status": "cancelled",
+                    "job_id": job_id,
+                    "message": "OpenSfM reconstruction stopped due to job cancellation."
+                }
+            try:
+                job_uuid = uuid.UUID(job_id)
+                async with async_session() as session:
+                    res = await session.execute(select(Job.status).where(Job.id == job_uuid))
+                    curr_status = res.scalar_one_or_none()
+                    if curr_status == JobStatus.CANCELLED:
+                        logger.info(f"OpenSfM reconstruction execution stopped for cancelled job {job_id}.")
+                        return {
+                            "status": "cancelled",
+                            "job_id": job_id,
+                            "message": "OpenSfM reconstruction stopped due to job cancellation."
+                        }
+            except Exception as chk_err:
+                logger.warning(f"Could not verify cancellation status for {job_id}: {chk_err}")
+
             err_msg = f"OpenSfM reconstruction failed: {proc_err}"
             logger.error(err_msg, exc_info=True)
             await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)

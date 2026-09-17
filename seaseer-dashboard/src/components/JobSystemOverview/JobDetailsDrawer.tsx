@@ -66,6 +66,7 @@ export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
 }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [now, setNow] = useState<number>(Date.now());
+  const [copiedUuid, setCopiedUuid] = useState<boolean>(false);
 
   const isRunning = job?.status === 'RUNNING';
 
@@ -104,6 +105,16 @@ export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
   const isFailed = job.status === 'FAILED';
   const isCancelled = job.status === 'CANCELLED';
 
+  const handleCopyUuid = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!job?.id) return;
+    navigator.clipboard.writeText(job.id);
+    setCopiedUuid(true);
+    setTimeout(() => setCopiedUuid(false), 2000);
+  };
+
+  const truncatedUuid = job.id ? `${job.id.slice(0, 8)}...` : '-';
+
   return (
     <div className="jso-drawer-backdrop" onClick={onClose}>
       <div
@@ -111,23 +122,77 @@ export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label={`Job Inspector - ${job.name}`}
+        aria-labelledby="job-drawer-title"
       >
         {/* Drawer Header */}
-        <div className="jso-drawer-header">
+        <header className="jso-drawer-header">
           <div className="jso-drawer-title-group">
-            <span className="jso-drawer-icon">📟</span>
+            <span className="jso-drawer-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="4 17 10 11 4 5" />
+                <line x1="12" y1="19" x2="20" y2="19" />
+              </svg>
+            </span>
             <div className="jso-drawer-titles">
-              <h3 className="jso-drawer-name" title={job.name}>
+              <h3 id="job-drawer-title" className="jso-drawer-name" title={job.name}>
                 {job.name}
               </h3>
               <span className="jso-drawer-sub">
-                ID: {job.id} • {job.task_type || 'default'}
+                ID: {truncatedUuid}
+                <button
+                  type="button"
+                  className="jso-copy-uuid-btn"
+                  onClick={handleCopyUuid}
+                  aria-label="Copy full UUID"
+                  title={copiedUuid ? 'Copied UUID!' : 'Copy full UUID'}
+                >
+                  {copiedUuid ? (
+                    <svg className="jso-icon-sm" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  ) : (
+                    <svg className="jso-icon-sm" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                      <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                    </svg>
+                  )}
+                </button>
+                • {job.task_type || 'default'}
               </span>
             </div>
           </div>
 
           <div className="jso-drawer-header-actions">
+            {(isRunning || isPending || isBlocked) && onCancelJob && (
+              <button
+                type="button"
+                className="jso-drawer-btn cancel"
+                onClick={(e) => onCancelJob(job.id, e)}
+                disabled={cancellingJobId === job.id}
+                aria-label="Cancel Task"
+              >
+                <svg className="jso-btn-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
+                </svg>
+                <span>Cancel Task</span>
+              </button>
+            )}
+
+            {(isFailed || isCancelled) && onRetryJob && (
+              <button
+                type="button"
+                className="jso-drawer-btn retry"
+                onClick={(e) => onRetryJob(job.id, e)}
+                disabled={retryingJobId === job.id}
+                aria-label="Retry Task"
+              >
+                <svg className="jso-btn-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                </svg>
+                <span>Retry Task</span>
+              </button>
+            )}
+
             <span className={`jso-status-badge ${getJobStatusClass(job.status)}`}>
               {job.status}
             </span>
@@ -136,62 +201,44 @@ export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
               type="button"
               className="jso-drawer-close-btn"
               onClick={onClose}
+              aria-label="Close drawer"
               title="Close Drawer"
             >
-              ✕
+              <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16" aria-hidden="true">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* Drawer Metadata Grid & Progress */}
+        {/* Drawer Metadata Strip */}
         <div className="jso-drawer-meta-section">
-          <div className="jso-drawer-meta-grid">
-            <div className="jso-meta-card">
-              <span className="jso-meta-lbl">Created</span>
-              <span className="jso-meta-val">{formatTime(job.created_at)}</span>
+          <dl className="jso-meta-strip">
+            <div className="jso-meta-item">
+              <dt className="jso-meta-lbl">Created</dt>
+              <dd className="jso-meta-val">
+                <time dateTime={job.created_at || undefined}>{formatTime(job.created_at)}</time>
+              </dd>
             </div>
-            <div className="jso-meta-card">
-              <span className="jso-meta-lbl">Started</span>
-              <span className="jso-meta-val">{formatTime(job.started_at)}</span>
+            <div className="jso-meta-item">
+              <dt className="jso-meta-lbl">Started</dt>
+              <dd className="jso-meta-val">
+                <time dateTime={job.started_at || undefined}>{formatTime(job.started_at)}</time>
+              </dd>
             </div>
-            <div className="jso-meta-card">
-              <span className="jso-meta-lbl">Completed</span>
-              <span className="jso-meta-val">{formatTime(job.completed_at)}</span>
+            <div className="jso-meta-item">
+              <dt className="jso-meta-lbl">Completed</dt>
+              <dd className="jso-meta-val">
+                <time dateTime={job.completed_at || undefined}>{formatTime(job.completed_at)}</time>
+              </dd>
             </div>
-            <div className="jso-meta-card">
-              <span className="jso-meta-lbl">Runtime</span>
-              <span className="jso-meta-val">
+            <div className="jso-meta-item">
+              <dt className="jso-meta-lbl">Runtime</dt>
+              <dd className="jso-meta-val">
                 {calculateDuration(job.started_at || job.created_at, job.completed_at, now)}
-              </span>
+              </dd>
             </div>
-          </div>
-
-          {/* Quick Actions Bar */}
-          {(((isRunning || isPending || isBlocked) && onCancelJob) || ((isFailed || isCancelled) && onRetryJob)) && (
-            <div className="jso-drawer-actions-bar">
-              {(isRunning || isPending || isBlocked) && onCancelJob && (
-                <button
-                  type="button"
-                  className="jso-drawer-btn cancel"
-                  onClick={(e) => onCancelJob(job.id, e)}
-                  disabled={cancellingJobId === job.id}
-                >
-                  ⛔ Cancel Task
-                </button>
-              )}
-
-              {(isFailed || isCancelled) && onRetryJob && (
-                <button
-                  type="button"
-                  className="jso-drawer-btn retry"
-                  onClick={(e) => onRetryJob(job.id, e)}
-                  disabled={retryingJobId === job.id}
-                >
-                  ↻ Retry Task
-                </button>
-              )}
-            </div>
-          )}
+          </dl>
         </div>
 
         {/* Drawer Body: Terminal Console Output */}

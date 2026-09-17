@@ -61,7 +61,7 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
         await self.update_job_status(job_id, "RUNNING", 5.0)
 
         num_frames = int(payload.get("num_frames", 500))
-        blur_threshold = float(payload.get("blur_threshold", 100.0))
+        blur_threshold = float(payload.get("blur_threshold", 50.0))
         video_dir = settings.video_dir
         output_dir = settings.opensfm_ingestion_dir
         opensfm_config = payload.get("opensfm_config") or settings.opensfm_config

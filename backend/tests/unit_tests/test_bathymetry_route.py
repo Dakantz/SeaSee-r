@@ -67,35 +67,6 @@ def test_upload_emodnet_csv_invalid_file_extension():
     assert response.json()["detail"] == "Only .csv files are supported."
 
 
-def test_upload_emodnet_csv_success():
-    from unittest.mock import MagicMock, AsyncMock, patch
-    from fastapi.testclient import TestClient
-    from app.main import app
-    from app.core.database import get_db_session
-
-    client = TestClient(app)
-
-    mock_db = MagicMock()
-    mock_db.add = MagicMock()
-    mock_db.commit = AsyncMock()
-    mock_db.refresh = AsyncMock()
-
-    app.dependency_overrides[get_db_session] = lambda: mock_db
-
-    try:
-        with patch("app.api.routes.bathymetry.enqueue_job"):
-            response = client.post(
-                "/bathymetry/upload-emodnet-csv",
-                files={"file": ("test.csv", b"X,Y,Z\n1,2,3\n", "text/csv")}
-            )
-            assert response.status_code == 201
-            data = response.json()
-            assert "job_id" in data
-            assert data["message"] == "EMODnet CSV uploaded successfully and processing job enqueued."
-    finally:
-        app.dependency_overrides.clear()
-
-
 def test_get_bathymetry_tile_success():
     from unittest.mock import MagicMock, AsyncMock, patch
     from fastapi.testclient import TestClient

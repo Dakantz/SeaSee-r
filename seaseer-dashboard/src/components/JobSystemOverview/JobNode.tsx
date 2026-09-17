@@ -145,7 +145,8 @@ export const JobNode: React.FC<JobNodeProps> = ({
             disabled={cancellingJobId === job.id}
             title="Cancel Job"
           >
-            ⛔
+            <span className={cancellingJobId === job.id ? 'jso-spin-icon' : ''}>⛔</span>
+            <span>Cancel</span>
           </button>
         )}
         {(isFailed || isCancelled) && onRetry && (
@@ -156,7 +157,8 @@ export const JobNode: React.FC<JobNodeProps> = ({
             disabled={retryingJobId === job.id}
             title="Retry Job"
           >
-            ↻
+            <span className={retryingJobId === job.id ? 'jso-spin-icon' : ''}>↻</span>
+            <span>Retry</span>
           </button>
         )}
       </div>

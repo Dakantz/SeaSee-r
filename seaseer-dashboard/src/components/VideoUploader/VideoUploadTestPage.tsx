@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { VideoUploader } from './VideoUploader';
+import { JobSystemOverview } from '../JobSystemOverview';
 
 interface UploaderInstanceProps {
   title: string;
@@ -84,7 +85,7 @@ export const VideoUploadTestPage: React.FC = () => {
   return (
     <div style={{
       padding: '40px',
-      maxWidth: '800px',
+      maxWidth: '1100px',
       margin: '0 auto',
       fontFamily: "'Inter', 'Roboto', sans-serif",
       color: '#e2e8f0',
@@ -109,6 +110,13 @@ export const VideoUploadTestPage: React.FC = () => {
         <UploaderInstance 
           title="Uploader 1 (5MB Chunks - Default)" 
         />
+
+        <div style={{ marginTop: '40px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '32px' }}>
+          <h2 style={{ fontSize: '20px', color: '#f8fafc', marginBottom: '16px', fontWeight: 600 }}>
+            Job Pipelines Overview
+          </h2>
+          <JobSystemOverview limit={10} />
+        </div>
       </div>
     </div>
   );
