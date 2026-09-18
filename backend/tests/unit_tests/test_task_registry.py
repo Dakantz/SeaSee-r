@@ -4,7 +4,7 @@ from app.services.worker.handlers.base import BaseTaskHandler
 from app.services.worker.handlers import (
     PointCloudUploadTaskHandler,
     VideoTaskHandler,
-    OpenSfMTaskHandler,
+    OpenSfMIngestTaskHandler,
     EMODnetGeoTIFFTaskHandler,
     EMODnetCSVTaskHandler,
     DefaultTaskHandler

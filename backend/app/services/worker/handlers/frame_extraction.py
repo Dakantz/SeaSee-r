@@ -109,7 +109,6 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
             raise RuntimeError(err_msg)
 
         fps = num_frames / total_duration
-        fps = 1.0
         await self.update_job_status(job_id, "RUNNING", 25.0)
 
         # Target dataset directory inside opensfm_ingestion_dir

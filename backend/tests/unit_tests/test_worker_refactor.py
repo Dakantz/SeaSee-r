@@ -4,7 +4,7 @@ from app.services.worker.tasks import run_background_job, _run_background_job_as
 from app.services.worker.registry import task_registry
 from app.services.worker.handlers import (
     PointCloudUploadTaskHandler,
-    OpenSfMTaskHandler,
+    OpenSfMIngestTaskHandler,
     EMODnetGeoTIFFTaskHandler,
     EMODnetCSVTaskHandler,
     VideoTaskHandler,
@@ -23,7 +23,7 @@ async def test_job_not_found():
 
 def test_handler_registration_and_types():
     assert isinstance(task_registry.get_handler("pointcloud_upload"), PointCloudUploadTaskHandler)
-    assert isinstance(task_registry.get_handler("opensfm_ingest"), OpenSfMTaskHandler)
+    assert isinstance(task_registry.get_handler("opensfm_ingest"), OpenSfMIngestTaskHandler)
     assert isinstance(task_registry.get_handler("emodnet_ingest"), EMODnetGeoTIFFTaskHandler)
     assert isinstance(task_registry.get_handler("emodnet_csv_ingest"), EMODnetCSVTaskHandler)
     assert isinstance(task_registry.get_handler("video_upload"), VideoTaskHandler)

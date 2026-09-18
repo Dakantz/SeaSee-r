@@ -14,7 +14,7 @@ from app.services.opensfm.ingest import (
 
 logger = logging.getLogger(__name__)
 
-class OpenSfMTaskHandler(BaseTaskHandler):
+class OpenSfMIngestTaskHandler(BaseTaskHandler):
     task_types = ["opensfm_ingest", "opensfm_append"]
 
     async def process_opensfm(
