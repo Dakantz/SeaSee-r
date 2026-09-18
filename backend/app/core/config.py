@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     backend_srid: int = 3857
     
     # Default timeout in seconds for RQ background jobs (default: 3600s / 1h)
-    job_timeout: int = 3600
+    job_timeout: int = 3600 * 5
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

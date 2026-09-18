@@ -1,9 +1,13 @@
+# OpenSfM Configuration (Target: 10-16 GB Memory Usage)
 processes: 2
+
 feature_process_size: 2048
 mem_ceiling: 12288
+
 depthmap_max_image_size: 2048
 depthmap_cluster_max_size: 12
 depthmap_max_cluster_views: 32
 depthmap_fusion_svo_max_voxels: 50000000
+
 undistorted_image_max_size: 2048
 submodel_size: 60

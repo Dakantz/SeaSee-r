@@ -50,68 +50,77 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
         onUploadSuccess(videoIds);
       }
 
-      // Automatically create a job pipeline for each uploaded video file
+      // Automatically create job pipelines across a parameter grid (num_frames x blur_threshold)
       try {
         const createdJobIds: string[] = [];
         const newJobFileMap: Record<string, string> = {};
+        const frameCounts = [50, 100, 200, 500, 1000];
+        const blurThresholds = [50, 75, 100, 125];
+
         for (const file of videoFiles) {
           const rawFileId = fileIdsMap[file.name];
           const fileId = formatUuid(rawFileId);
           const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
           const safeFilename = fileId ? `${fileId}${ext}` : file.name;
-          const datasetName = `dataset_${fileId.replace(/-/g, '_')}`;
 
-          const pipelineRes = await createPipeline({
-            body: {
-              name: `Video OpenSfM Pipeline: ${file.name}`,
-              jobs: [
-                {
-                  id_key: 'frame_extraction',
-                  name: `Frame Extraction: ${file.name}`,
-                  task_type: 'frame_extraction',
-                  payload: {
-                    filename: file.name,
-                    safe_filename: safeFilename,
-                    video_files: [safeFilename, file.name],
-                    num_frames: 20,
-                    dataset_name: datasetName,
-                    batch_id: batchId
-                  },
-                  depends_on: []
-                },
-                {
-                  id_key: 'opensfm_reconstruct',
-                  name: `OpenSfM Reconstruction: ${file.name}`,
-                  task_type: 'opensfm_reconstruct',
-                  payload: {
-                    dataset_name: datasetName,
-                    file_id: fileId,
-                    batch_id: batchId
-                  },
-                  depends_on: ['frame_extraction']
-                },
-                {
-                  id_key: 'opensfm_ingest',
-                  name: `OpenSfM Pointcloud Ingestion: ${file.name}`,
-                  task_type: 'opensfm_ingest',
-                  payload: {
-                    dataset_name: datasetName,
-                    file_id: fileId,
-                    batch_id: batchId
-                  },
-                  depends_on: ['opensfm_reconstruct']
+          for (const numFrames of frameCounts) {
+            for (const blurThreshold of blurThresholds) {
+              const datasetName = `dataset_${fileId.replace(/-/g, '_')}_f${numFrames}_b${blurThreshold}`;
+
+              const pipelineRes = await createPipeline({
+                body: {
+                  name: `Video OpenSfM Pipeline: ${file.name} (frames=${numFrames}, blur=${blurThreshold})`,
+                  jobs: [
+                    {
+                      id_key: 'frame_extraction',
+                      name: `Frame Extraction: ${file.name} (frames=${numFrames}, blur=${blurThreshold})`,
+                      task_type: 'frame_extraction',
+                      payload: {
+                        filename: file.name,
+                        safe_filename: safeFilename,
+                        video_files: [safeFilename, file.name],
+                        num_frames: numFrames,
+                        blur_threshold: blurThreshold,
+                        dataset_name: datasetName,
+                        batch_id: batchId
+                      },
+                      depends_on: []
+                    },
+                    {
+                      id_key: 'opensfm_reconstruct',
+                      name: `OpenSfM Reconstruction: ${file.name} (frames=${numFrames}, blur=${blurThreshold})`,
+                      task_type: 'opensfm_reconstruct',
+                      payload: {
+                        dataset_name: datasetName,
+                        file_id: fileId,
+                        batch_id: batchId
+                      },
+                      depends_on: ['frame_extraction']
+                    },
+                    {
+                      id_key: 'opensfm_ingest',
+                      name: `OpenSfM Pointcloud Ingestion: ${file.name} (frames=${numFrames}, blur=${blurThreshold})`,
+                      task_type: 'opensfm_ingest',
+                      payload: {
+                        dataset_name: datasetName,
+                        file_id: fileId,
+                        batch_id: batchId
+                      },
+                      depends_on: ['opensfm_reconstruct']
+                    }
+                  ]
                 }
-              ]
-            }
-          });
+              });
 
-          if (pipelineRes.data?.jobs) {
-            for (const job of pipelineRes.data.jobs) {
-              if (job.id) {
-                createdJobIds.push(job.id);
-                newJobFileMap[job.id] = `${file.name} (${job.name})`;
-                if (onJobCreated) {
-                  onJobCreated(job.id);
+              if (pipelineRes.data?.jobs) {
+                for (const job of pipelineRes.data.jobs) {
+                  if (job.id) {
+                    createdJobIds.push(job.id);
+                    newJobFileMap[job.id] = `${file.name} (f:${numFrames}, b:${blurThreshold}) - ${job.name}`;
+                    if (onJobCreated) {
+                      onJobCreated(job.id);
+                    }
+                  }
                 }
               }
             }
