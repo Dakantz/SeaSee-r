@@ -73,6 +73,33 @@ def test_create_pipeline(client):
     assert data["jobs"][0]["name"] == "test_job"
 
 
+def test_list_jobs(client):
+    mock_job = MagicMock()
+    mock_job.id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    mock_job.name = "Standalone Job"
+    mock_job.task_type = "video_frame_extraction"
+    mock_job.status = JobStatus.PENDING
+    mock_job.progress = 0.0
+    mock_job.payload = {}
+    mock_job.result = None
+    mock_job.error_message = None
+    mock_job.created_at = "2026-07-15T11:00:00Z"
+    mock_job.started_at = None
+    mock_job.completed_at = None
+    mock_job.pipeline_id = None
+    mock_job.depends_on = []
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [mock_job]
+    mock_db_session.execute.return_value = mock_result
+
+    response = client.get("/jobs")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "Standalone Job"
+
+
 def test_list_pipelines(client):
     mock_pipeline = MagicMock()
     mock_pipeline.id = "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"

@@ -55,7 +55,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
         const createdJobIds: string[] = [];
         const newJobFileMap: Record<string, string> = {};
         const frameCounts = [50, 100, 200, 500, 1000];
-        const blurThresholds = [50, 75, 100, 125];
+        const blurThresholds = [50, 65, 80, 90];
 
         for (const file of videoFiles) {
           const rawFileId = fileIdsMap[file.name];

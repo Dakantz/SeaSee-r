@@ -126,7 +126,7 @@ export default function PointCloudOverviewPage() {
                                             </button>
                                         </div>
                                         <div className="right-sidebar-content">
-                                            <JobSystemOverview compact limit={10} />
+                                            <JobSystemOverview compact limit={0} />
                                         </div>
                                     </>
                                 )}

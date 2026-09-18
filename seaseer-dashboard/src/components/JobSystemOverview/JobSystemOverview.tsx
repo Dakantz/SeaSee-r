@@ -16,11 +16,11 @@ import './JobSystemOverview.css';
 
 export interface JobSystemOverviewProps {
   /**
-   * Maximum number of recent jobs to fetch.
-   * @default 10
+   * Maximum number of recent jobs to fetch (0 for unlimited).
+   * @default 0
    */
   limit?: number;
-
+ 
   /**
    * Fast polling interval in milliseconds when active jobs exist.
    * @default 2500
@@ -109,7 +109,7 @@ const calculateDuration = (startStr?: string | null, endStr?: string | null, now
 };
 
 export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
-  limit = 10,
+  limit = 0,
   activePollInterval = 2500,
   idlePollInterval = 30000,
   autoPoll = true,

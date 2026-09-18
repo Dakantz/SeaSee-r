@@ -115,7 +115,7 @@ export const VideoUploadTestPage: React.FC = () => {
           <h2 style={{ fontSize: '20px', color: '#f8fafc', marginBottom: '16px', fontWeight: 600 }}>
             Job Pipelines Overview
           </h2>
-          <JobSystemOverview limit={10} />
+          <JobSystemOverview limit={0} />
         </div>
       </div>
     </div>

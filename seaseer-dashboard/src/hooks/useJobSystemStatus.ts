@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { listPipelines } from '../client';
+import { listPipelines, listJobs } from '../client';
 import type { JobResponse, PipelineResponse } from '../client';
 
 export interface UseJobSystemStatusOptions {
   /**
-   * Maximum number of recent pipelines to fetch.
-   * @default 10
+   * Maximum number of recent pipelines to fetch. Set to 0 for unlimited.
+   * @default 0
    */
   limit?: number;
 
@@ -69,7 +69,7 @@ export interface UseJobSystemStatusReturn {
  * Custom React hook for smart, data-efficient polling of the SeaSee-r job system and CI/CD pipelines.
  */
 export function useJobSystemStatus({
-  limit = 10,
+  limit = 0,
   activePollInterval = 2500,
   idlePollInterval = 30000,
   autoPoll = true,
@@ -104,8 +104,12 @@ export function useJobSystemStatus({
 
     try {
       let fetchedPipelines: PipelineResponse[] = [];
+      let fetchedJobsList: JobResponse[] = [];
 
-      const pipelinesRes = await listPipelines().catch(() => null);
+      const [pipelinesRes, jobsRes] = await Promise.all([
+        listPipelines().catch(() => null),
+        listJobs().catch(() => null),
+      ]);
 
       if (pipelinesRes?.data && Array.isArray(pipelinesRes.data)) {
         fetchedPipelines = [...pipelinesRes.data].sort(
@@ -121,20 +125,45 @@ export function useJobSystemStatus({
         } catch (_) {}
       }
 
+      if (jobsRes?.data && Array.isArray(jobsRes.data)) {
+        fetchedJobsList = [...jobsRes.data];
+      } else {
+        // Direct fetch fallback for standalone jobs
+        try {
+          const fbJobsRes = await fetch('/jobs');
+          if (fbJobsRes.ok) {
+            fetchedJobsList = await fbJobsRes.json();
+          }
+        } catch (_) {}
+      }
+
       if (limit > 0 && fetchedPipelines.length > limit) {
         fetchedPipelines = fetchedPipelines.slice(0, limit);
       }
 
-      // Extract all constituent jobs from pipelines
-      const fetchedJobs = fetchedPipelines.flatMap((p) => p.jobs || []);
+      // Combine pipeline jobs with direct fetched jobs, avoiding duplicates
+      const pipelineJobMap = new Map<string, JobResponse>();
+      fetchedPipelines.forEach((p) => {
+        (p.jobs || []).forEach((j) => {
+          pipelineJobMap.set(j.id, j);
+        });
+      });
+
+      fetchedJobsList.forEach((j) => {
+        if (!pipelineJobMap.has(j.id)) {
+          pipelineJobMap.set(j.id, j);
+        }
+      });
+
+      const combinedJobs = Array.from(pipelineJobMap.values());
 
       if (!isMountedRef.current) return;
 
-      setJobs(fetchedJobs);
+      setJobs(combinedJobs);
       setPipelines(fetchedPipelines);
       setError(null);
       setLastUpdated(new Date());
-      onUpdate?.(fetchedJobs, fetchedPipelines);
+      onUpdate?.(combinedJobs, fetchedPipelines);
     } catch (err: any) {
       if (isMountedRef.current) {
         setError(err.message || 'Error communicating with job pipeline service');

@@ -84,7 +84,7 @@ export default function Workspace() {
                                     <div className="jobs-section-header">
                                         <span className="jobs-sidebar-title">System Jobs</span>
                                     </div>
-                                    <JobSystemOverview compact limit={10} />
+                                    <JobSystemOverview compact limit={0} />
                                 </div>
                             </Panel>
                         </>

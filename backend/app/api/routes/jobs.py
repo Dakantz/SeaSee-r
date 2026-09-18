@@ -159,8 +159,19 @@ async def _get_pipeline_or_404(pipeline_id: UUID, db: AsyncSession) -> Pipeline:
 
 
 # -----------------------------------------------------------------------------
-# Endpoints: Sleek Job System (7 Core Routes)
+# Endpoints: Sleek Job System
 # -----------------------------------------------------------------------------
+
+@router.get("", response_model=List[JobResponse])
+@router.get("/", response_model=List[JobResponse])
+async def list_jobs(
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Retrieve all background jobs (standalone and constituent pipeline jobs)."""
+    stmt = select(Job).order_by(Job.created_at.desc())
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
 
 @router.get("/pipelines", response_model=List[PipelineResponse])
 async def list_pipelines(
