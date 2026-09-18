@@ -11,7 +11,6 @@ import TestRover from "./components/RovRenderer/testRover.tsx";
 import TestRoverVideo from "./components/RovRenderer/testRoverVideo.tsx";
 import LodAlgorithmAnalyzerPage from "./components/LodAlgorithmAnalyzer/LodAlgorithmAnalyzerPage.tsx";
 import PointCloudOverviewPage from "./components/PointCloudOverview/PointCloudOverviewPage.tsx";
-import StatusBar from "./components/StatusBar.tsx";
 
 function App() {
     return (
@@ -29,7 +28,6 @@ function App() {
                 <Route path="/test-rover" element={<TestRover />} />
                 <Route path="/test-rover-video" element={<TestRoverVideo />} />
             </Routes>
-            <StatusBar />
         </div>
     );
 }

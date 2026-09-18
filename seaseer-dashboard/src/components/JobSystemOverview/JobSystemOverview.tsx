@@ -164,7 +164,6 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
   // Action loading states
   const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
   const [cancellingJobId, setCancellingJobId] = useState<string | null>(null);
-  const [retryingPipelineId, setRetryingPipelineId] = useState<string | null>(null);
   const [deletingPipelineId, setDeletingPipelineId] = useState<string | null>(null);
 
   // Auto-open drawer if URL contains ?jobId=<id>
@@ -538,11 +537,6 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
       {!loading && !error && viewMode === 'pipeline' && (
         <div className="jso-pipeline-container">
           {groupedPipelines.pipelines.map(({ pipeline, jobs: pipeJobs }) => {
-            const hasFailedJob = pipeJobs.some((j) => {
-              const st = optimisticJobStatuses[j.id] || j.status;
-              return st === 'FAILED' || st === 'CANCELLED';
-            });
-
             return (
               <div key={pipeline.id} className="jso-pipeline-card">
                 {/* Pipeline Run Header */}

@@ -1,16 +1,18 @@
 import React, { useEffect, useRef } from "react";
 import { PointCloudOverviewEngine } from "./engine/PointCloudOverviewEngine";
 import type { EngineCallbacks, EngineConfig } from "./engine/types";
+import "./PointCloudOverview.css";
 
 export interface PointCloudOverviewProps extends EngineConfig, EngineCallbacks {
     style?: React.CSSProperties;
     className?: string;
+    defaultShowJobOverview?: boolean;
 }
 
 export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
     style, className, onSelectPointcloud, onHoverPointcloud, onFocusCameraTarget,
     onUpdatePointcloudTransform, onCameraViewChange,
-    onSetIsGizmoDragging, onPointCountChange, ...configProps
+    onSetIsGizmoDragging, onPointCountChange, defaultShowJobOverview = false, ...configProps
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const engineRef = useRef<PointCloudOverviewEngine | null>(null);
@@ -60,11 +62,17 @@ export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
 
     return (
         <div
-            ref={containerRef}
-            className={className}
+            className={`pointcloud-overview-container ${className || ""}`}
             style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative", ...style }}
-        />
+        >
+            <div
+                ref={containerRef}
+                className="pointcloud-overview-canvas"
+                style={{ width: "100%", height: "100%", position: "relative", overflow: "hidden" }}
+            />
+        </div>
     );
 };
 
 export default PointCloudOverview;
+

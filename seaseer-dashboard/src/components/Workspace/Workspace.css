@@ -70,6 +70,9 @@
     color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
 }
 
 .left-sidebar-toggle-btn {
@@ -97,6 +100,73 @@
     flex-direction: column;
     gap: var(--spacing-sm);
 }
+
+/* Collapsible Right Sidebar Styles for Job System Overview & Debug Controls */
+.right-sidebar-panel {
+    background: var(--color-bg-surface);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    border-left: 1px solid var(--color-border-default);
+}
+
+.right-sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-md) var(--spacing-3xl);
+    background: var(--color-bg-card);
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.right-sidebar-title {
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.right-sidebar-toggle-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-md);
+    cursor: pointer;
+    padding: var(--spacing-3xs) var(--spacing-xs);
+    border-radius: var(--radius-sm);
+    transition: var(--transition-normal);
+}
+
+.right-sidebar-toggle-btn:hover {
+    background: var(--color-border-default);
+    color: var(--color-text-primary);
+}
+
+.right-sidebar-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.right-sidebar-content .job-system-overview {
+    border-radius: var(--radius-md);
+    height: 100%;
+}
+
+.right-sidebar-content .pointcloud-sidebar {
+    height: 100%;
+    overflow-y: auto;
+}
+
 
 .left-sidebar-reopen-btn {
     position: absolute;

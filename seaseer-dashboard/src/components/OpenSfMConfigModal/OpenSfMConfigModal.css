@@ -30,6 +30,15 @@
   animation: modalScaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.opensfm-config-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
