@@ -109,3 +109,65 @@ async def test_opensfm_ingest_result_with_reconstruction_json():
                 100.0,
                 result=res
             )
+
+
+@pytest.mark.anyio
+async def test_opensfm_ingest_unique_pointcloud_naming():
+    handler = OpenSfMIngestTaskHandler()
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pc_path = os.path.join(tmp_dir, "fused.laz")
+        with open(pc_path, "wb") as f:
+            f.write(b"dummy laz content")
+
+        rec_json_path = os.path.join(tmp_dir, "reconstruction.json")
+        rec_data = [
+            {"cameras": {}, "shots": {}, "points": {}},
+            {"cameras": {}, "shots": {}, "points": {}}
+        ]
+        with open(rec_json_path, "w") as f:
+            json.dump(rec_data, f)
+
+        # Create fused pointclouds for both rec 0 and rec 1
+        dir0 = os.path.join(tmp_dir, "undistorted", "depthmaps")
+        os.makedirs(dir0, exist_ok=True)
+        with open(os.path.join(dir0, "fused.laz"), "wb") as f:
+            f.write(b"laz 0")
+
+        dir1 = os.path.join(tmp_dir, "undistorted_1", "depthmaps")
+        os.makedirs(dir1, exist_ok=True)
+        with open(os.path.join(dir1, "fused.laz"), "wb") as f:
+            f.write(b"laz 1")
+
+        dataset_name = "dataset_11111111_1111_1111_1111_111111111111_f50_b50"
+
+        with patch("app.services.worker.handlers.opensfm_ingest.PointCloudUploadTaskHandler.ingest_pointcloud_pipeline", new_callable=AsyncMock) as mock_pc_pipeline, \
+             patch("app.services.worker.handlers.opensfm_ingest.async_session") as mock_session_ctx, \
+             patch.object(handler, "update_job_status", new_callable=AsyncMock):
+
+            mock_session = AsyncMock()
+            mock_session_ctx.return_value.__aenter__.return_value = mock_session
+
+            res = await handler.process_opensfm(
+                file_path=pc_path,
+                file_id="11111111-1111-1111-1111-111111111111",
+                job_id="22222222-2222-2222-2222-222222222222",
+                folder_path=tmp_dir,
+                dataset_name=dataset_name
+            )
+
+            assert res["status"] == "success"
+            assert mock_pc_pipeline.call_count == 2
+
+            # Check call args for reconstruction 0
+            call0_kwargs = mock_pc_pipeline.call_args_list[0].kwargs
+            assert call0_kwargs["override_filename"] == f"{dataset_name}_rec_0.laz"
+            assert call0_kwargs["override_safe_filename"] == f"{dataset_name}_rec_0.laz"
+            assert call0_kwargs["file_id"] == "11111111-1111-1111-1111-111111111111"
+
+            # Check call args for reconstruction 1
+            call1_kwargs = mock_pc_pipeline.call_args_list[1].kwargs
+            assert call1_kwargs["override_filename"] == f"{dataset_name}_rec_1.laz"
+            assert call1_kwargs["override_safe_filename"] == f"{dataset_name}_rec_1.laz"
+            assert call1_kwargs["file_id"] != "11111111-1111-1111-1111-111111111111"
+

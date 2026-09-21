@@ -72,9 +72,10 @@ def build_pipeline_and_jobs(pipeline_data: PipelineCreate) -> Tuple[Pipeline, Li
     """
     key_to_uuid = validate_pipeline_dag(pipeline_data.jobs)
     
+    pipeline_name = (pipeline_data.name or "Pipeline")[:255]
     pipeline = Pipeline(
         id=uuid.uuid4(),
-        name=pipeline_data.name,
+        name=pipeline_name,
         status=PipelineStatus.PENDING
     )
 
@@ -99,9 +100,10 @@ def build_pipeline_and_jobs(pipeline_data: PipelineCreate) -> Tuple[Pipeline, Li
         # Initial status: BLOCKED if it has parent dependencies, PENDING otherwise
         initial_status = JobStatus.BLOCKED if resolved_depends_on else JobStatus.PENDING
 
+        job_name = (job_data.name or "Job")[:255]
         job = Job(
             id=uuid.UUID(job_uuid_str),
-            name=job_data.name,
+            name=job_name,
             task_type=job_data.task_type,
             payload=job_data.payload,
             status=initial_status,

@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from sqlalchemy import update, select
 
@@ -21,18 +21,22 @@ async def _update_job_status(
     """
     import uuid
     async with async_session() as session:
+        current_started_at = None
         try:
             job_uuid = uuid.UUID(job_id_str)
-            res = await session.execute(select(Job.status).where(Job.id == job_uuid))
-            current_status = res.scalar_one_or_none()
-            if current_status == JobStatus.CANCELLED and status not in ("CANCELLED",):
-                logger.info(f"Job {job_id_str} is CANCELLED. Ignoring status update to '{status}'.")
-                return False
+            res = await session.execute(select(Job.status, Job.started_at).where(Job.id == job_uuid))
+            row = res.first()
+            if row:
+                current_status, current_started_at = row[0], row[1]
+                if current_status == JobStatus.CANCELLED and status not in ("CANCELLED",):
+                    logger.info(f"Job {job_id_str} is CANCELLED. Ignoring status update to '{status}'.")
+                    return False
         except (ValueError, TypeError, AttributeError):
             pass
         except Exception as check_err:
             logger.warning(f"Could not verify job status for {job_id_str}: {check_err}")
 
+        now = datetime.now(timezone.utc)
         values = {
             "status": status,
             "progress": round(progress, 2),
@@ -40,10 +44,12 @@ async def _update_job_status(
         }
         if result is not None:
             values["result"] = result
+
         if status == "RUNNING":
-            values["started_at"] = datetime.utcnow()
+            if current_started_at is None:
+                values["started_at"] = now
         elif status in ("COMPLETED", "FAILED", "CANCELLED"):
-            values["completed_at"] = datetime.utcnow()
+            values["completed_at"] = now
 
         stmt = update(Job).where(Job.id == job_id_str).values(**values)
         await session.execute(stmt)
@@ -113,10 +119,12 @@ async def _process_job_dependency_updates(session, job_id_str: str, status: str)
             )
             candidates = res.scalars().all()
 
+            now = datetime.now(timezone.utc)
             for cand in candidates:
                 deps = cand.depends_on or []
                 if curr_id in deps:
                     cand.status = JobStatus.FAILED
+                    cand.completed_at = now
                     cand.error_message = f"Parent dependency job {curr_id} failed."
                     queue_to_fail.append(str(cand.id))
 
@@ -191,7 +199,7 @@ async def sync_job_status_from_redis(session, job: Job) -> bool:
             err_msg = rq_job.exc_info or "Job failed in Redis Queue / worker process terminated"
             job.status = JobStatus.FAILED
             job.error_message = err_msg
-            job.completed_at = datetime.utcnow()
+            job.completed_at = datetime.now(timezone.utc)
             await session.commit()
             await _process_job_dependency_updates(session, str(job.id), "FAILED")
             return True

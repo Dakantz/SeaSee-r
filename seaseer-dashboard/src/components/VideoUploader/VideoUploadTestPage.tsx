@@ -111,7 +111,7 @@ export const VideoUploadTestPage: React.FC = () => {
           title="Uploader 1 (5MB Chunks - Default)" 
         />
 
-        <div style={{ marginTop: '40px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '32px' }}>
+        <div style={{ marginTop: '40px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
           <h2 style={{ fontSize: '20px', color: '#f8fafc', marginBottom: '16px', fontWeight: 600 }}>
             Job Pipelines Overview
           </h2>

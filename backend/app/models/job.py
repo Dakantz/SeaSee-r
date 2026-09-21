@@ -26,7 +26,7 @@ class Pipeline(Base):
     __tablename__ = "pipelines"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String(255), nullable=False)
+    name = Column(Text, nullable=False)
     status = Column(SQLEnum(PipelineStatus), nullable=False, default=PipelineStatus.PENDING)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -37,7 +37,7 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String(255), nullable=False)
+    name = Column(Text, nullable=False)
     task_type = Column(String(100), nullable=True)
     status = Column(SQLEnum(JobStatus), nullable=False, default=JobStatus.PENDING)
     progress = Column(Float, nullable=False, default=0.0)

@@ -520,3 +520,50 @@ def test_delete_running_job(client):
     assert mock_job.completed_at is not None
     assert mock_job.error_message == "Job was cancelled before deletion."
     mock_db_session.delete.assert_called_with(mock_job)
+
+
+def test_create_pipeline_long_name(client):
+    pipeline_id = "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
+    job_id = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+
+    very_long_name = "Very Long Pipeline Name " + ("x" * 300)
+
+    mock_job = MagicMock()
+    mock_job.id = job_id
+    mock_job.name = "test_job"
+    mock_job.task_type = "video_upload"
+    mock_job.status = JobStatus.PENDING
+    mock_job.progress = 0.0
+    mock_job.payload = {"video_files": ["f1.mp4", "f2.mp4", "f3.mp4", "f4.mp4", "f5.mp4", "f6.mp4", "f7.mp4", "f8.mp4"]}
+    mock_job.result = None
+    mock_job.error_message = None
+    mock_job.created_at = "2026-07-15T11:00:00Z"
+    mock_job.started_at = None
+    mock_job.completed_at = None
+    mock_job.pipeline_id = pipeline_id
+    mock_job.depends_on = []
+
+    mock_pipeline = MagicMock()
+    mock_pipeline.id = pipeline_id
+    mock_pipeline.name = very_long_name[:255]
+    mock_pipeline.status = "PENDING"
+    mock_pipeline.created_at = "2026-07-15T11:00:00Z"
+    mock_pipeline.updated_at = "2026-07-15T11:00:00Z"
+    mock_pipeline.jobs = [mock_job]
+
+    mock_db_session.execute.return_value.scalar_one_or_none.return_value = mock_pipeline
+
+    response = client.post("/jobs/pipelines", json={
+        "name": very_long_name,
+        "jobs": [
+            {
+                "id_key": "video_upload",
+                "name": very_long_name,
+                "task_type": "video_upload",
+                "payload": {"video_files": ["f1.mp4", "f2.mp4", "f3.mp4", "f4.mp4", "f5.mp4", "f6.mp4", "f7.mp4", "f8.mp4"]},
+                "depends_on": []
+            }
+        ]
+    })
+    assert response.status_code == 201
+

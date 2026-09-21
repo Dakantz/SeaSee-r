@@ -43,6 +43,19 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
+import logging
+from fastapi.responses import JSONResponse
+
+logger = logging.getLogger("app.main")
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    logger.error("Unhandled exception caught in request: %s", exc, exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error", "error": str(exc)}
+    )
+
 # Serve generated EPT point cloud files statically
 app.mount("/ept", StaticFiles(directory=settings.ept_dir), name="ept")
 

@@ -68,6 +68,10 @@ export interface JobSystemOverviewProps {
 
 type ViewMode = 'pipeline' | 'matrix';
 
+export type OverviewItem =
+  | { type: 'pipeline'; id: string; created_at: string; pipeline: PipelineResponse; jobs: JobResponse[] }
+  | { type: 'standalone'; id: string; created_at: string; job: JobResponse };
+
 const getPipelineStatusClass = (status: PipelineStatus): string => {
   switch (status) {
     case 'COMPLETED':
@@ -101,6 +105,44 @@ const calculateDuration = (startStr?: string | null, endStr?: string | null, now
   if (isNaN(end)) return '-';
 
   const diffMs = Math.max(0, end - start);
+  const totalSeconds = Math.floor(diffMs / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds}s`;
+};
+
+const calculatePipelineDuration = (
+  pipeJobs: JobResponse[],
+  pipelineStatus: string,
+  nowMs: number = Date.now()
+): string => {
+  if (!pipeJobs || pipeJobs.length === 0) return '-';
+
+  const jobStartTimes = pipeJobs
+    .map((j) => (j.started_at ? new Date(j.started_at).getTime() : null))
+    .filter((t): t is number => t !== null && !isNaN(t));
+
+  if (jobStartTimes.length === 0) return '-';
+
+  const firstStartMs = Math.min(...jobStartTimes);
+
+  const isTerminal =
+    ['COMPLETED', 'FAILED', 'CANCELLED'].includes(pipelineStatus) ||
+    (pipeJobs.length > 0 && pipeJobs.every((j) => ['COMPLETED', 'FAILED', 'CANCELLED'].includes(j.status)));
+
+  let lastCompletionMs: number | undefined = undefined;
+  if (isTerminal) {
+    const jobEndTimes = pipeJobs
+      .map((j) => (j.completed_at ? new Date(j.completed_at).getTime() : null))
+      .filter((t): t is number => t !== null && !isNaN(t));
+    if (jobEndTimes.length > 0) {
+      lastCompletionMs = Math.max(...jobEndTimes);
+    }
+  }
+
+  const endMs = lastCompletionMs !== undefined ? lastCompletionMs : nowMs;
+  const diffMs = Math.max(0, endMs - firstStartMs);
   const totalSeconds = Math.floor(diffMs / 1000);
   if (totalSeconds < 60) return `${totalSeconds}s`;
   const minutes = Math.floor(totalSeconds / 60);
@@ -166,6 +208,44 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
   const [cancellingJobId, setCancellingJobId] = useState<string | null>(null);
   const [deletingPipelineId, setDeletingPipelineId] = useState<string | null>(null);
 
+  const contentAreaRef = React.useRef<HTMLDivElement | null>(null);
+  const [drawerTopOffset, setDrawerTopOffset] = useState<number>(0);
+
+  // Dynamic alignment of JobDetailsDrawer top edge to target pipeline card header or matrix row
+  const updateDrawerAlignment = () => {
+    if (!selectedJob || !contentAreaRef.current) {
+      setDrawerTopOffset(0);
+      return;
+    }
+    const jobEl = document.querySelector(`[data-job-id="${selectedJob.id}"]`);
+    if (!jobEl) {
+      setDrawerTopOffset(0);
+      return;
+    }
+
+    const pipeCard = jobEl.closest('.jso-pipeline-card');
+    const targetHeader = pipeCard?.querySelector('.jso-pipe-header') || jobEl;
+
+    const containerRect = contentAreaRef.current.getBoundingClientRect();
+    const headerRect = targetHeader.getBoundingClientRect();
+
+    const topOffset = headerRect.top - containerRect.top;
+    setDrawerTopOffset(Math.max(0, topOffset));
+  };
+
+  // Auto-scroll target job into view when selectedJob changes or URL deep-links
+  const handleLocateSelectedJob = (targetJobId?: string) => {
+    const id = targetJobId || selectedJob?.id;
+    if (!id) return;
+    setTimeout(() => {
+      const el = document.querySelector(`[data-job-id="${id}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+        updateDrawerAlignment();
+      }
+    }, 120);
+  };
+
   // Auto-open drawer if URL contains ?jobId=<id>
   useEffect(() => {
     const urlJobId = searchParams.get('jobId');
@@ -176,6 +256,30 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
       }
     }
   }, [searchParams, jobs]);
+
+  // Trigger auto-scroll & drawer alignment whenever selectedJob or viewMode changes
+  useEffect(() => {
+    if (selectedJob?.id) {
+      handleLocateSelectedJob(selectedJob.id);
+      updateDrawerAlignment();
+    }
+    const handleScrollOrResize = () => updateDrawerAlignment();
+
+    const scrollContainer = contentAreaRef.current?.querySelector('.jso-pipeline-container, .jso-matrix-table-wrapper');
+    scrollContainer?.addEventListener('scroll', handleScrollOrResize, { passive: true });
+    window.addEventListener('resize', handleScrollOrResize, { passive: true });
+
+    let rafId: number;
+    rafId = requestAnimationFrame(() => {
+      updateDrawerAlignment();
+    });
+
+    return () => {
+      scrollContainer?.removeEventListener('scroll', handleScrollOrResize);
+      window.removeEventListener('resize', handleScrollOrResize);
+      cancelAnimationFrame(rafId);
+    };
+  }, [selectedJob?.id, viewMode]);
 
   // Clear optimistic statuses when server refetch updates job list
   useEffect(() => {
@@ -289,6 +393,20 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
     }
   };
 
+  const handleDeleteJob = async (jobId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to delete this task?')) return;
+    try {
+      await deleteJob({ path: { job_id: jobId } });
+      await refetch();
+      if (selectedJob?.id === jobId) {
+        setSelectedJob(null);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error deleting task');
+    }
+  };
+
   const handleDownloadFullLogs = (pipeJobs: JobResponse[]) => {
     const fullLogText = pipeJobs
       .map(
@@ -317,7 +435,7 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  // Group standalone jobs & pipelines
+  // Filter jobs by search query
   const filteredJobs = useMemo(() => {
     if (!searchQuery.trim()) return jobs;
     const q = searchQuery.toLowerCase();
@@ -329,7 +447,8 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
     );
   }, [jobs, searchQuery]);
 
-  const groupedPipelines = useMemo(() => {
+  // Intermix pipelines & standalone jobs into a single list ordered descending by created_at (latest first)
+  const unifiedItems = useMemo<OverviewItem[]>(() => {
     const pipelineMap = new Map<string, { pipeline: PipelineResponse; jobs: JobResponse[] }>();
 
     pipelines.forEach((p) => {
@@ -353,28 +472,65 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
       }
     });
 
-    const resultPipelines = Array.from(pipelineMap.values());
+    const items: OverviewItem[] = [];
 
-    let filteredPipeList = resultPipelines;
+    pipelineMap.forEach(({ pipeline, jobs: pipeJobs }) => {
+      items.push({
+        type: 'pipeline',
+        id: pipeline.id,
+        created_at: pipeline.created_at,
+        pipeline,
+        jobs: pipeJobs,
+      });
+    });
+
+    standaloneJobs.forEach((job) => {
+      items.push({
+        type: 'standalone',
+        id: job.id,
+        created_at: job.created_at,
+        job,
+      });
+    });
+
+    let filteredItems = items;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      filteredPipeList = resultPipelines.filter(
-        (item) =>
-          item.pipeline.name.toLowerCase().includes(q) ||
-          item.pipeline.id.toLowerCase().includes(q) ||
-          item.jobs.some(
-            (j) =>
-              j.name.toLowerCase().includes(q) ||
-              (j.task_type && j.task_type.toLowerCase().includes(q))
-          )
-      );
+      filteredItems = items.filter((item) => {
+        if (item.type === 'pipeline') {
+          return (
+            item.pipeline.name.toLowerCase().includes(q) ||
+            item.pipeline.id.toLowerCase().includes(q) ||
+            item.jobs.some(
+              (j) =>
+                j.name.toLowerCase().includes(q) ||
+                (j.task_type && j.task_type.toLowerCase().includes(q))
+            )
+          );
+        } else {
+          return (
+            item.job.name.toLowerCase().includes(q) ||
+            item.job.id.toLowerCase().includes(q) ||
+            (item.job.task_type && item.job.task_type.toLowerCase().includes(q))
+          );
+        }
+      });
     }
 
-    return {
-      pipelines: filteredPipeList,
-      standaloneJobs,
-    };
+    return filteredItems.sort((a, b) => {
+      const timeA = new Date(a.created_at).getTime();
+      const timeB = new Date(b.created_at).getTime();
+      return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+    });
   }, [pipelines, filteredJobs, searchQuery]);
+
+  const sortedFilteredJobs = useMemo(() => {
+    return [...filteredJobs].sort((a, b) => {
+      const timeA = new Date(a.created_at).getTime();
+      const timeB = new Date(b.created_at).getTime();
+      return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+    });
+  }, [filteredJobs]);
 
   // Global summary counters
   const completedCount = jobs.filter((j) => j.status === 'COMPLETED').length;
@@ -533,212 +689,255 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
         </div>
       )}
 
-      {/* VIEW MODE 1: STAGE-BASED VISUAL DAG GRAPH */}
-      {!loading && !error && viewMode === 'pipeline' && (
-        <div className="jso-pipeline-container">
-          {groupedPipelines.pipelines.map(({ pipeline, jobs: pipeJobs }) => {
-            return (
-              <div key={pipeline.id} className="jso-pipeline-card">
-                {/* Pipeline Run Header */}
-                <div className="jso-pipe-header">
-                  <div className="jso-pipe-info">
-                    <span className="jso-pipe-branch" title="Pipeline Workflow Branch">
-                      ⎇ {pipeline.name || 'CI/CD Pipeline'}
-                    </span>
-                    <span className="jso-pipe-id" title={pipeline.id}>
-                      #{pipeline.id.substring(0, 8)}
-                    </span>
-                    <span className={`jso-pipe-status-badge ${getPipelineStatusClass(pipeline.status)}`}>
-                      {pipeline.status}
-                    </span>
+      {/* MAIN CONTENT AREA & DRAWER WRAPPER */}
+      <div className="jso-content-area" ref={contentAreaRef}>
+        {/* VIEW MODE 1: STAGE-BASED VISUAL DAG GRAPH */}
+        {!loading && !error && viewMode === 'pipeline' && (
+          <div className="jso-pipeline-container">
+            {unifiedItems.map((item) => {
+              if (item.type === 'pipeline') {
+                const { pipeline, jobs: pipeJobs } = item;
+                return (
+                  <div key={pipeline.id} className="jso-pipeline-card">
+                    {/* Pipeline Run Header */}
+                    <div className="jso-pipe-header">
+                      <div className="jso-pipe-info">
+                        <span className="jso-pipe-branch" title="Pipeline Workflow Branch">
+                          ⎇ {pipeline.name || 'CI/CD Pipeline'}
+                        </span>
+                        <span className="jso-pipe-id" title={pipeline.id}>
+                          #{pipeline.id.substring(0, 8)}
+                        </span>
+                        <span className={`jso-pipe-status-badge ${getPipelineStatusClass(pipeline.status)}`}>
+                          {pipeline.status}
+                        </span>
+                      </div>
+
+                      <div className="jso-pipe-meta-actions">
+                        <span className="jso-pipe-time" title={`Created ${formatTime(pipeline.created_at)}`}>
+                          ⏱ {calculatePipelineDuration(pipeJobs, pipeline.status, now)}
+                        </span>
+
+                        <button
+                          type="button"
+                          className="jso-pipe-action-btn log"
+                          onClick={() => handleDownloadFullLogs(pipeJobs)}
+                          title="Download full pipeline execution logs"
+                        >
+                          <span>📥 Logs</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="jso-pipe-action-btn delete"
+                          onClick={(e) => handleDeletePipeline(pipeline.id, e)}
+                          disabled={deletingPipelineId === pipeline.id}
+                          title="Delete pipeline and associated jobs"
+                        >
+                          <span>🗑</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Visual DAG Graph with Bezier Connectors */}
+                    <PipelineGraph
+                      jobs={pipeJobs}
+                      pipelineName={pipeline.name}
+                      pipelineId={pipeline.id}
+                      selectedJobId={selectedJob?.id}
+                      optimisticJobStatuses={optimisticJobStatuses}
+                      onSelectJob={(job) => {
+                        setSelectedJob(job);
+                        onJobSelect?.(job);
+                      }}
+                      onRetryJob={handleRetryJob}
+                      onCancelJob={handleCancelJob}
+                      retryingJobId={retryingJobId}
+                      cancellingJobId={cancellingJobId}
+                    />
                   </div>
-
-                  <div className="jso-pipe-meta-actions">
-                    <span className="jso-pipe-time" title={`Created ${formatTime(pipeline.created_at)}`}>
-                      ⏱ {calculateDuration(
-                        pipeline.created_at,
-                        pipeline.status === 'RUNNING' || pipeline.status === 'PENDING' ? null : pipeline.updated_at,
-                        now
-                      )}
-                    </span>
-
-                    <button
-                      type="button"
-                      className="jso-pipe-action-btn log"
-                      onClick={() => handleDownloadFullLogs(pipeJobs)}
-                      title="Download full pipeline execution logs"
-                    >
-                      <span>📥 Logs</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      className="jso-pipe-action-btn delete"
-                      onClick={(e) => handleDeletePipeline(pipeline.id, e)}
-                      disabled={deletingPipelineId === pipeline.id}
-                      title="Delete pipeline and associated jobs"
-                    >
-                      <span>🗑</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Visual DAG Graph with Bezier Connectors */}
-                <PipelineGraph
-                  jobs={pipeJobs}
-                  pipelineName={pipeline.name}
-                  pipelineId={pipeline.id}
-                  selectedJobId={selectedJob?.id}
-                  optimisticJobStatuses={optimisticJobStatuses}
-                  onSelectJob={(job) => {
-                    setSelectedJob(job);
-                    onJobSelect?.(job);
-                  }}
-                  onRetryJob={handleRetryJob}
-                  onCancelJob={handleCancelJob}
-                  retryingJobId={retryingJobId}
-                  cancellingJobId={cancellingJobId}
-                />
-              </div>
-            );
-          })}
-
-          {/* Standalone Jobs DAG Canvas */}
-          {groupedPipelines.standaloneJobs.length > 0 && (
-            <div className="jso-pipeline-card standalone-card">
-              <div className="jso-pipe-header">
-                <div className="jso-pipe-info">
-                  <span className="jso-pipe-branch">⚡ Standalone / Ad-hoc Tasks</span>
-                  <span className="jso-pipe-id">({groupedPipelines.standaloneJobs.length} tasks)</span>
-                </div>
-              </div>
-
-              <PipelineGraph
-                jobs={groupedPipelines.standaloneJobs}
-                pipelineName="Standalone Tasks"
-                selectedJobId={selectedJob?.id}
-                optimisticJobStatuses={optimisticJobStatuses}
-                onSelectJob={(job) => {
-                  setSelectedJob(job);
-                  onJobSelect?.(job);
-                }}
-                onRetryJob={handleRetryJob}
-                onCancelJob={handleCancelJob}
-                retryingJobId={retryingJobId}
-                cancellingJobId={cancellingJobId}
-              />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* VIEW MODE 2: JOB MATRIX TABLE */}
-      {!loading && !error && viewMode === 'matrix' && (
-        <div className="jso-matrix-table-wrapper">
-          <table className="jso-matrix-table">
-            <thead>
-              <tr>
-                <th>Status</th>
-                <th>Job / Stage Name</th>
-                <th>Task Type</th>
-                <th>Progress</th>
-                <th>Runtime</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredJobs.map((job) => {
+                );
+              } else {
+                const { job } = item;
                 const optStatus = optimisticJobStatuses[job.id];
                 const effectiveStatus = optStatus || job.status;
-                const isActive = effectiveStatus === 'RUNNING' || effectiveStatus === 'PENDING' || effectiveStatus === 'BLOCKED';
-                const isFailed = effectiveStatus === 'FAILED' || effectiveStatus === 'CANCELLED';
 
                 return (
-                  <tr
-                    key={job.id}
-                    onClick={() => {
-                      setSelectedJob(job);
-                      onJobSelect?.(job);
-                    }}
-                    className={`jso-matrix-row ${selectedJob?.id === job.id ? 'selected' : ''}`}
-                  >
-                    <td>
-                      <span className={`jso-status-badge ${getPipelineStatusClass(effectiveStatus as any)}`}>
-                        {effectiveStatus}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="jso-matrix-job-name">{job.name}</div>
-                      <div className="jso-matrix-job-id">ID: {job.id}</div>
-                    </td>
-                    <td>
-                      <span className="jso-matrix-tag">{job.task_type || 'default'}</span>
-                    </td>
-                    <td>
-                      <div className="jso-matrix-progress-cell">
-                        {(() => {
-                          const progVal = effectiveStatus === 'COMPLETED' ? 100 : Math.min(100, Math.max(0, job.progress || 0));
-                          return (
-                            <>
-                              <div className="jso-matrix-progress-bar">
-                                <div
-                                  className={`jso-matrix-progress-fill status-${effectiveStatus.toLowerCase()}`}
-                                  style={{ width: `${progVal}%` }}
-                                />
-                              </div>
-                              <span>{progVal.toFixed(0)}%</span>
-                            </>
-                          );
-                        })()}
+                  <div key={job.id} className="jso-pipeline-card standalone-card">
+                    <div className="jso-pipe-header">
+                      <div className="jso-pipe-info">
+                        <span className="jso-pipe-branch" title="Task Name">
+                          ⚡ {job.name}
+                        </span>
+                        <span className="jso-pipe-id" title={job.id}>
+                          #{job.id.substring(0, 8)}
+                        </span>
+                        <span className={`jso-pipe-status-badge ${getPipelineStatusClass(effectiveStatus as any)}`}>
+                          {effectiveStatus}
+                        </span>
                       </div>
-                    </td>
-                    <td className="jso-matrix-time">
-                      {calculateDuration(job.started_at || job.created_at, job.completed_at, now)}
-                    </td>
-                    <td>
-                      <div className="jso-matrix-actions" onClick={(e) => e.stopPropagation()}>
-                        {isActive && (
-                          <button
-                            type="button"
-                            className="jso-cancel-job-btn"
-                            onClick={(e) => handleCancelJob(job.id, e)}
-                            disabled={cancellingJobId === job.id}
-                            title="Cancel Job"
-                          >
-                            Cancel
-                          </button>
-                        )}
-                        {isFailed && (
-                          <button
-                            type="button"
-                            className="jso-retry-job-btn"
-                            onClick={(e) => handleRetryJob(job.id, e)}
-                            disabled={retryingJobId === job.id}
-                            title="Retry Job"
-                          >
-                            Retry
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
 
-      {/* RIGHT SLIDE-OUT DETAILS DRAWER */}
-      <JobDetailsDrawer
-        job={selectedJob}
-        isOpen={!!selectedJob}
-        onClose={() => setSelectedJob(null)}
-        onRetryJob={handleRetryJob}
-        onCancelJob={handleCancelJob}
-        retryingJobId={retryingJobId}
-        cancellingJobId={cancellingJobId}
-      />
+                      <div className="jso-pipe-meta-actions">
+                        <span className="jso-pipe-time" title={`Created ${formatTime(job.created_at)}`}>
+                          ⏱ {calculateDuration(job.started_at, job.completed_at, now)}
+                        </span>
+
+                        <button
+                          type="button"
+                          className="jso-pipe-action-btn log"
+                          onClick={() => handleDownloadFullLogs([job])}
+                          title="Download execution log"
+                        >
+                          <span>📥 Logs</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="jso-pipe-action-btn delete"
+                          onClick={(e) => handleDeleteJob(job.id, e)}
+                          title="Delete task"
+                        >
+                          <span>🗑</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <PipelineGraph
+                      jobs={[job]}
+                      pipelineName={job.name}
+                      selectedJobId={selectedJob?.id}
+                      optimisticJobStatuses={optimisticJobStatuses}
+                      onSelectJob={(j) => {
+                        setSelectedJob(j);
+                        onJobSelect?.(j);
+                      }}
+                      onRetryJob={handleRetryJob}
+                      onCancelJob={handleCancelJob}
+                      retryingJobId={retryingJobId}
+                      cancellingJobId={cancellingJobId}
+                    />
+                  </div>
+                );
+              }
+            })}
+          </div>
+        )}
+
+        {/* VIEW MODE 2: JOB MATRIX TABLE */}
+        {!loading && !error && viewMode === 'matrix' && (
+          <div className="jso-matrix-table-wrapper">
+            <table className="jso-matrix-table">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Job / Stage Name</th>
+                  <th>Task Type</th>
+                  <th>Progress</th>
+                  <th>Runtime</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedFilteredJobs.map((job) => {
+                  const optStatus = optimisticJobStatuses[job.id];
+                  const effectiveStatus = optStatus || job.status;
+                  const isActive = effectiveStatus === 'RUNNING' || effectiveStatus === 'PENDING' || effectiveStatus === 'BLOCKED';
+                  const isFailed = effectiveStatus === 'FAILED' || effectiveStatus === 'CANCELLED';
+
+                  return (
+                    <tr
+                      key={job.id}
+                      id={`job-row-${job.id}`}
+                      data-job-id={job.id}
+                      onClick={() => {
+                        setSelectedJob(job);
+                        onJobSelect?.(job);
+                      }}
+                      className={`jso-matrix-row ${selectedJob?.id === job.id ? 'selected' : ''}`}
+                    >
+                      <td>
+                        <span className={`jso-status-badge ${getPipelineStatusClass(effectiveStatus as any)}`}>
+                          {effectiveStatus}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="jso-matrix-job-name">{job.name}</div>
+                        <div className="jso-matrix-job-id">ID: {job.id}</div>
+                      </td>
+                      <td>
+                        <span className="jso-matrix-tag">{job.task_type || 'default'}</span>
+                      </td>
+                      <td>
+                        <div className="jso-matrix-progress-cell">
+                          {(() => {
+                            const progVal = effectiveStatus === 'COMPLETED' ? 100 : Math.min(100, Math.max(0, job.progress || 0));
+                            return (
+                              <>
+                                <div className="jso-matrix-progress-bar">
+                                  <div
+                                    className={`jso-matrix-progress-fill status-${effectiveStatus.toLowerCase()}`}
+                                    style={{ width: `${progVal}%` }}
+                                  />
+                                </div>
+                                <span>{progVal.toFixed(0)}%</span>
+                              </>
+                            );
+                          })()}
+                        </div>
+                      </td>
+                      <td className="jso-matrix-time">
+                        {calculateDuration(job.started_at, job.completed_at, now)}
+                      </td>
+                      <td>
+                        <div className="jso-matrix-actions" onClick={(e) => e.stopPropagation()}>
+                          {isActive && (
+                            <button
+                              type="button"
+                              className="jso-cancel-job-btn"
+                              onClick={(e) => handleCancelJob(job.id, e)}
+                              disabled={cancellingJobId === job.id}
+                              title="Cancel Job"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                          {isFailed && (
+                            <button
+                              type="button"
+                              className="jso-retry-job-btn"
+                              onClick={(e) => handleRetryJob(job.id, e)}
+                              disabled={retryingJobId === job.id}
+                              title="Retry Job"
+                            >
+                              Retry
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* DETAILS DRAWER ALIGNED TO PIPELINE RUN HEADER TOP EDGE */}
+        <JobDetailsDrawer
+          job={selectedJob}
+          isOpen={!!selectedJob}
+          onClose={() => setSelectedJob(null)}
+          onLocateJob={() => {
+            handleLocateSelectedJob();
+            updateDrawerAlignment();
+          }}
+          onRetryJob={handleRetryJob}
+          onCancelJob={handleCancelJob}
+          retryingJobId={retryingJobId}
+          cancellingJobId={cancellingJobId}
+          style={{ top: `${drawerTopOffset}px` }}
+        />
+      </div>
     </div>
   );
 };

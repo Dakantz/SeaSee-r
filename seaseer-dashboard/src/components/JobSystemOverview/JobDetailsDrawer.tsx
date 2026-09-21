@@ -7,10 +7,12 @@ export interface JobDetailsDrawerProps {
   job: JobResponse | null;
   isOpen: boolean;
   onClose: () => void;
+  onLocateJob?: () => void;
   onRetryJob?: (jobId: string, e?: React.MouseEvent) => void;
   onCancelJob?: (jobId: string, e?: React.MouseEvent) => void;
   retryingJobId?: string | null;
   cancellingJobId?: string | null;
+  style?: React.CSSProperties;
 }
 
 const getJobStatusClass = (status: JobStatus): string => {
@@ -59,10 +61,12 @@ export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
   job,
   isOpen,
   onClose,
+  onLocateJob,
   onRetryJob,
   onCancelJob,
   retryingJobId,
   cancellingJobId,
+  style,
 }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [now, setNow] = useState<number>(Date.now());
@@ -116,7 +120,7 @@ export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
   const truncatedUuid = job.id ? `${job.id.slice(0, 8)}...` : '-';
 
   return (
-    <div className="jso-drawer-backdrop" onClick={onClose}>
+    <div className="jso-drawer-backdrop" style={style} onClick={onClose}>
       <div
         className="jso-drawer-panel"
         onClick={(e) => e.stopPropagation()}
@@ -163,6 +167,21 @@ export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
           </div>
 
           <div className="jso-drawer-header-actions">
+            {onLocateJob && (
+              <button
+                type="button"
+                className="jso-drawer-btn locate"
+                onClick={onLocateJob}
+                aria-label="Scroll to Job Location"
+                title="Re-center graph/matrix view on this job node"
+              >
+                <svg className="jso-btn-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                </svg>
+                <span>Locate Job</span>
+              </button>
+            )}
+
             {(isRunning || isPending || isBlocked) && onCancelJob && (
               <button
                 type="button"
@@ -235,7 +254,7 @@ export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
             <div className="jso-meta-item">
               <dt className="jso-meta-lbl">Runtime</dt>
               <dd className="jso-meta-val">
-                {calculateDuration(job.started_at || job.created_at, job.completed_at, now)}
+                {calculateDuration(job.started_at, job.completed_at, now)}
               </dd>
             </div>
           </dl>

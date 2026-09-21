@@ -1,4 +1,5 @@
 import os
+import math
 import logging
 from typing import Dict, Any, Optional
 from app.core.config import settings
@@ -29,7 +30,9 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         job_id: Optional[str] = None,
         is_append: bool = False,
         offset_x: float = 0.0,
-        offset_y: float = 0.0
+        offset_y: float = 0.0,
+        override_filename: Optional[str] = None,
+        override_safe_filename: Optional[str] = None
     ) -> None:
         """Database Ingestion via PDAL & Metadata insertion/update."""
         logger.info(f"Ingesting pointcloud {file_id} (is_append={is_append}) to database...")
@@ -57,6 +60,12 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         # Execute PDAL pgPointcloud ingestion for LOD levels 0..10
         for lod in range(11):
             step = 2 ** lod
+            if lod > 0 and (math.ceil(number_of_points / step) == 0 or step > number_of_points):
+                logger.info(
+                    f"Skipping LOD level {lod}+ for pointcloud {file_id}: "
+                    f"step ({step}) > number_of_points ({number_of_points}) or ceil(number_of_points / step) == 0."
+                )
+                break
             ingested_pcid = await ingest_pgpointcloud(
                 file_path=file_path,
                 connection_str=connection_str,
@@ -93,7 +102,9 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
                 job_id=job_id,
                 is_append=is_append,
                 offset_x=offset_x,
-                offset_y=offset_y
+                offset_y=offset_y,
+                override_filename=override_filename,
+                override_safe_filename=override_safe_filename
             )
 
         logger.info(f"Successfully ingested pointcloud {file_id} metadata and data to database.")
@@ -106,7 +117,9 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         mark_completed: bool = True,
         is_append: bool = False,
         offset_x: float = 0.0,
-        offset_y: float = 0.0
+        offset_y: float = 0.0,
+        override_filename: Optional[str] = None,
+        override_safe_filename: Optional[str] = None
     ) -> Dict[str, Any]:
         """Core pipeline to convert to EPT and ingest to database."""
         if job_id:
@@ -145,7 +158,9 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
                 job_id=job_id,
                 is_append=is_append,
                 offset_x=offset_x,
-                offset_y=offset_y
+                offset_y=offset_y,
+                override_filename=override_filename,
+                override_safe_filename=override_safe_filename
             )
 
             if job_id and mark_completed:

@@ -55,21 +55,80 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
         reconstruction_index: int = 0,
         is_append: bool = False,
         offset_x: float = 0.0,
-        offset_y: float = 0.0
+        offset_y: float = 0.0,
+        dataset_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """Async implementation for OpenSfM pointcloud and camera trajectory processing."""
         try:
-            # 1. Ingest fused.laz point cloud using PointCloudUploadTaskHandler
+            base_dataset_name = dataset_name or (os.path.basename(folder_path) if folder_path else f"dataset_{file_id}")
+            reconstruction_json_path = os.path.join(folder_path, "reconstruction.json") if folder_path else None
+            reconstructions = []
+            if reconstruction_json_path and os.path.exists(reconstruction_json_path):
+                from app.services.opensfm.ingest import parse_reconstruction_json
+                reconstructions = parse_reconstruction_json(reconstruction_json_path)
+
             pc_handler = PointCloudUploadTaskHandler()
-            await pc_handler.ingest_pointcloud_pipeline(
-                file_path=file_path,
-                file_id=file_id,
-                job_id=job_id,
-                mark_completed=False,
-                is_append=is_append,
-                offset_x=offset_x,
-                offset_y=offset_y
-            )
+
+            if reconstructions:
+                for idx, rec in enumerate(reconstructions):
+                    sub_folder_name = "undistorted" if idx == 0 else f"undistorted_{idx}"
+                    dense_candidates = [
+                        os.path.join(folder_path, sub_folder_name, "depthmaps", "fused.laz"),
+                        os.path.join(folder_path, sub_folder_name, "depthmaps", "merged.ply"),
+                        os.path.join(folder_path, sub_folder_name, "fused.laz"),
+                        os.path.join(folder_path, sub_folder_name, "merged.ply"),
+                    ]
+                    if idx == 0:
+                        dense_candidates.extend([
+                            os.path.join(folder_path, "depthmaps", "fused.laz"),
+                            os.path.join(folder_path, "depthmaps", "merged.ply"),
+                            os.path.join(folder_path, "fused.laz"),
+                            file_path
+                        ])
+
+                    dense_path = None
+                    for cand in dense_candidates:
+                        if cand and os.path.isfile(cand):
+                            dense_path = cand
+                            break
+
+                    if dense_path:
+                        ext = os.path.splitext(dense_path)[1]
+                        pc_name = f"{base_dataset_name}_rec_{idx}{ext}"
+
+                        if idx == 0:
+                            pc_id = file_id
+                        else:
+                            try:
+                                pc_id = str(uuid.uuid5(uuid.UUID(file_id), f"{base_dataset_name}_rec_{idx}"))
+                            except ValueError:
+                                pc_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{file_id}_{base_dataset_name}_rec_{idx}"))
+
+                        await pc_handler.ingest_pointcloud_pipeline(
+                            file_path=dense_path,
+                            file_id=pc_id,
+                            job_id=job_id,
+                            mark_completed=False,
+                            is_append=is_append,
+                            offset_x=offset_x,
+                            offset_y=offset_y,
+                            override_filename=pc_name,
+                            override_safe_filename=pc_name
+                        )
+            else:
+                ext = os.path.splitext(file_path)[1] if file_path else ".laz"
+                pc_name = f"{base_dataset_name}_rec_{reconstruction_index}{ext}"
+                await pc_handler.ingest_pointcloud_pipeline(
+                    file_path=file_path,
+                    file_id=file_id,
+                    job_id=job_id,
+                    mark_completed=False,
+                    is_append=is_append,
+                    offset_x=offset_x,
+                    offset_y=offset_y,
+                    override_filename=pc_name,
+                    override_safe_filename=pc_name
+                )
 
             # 2. Process camera trajectory and save CameraHeader and CameraFrames
             if not folder_path:
@@ -95,8 +154,6 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
             if not os.path.exists(shots_geojson_path):
                 shots_geojson_path = os.path.join(folder_path, "shots.geojson")
 
-            reconstruction_json_path = os.path.join(folder_path, "reconstruction.json")
-
             from app.models.camera import CameraHeader, CameraFrame
             from app.services.opensfm.ingest import (
                 parse_reconstruction_json,
@@ -113,8 +170,7 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
 
             if os.path.exists(shots_geojson_path):
                 header_info, frames_list = parse_shots_geojson(shots_geojson_path)
-            elif os.path.exists(reconstruction_json_path):
-                reconstructions = parse_reconstruction_json(reconstruction_json_path)
+            elif reconstruction_json_path and os.path.exists(reconstruction_json_path):
                 if reconstructions:
                     if 0 <= reconstruction_index < len(reconstructions):
                         data = reconstructions[reconstruction_index]
@@ -189,8 +245,7 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
             # 3. Gather reconstruction statistics (views, sparse_points, dense_points)
             reconstructions_info = []
 
-            if os.path.exists(reconstruction_json_path):
-                reconstructions = parse_reconstruction_json(reconstruction_json_path)
+            if reconstruction_json_path and os.path.exists(reconstruction_json_path):
                 for idx, rec in enumerate(reconstructions):
                     views_count = len(rec.get("shots", {}))
                     sparse_count = len(rec.get("points", {}))
@@ -318,6 +373,7 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
 
         offset_x = float(payload.get("offset_x", 0.0))
         offset_y = float(payload.get("offset_y", 0.0))
+        dataset_name = payload.get("dataset_name")
 
         return await self.process_opensfm(
             file_path=file_path,
@@ -328,7 +384,8 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
             reconstruction_index=reconstruction_index,
             is_append=is_append,
             offset_x=offset_x,
-            offset_y=offset_y
+            offset_y=offset_y,
+            dataset_name=dataset_name
         )
 
 

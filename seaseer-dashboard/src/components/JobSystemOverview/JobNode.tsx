@@ -97,7 +97,7 @@ export const JobNode: React.FC<JobNodeProps> = ({
   const progressValue = isCompleted
     ? 100
     : Math.min(100, Math.max(0, job.progress || 0));
-  const durationStr = calculateDuration(job.started_at || job.created_at, job.completed_at, now);
+  const durationStr = calculateDuration(job.started_at, job.completed_at, now);
 
   return (
     <div
@@ -114,6 +114,11 @@ export const JobNode: React.FC<JobNodeProps> = ({
         <span className="jso-node-name" title={job.name}>
           {job.name}
         </span>
+        {isSelected && (
+          <span className="jso-target-anchor-badge" title="Currently selected target job in drawer">
+            TARGET
+          </span>
+        )}
       </div>
 
       <div className="jso-node-meta">

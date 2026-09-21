@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { BaseUploader } from '../common/BaseUploader';
 import { useTusUpload, formatUuid } from '../common/useTusUpload';
 import type { TusUploadConfig } from '../common/useTusUpload';
-import { JobProgress } from '../JobProgress';
 import { createPipeline } from '../../client';
 
 export interface VideoUploaderProps {
@@ -14,24 +13,54 @@ export interface VideoUploaderProps {
   chunkSize?: number; // In bytes, default 5MB
   apiUrl?: string;
   tusEndpoint?: string;
+  defaultFrameCounts?: number[];
+  defaultBlurThresholds?: number[];
 }
 
 const DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
+
+const parseInputNumbers = (input: string, fallback: number[]): number[] => {
+  if (!input || !input.trim()) return fallback;
+  const parts = input.split(',').map(s => s.trim()).filter(Boolean);
+  const parsed = parts.map(p => Number(p)).filter(n => !isNaN(n) && n >= 0);
+  return parsed.length > 0 ? parsed : fallback;
+};
 
 export const VideoUploader: React.FC<VideoUploaderProps> = ({
   onUploadSuccess,
   onUploadError,
   onProgress,
   onJobCreated,
-  jobId: initialJobId,
   chunkSize = DEFAULT_CHUNK_SIZE,
-  tusEndpoint = import.meta.env.VITE_TUS_URL || 'http://localhost:8080/files/'
+  tusEndpoint = import.meta.env.VITE_TUS_URL || 'http://localhost:8080/files/',
+  defaultFrameCounts = [200],
+  defaultBlurThresholds = [50]
 }) => {
   const [videoFiles, setVideoFiles] = useState<File[]>([]);
   const [metadataFiles, setMetadataFiles] = useState<File[]>([]);
   const [batchId, setBatchId] = useState<string>('');
-  const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
-  const [jobFileMap, setJobFileMap] = useState<Record<string, string>>({});
+  
+  const [frameCountsInput, setFrameCountsInput] = useState<string>(
+    defaultFrameCounts.join(', ')
+  );
+  const [blurThresholdsInput, setBlurThresholdsInput] = useState<string>(
+    defaultBlurThresholds.join(', ')
+  );
+
+  const frameCountsRef = useRef(frameCountsInput);
+  const blurThresholdsRef = useRef(blurThresholdsInput);
+
+  useEffect(() => {
+    frameCountsRef.current = frameCountsInput;
+  }, [frameCountsInput]);
+
+  useEffect(() => {
+    blurThresholdsRef.current = blurThresholdsInput;
+  }, [blurThresholdsInput]);
+
+  const parsedFrameCounts = parseInputNumbers(frameCountsInput, defaultFrameCounts);
+  const parsedBlurThresholds = parseInputNumbers(blurThresholdsInput, defaultBlurThresholds);
+  const totalPipelines = parsedFrameCounts.length * parsedBlurThresholds.length;
 
   const {
     isUploading,
@@ -50,85 +79,113 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
         onUploadSuccess(videoIds);
       }
 
-      // Automatically create job pipelines across a parameter grid (num_frames x blur_threshold)
+      // Automatically create job pipeline across user-configured parameter grid (num_frames x blur_threshold)
       try {
-        const createdJobIds: string[] = [];
-        const newJobFileMap: Record<string, string> = {};
-        const frameCounts = [50, 100, 200, 500, 1000];
-        const blurThresholds = [50, 65, 80, 90];
+        const frameCounts = parseInputNumbers(frameCountsRef.current, defaultFrameCounts);
+        const blurThresholds = parseInputNumbers(blurThresholdsRef.current, defaultBlurThresholds);
 
-        for (const file of videoFiles) {
-          const rawFileId = fileIdsMap[file.name];
-          const fileId = formatUuid(rawFileId);
-          const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
-          const safeFilename = fileId ? `${fileId}${ext}` : file.name;
+        const videoSafeFilenames: string[] = [];
+        for (const vf of videoFiles) {
+          const rawId = fileIdsMap[vf.name];
+          const fId = formatUuid(rawId);
+          const ext = vf.name.includes('.') ? vf.name.slice(vf.name.lastIndexOf('.')) : '';
+          const safeFname = fId ? `${fId}${ext}` : vf.name;
+          if (!videoSafeFilenames.includes(safeFname)) {
+            videoSafeFilenames.push(safeFname);
+          }
+        }
 
-          for (const numFrames of frameCounts) {
-            for (const blurThreshold of blurThresholds) {
-              const datasetName = `dataset_${fileId.replace(/-/g, '_')}_f${numFrames}_b${blurThreshold}`;
+        const primaryFile = videoFiles[0] || metadataFiles[0];
+        if (!primaryFile) return;
 
-              const pipelineRes = await createPipeline({
-                body: {
-                  name: `Video OpenSfM Pipeline: ${file.name} (frames=${numFrames}, blur=${blurThreshold})`,
-                  jobs: [
-                    {
-                      id_key: 'frame_extraction',
-                      name: `Frame Extraction: ${file.name} (frames=${numFrames}, blur=${blurThreshold})`,
-                      task_type: 'frame_extraction',
-                      payload: {
-                        filename: file.name,
-                        safe_filename: safeFilename,
-                        video_files: [safeFilename, file.name],
-                        num_frames: numFrames,
-                        blur_threshold: blurThreshold,
-                        dataset_name: datasetName,
-                        batch_id: batchId
-                      },
-                      depends_on: []
+        const primaryRawId = fileIdsMap[primaryFile.name];
+        const primaryFileId = formatUuid(primaryRawId);
+        const primaryExt = primaryFile.name.includes('.') ? primaryFile.name.slice(primaryFile.name.lastIndexOf('.')) : '';
+        const primarySafeFilename = primaryFileId ? `${primaryFileId}${primaryExt}` : primaryFile.name;
+
+        const formatSummary = (files: File[]): string => {
+          if (files.length === 0) return primaryFile.name;
+          if (files.length === 1) return files[0].name;
+          const firstTwo = files.slice(0, 2).map(v => v.name).join(', ');
+          const extra = files.length > 2 ? `, +${files.length - 2} more` : '';
+          return `${files.length} videos (${firstTwo}${extra})`;
+        };
+
+        const fileNamesSummary = formatSummary(videoFiles);
+        const truncateStr = (str: string, maxLen = 220) =>
+          str.length > maxLen ? `${str.slice(0, maxLen - 3)}...` : str;
+
+        for (const numFrames of frameCounts) {
+          for (const blurThreshold of blurThresholds) {
+            const batchSlug = batchId ? batchId.replace(/-/g, '_') : primaryFileId.replace(/-/g, '_');
+            const datasetName = `dataset_${batchSlug}_f${numFrames}_b${blurThreshold}`;
+
+            const pipelineRes = await createPipeline({
+              body: {
+                name: truncateStr(`Video OpenSfM Pipeline: ${fileNamesSummary} (frames=${numFrames}, blur=${blurThreshold})`),
+                jobs: [
+                  {
+                    id_key: 'video_upload',
+                    name: truncateStr(`Video Preprocessing & Log Ingestion: ${fileNamesSummary}`),
+                    task_type: 'video_upload',
+                    payload: {
+                      file_id: primaryFileId,
+                      batch_id: batchId,
+                      filename: primaryFile.name,
+                      safe_filename: primarySafeFilename,
+                      video_files: videoSafeFilenames
                     },
-                    {
-                      id_key: 'opensfm_reconstruct',
-                      name: `OpenSfM Reconstruction: ${file.name} (frames=${numFrames}, blur=${blurThreshold})`,
-                      task_type: 'opensfm_reconstruct',
-                      payload: {
-                        dataset_name: datasetName,
-                        file_id: fileId,
-                        batch_id: batchId
-                      },
-                      depends_on: ['frame_extraction']
+                    depends_on: []
+                  },
+                  {
+                    id_key: 'frame_extraction',
+                    name: truncateStr(`Frame Extraction: ${fileNamesSummary} (frames=${numFrames}, blur=${blurThreshold})`),
+                    task_type: 'frame_extraction',
+                    payload: {
+                      filename: primaryFile.name,
+                      safe_filename: primarySafeFilename,
+                      video_files: videoSafeFilenames,
+                      num_frames: numFrames,
+                      blur_threshold: blurThreshold,
+                      dataset_name: datasetName,
+                      batch_id: batchId
                     },
-                    {
-                      id_key: 'opensfm_ingest',
-                      name: `OpenSfM Pointcloud Ingestion: ${file.name} (frames=${numFrames}, blur=${blurThreshold})`,
-                      task_type: 'opensfm_ingest',
-                      payload: {
-                        dataset_name: datasetName,
-                        file_id: fileId,
-                        batch_id: batchId
-                      },
-                      depends_on: ['opensfm_reconstruct']
-                    }
-                  ]
-                }
-              });
-
-              if (pipelineRes.data?.jobs) {
-                for (const job of pipelineRes.data.jobs) {
-                  if (job.id) {
-                    createdJobIds.push(job.id);
-                    newJobFileMap[job.id] = `${file.name} (f:${numFrames}, b:${blurThreshold}) - ${job.name}`;
-                    if (onJobCreated) {
-                      onJobCreated(job.id);
-                    }
+                    depends_on: ['video_upload']
+                  },
+                  {
+                    id_key: 'opensfm_reconstruct',
+                    name: truncateStr(`OpenSfM Reconstruction: ${fileNamesSummary} (frames=${numFrames}, blur=${blurThreshold})`),
+                    task_type: 'opensfm_reconstruct',
+                    payload: {
+                      dataset_name: datasetName,
+                      file_id: primaryFileId,
+                      batch_id: batchId
+                    },
+                    depends_on: ['frame_extraction']
+                  },
+                  {
+                    id_key: 'opensfm_ingest',
+                    name: truncateStr(`OpenSfM Pointcloud Ingestion: ${fileNamesSummary} (frames=${numFrames}, blur=${blurThreshold})`),
+                    task_type: 'opensfm_ingest',
+                    payload: {
+                      dataset_name: datasetName,
+                      file_id: primaryFileId,
+                      batch_id: batchId
+                    },
+                    depends_on: ['opensfm_reconstruct']
                   }
+                ]
+              }
+            });
+
+            if (pipelineRes.data?.jobs) {
+              for (const job of pipelineRes.data.jobs) {
+                if (job.id && onJobCreated) {
+                  onJobCreated(job.id);
                 }
               }
             }
           }
-        }
-        if (createdJobIds.length > 0) {
-          setActiveJobIds(prev => Array.from(new Set([...prev, ...createdJobIds])));
-          setJobFileMap(prev => ({ ...prev, ...newJobFileMap }));
         }
       } catch (err) {
         console.warn('Could not auto-create background job pipeline:', err);
@@ -188,12 +245,10 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
     setVideoFiles([]);
     setMetadataFiles([]);
     setBatchId('');
-    setActiveJobIds([]);
-    setJobFileMap({});
   };
 
   const handleStartUpload = (isResume: boolean) => {
-    if (videoFiles.length === 0) return;
+    if (videoFiles.length === 0 && metadataFiles.length === 0) return;
 
     let currentBatchId = batchId;
     if (!isResume || !currentBatchId) {
@@ -228,12 +283,162 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
     tusStartUpload(configs, isResume);
   };
 
-  const allJobIds = Array.from(
-    new Set([...(initialJobId ? [initialJobId] : []), ...activeJobIds])
-  );
-
   return (
-    <div style={{ width: '100%' }}>
+    <div style={{ width: '100%', maxWidth: '500px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div style={{
+        backgroundColor: 'var(--color-bg-card, #1e293b)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        border: '1px solid var(--color-border-default, rgba(255, 255, 255, 0.1))',
+        borderRadius: 'var(--radius-4xl, 16px)',
+        padding: '16px 20px',
+        boxShadow: 'var(--shadow-xl, 0 20px 25px -5px rgba(0, 0, 0, 0.1))'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            <span style={{ fontWeight: 600, fontSize: '14px', color: '#f8fafc' }}>
+              Pipeline Parameters
+            </span>
+          </div>
+          <span style={{ fontSize: '11px', color: '#94a3b8', backgroundColor: 'rgba(255, 255, 255, 0.05)', padding: '2px 8px', borderRadius: '4px' }}>
+            Parameter Grid Sweep
+          </span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 600, color: '#cbd5e1' }}>
+                Frame Counts
+              </label>
+              <span style={{ fontSize: '10px', color: '#38bdf8', fontWeight: 500 }}>
+                {parsedFrameCounts.length} value{parsedFrameCounts.length > 1 ? 's' : ''}
+              </span>
+            </div>
+            <input
+              type="text"
+              value={frameCountsInput}
+              onChange={(e) => setFrameCountsInput(e.target.value)}
+              placeholder="e.g. 100, 200, 300"
+              disabled={isUploading}
+              style={{
+                width: '100%',
+                backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: '8px',
+                padding: '8px 10px',
+                fontSize: '13px',
+                color: '#f8fafc',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
+            />
+            {/* Tag Pills Preview */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px', minHeight: '20px' }}>
+              {parsedFrameCounts.map((val, idx) => (
+                <span key={idx} style={{
+                  fontSize: '10px',
+                  fontWeight: 600,
+                  color: '#38bdf8',
+                  backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  fontFamily: 'monospace'
+                }}>
+                  {val} frames
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 600, color: '#cbd5e1' }}>
+                Blur Thresholds
+              </label>
+              <span style={{ fontSize: '10px', color: '#a78bfa', fontWeight: 500 }}>
+                {parsedBlurThresholds.length} value{parsedBlurThresholds.length > 1 ? 's' : ''}
+              </span>
+            </div>
+            <input
+              type="text"
+              value={blurThresholdsInput}
+              onChange={(e) => setBlurThresholdsInput(e.target.value)}
+              placeholder="e.g. 30, 50, 80"
+              disabled={isUploading}
+              style={{
+                width: '100%',
+                backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: '8px',
+                padding: '8px 10px',
+                fontSize: '13px',
+                color: '#f8fafc',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
+            />
+            {/* Tag Pills Preview */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px', minHeight: '20px' }}>
+              {parsedBlurThresholds.map((val, idx) => (
+                <span key={idx} style={{
+                  fontSize: '10px',
+                  fontWeight: 600,
+                  color: '#a78bfa',
+                  backgroundColor: 'rgba(167, 139, 250, 0.1)',
+                  border: '1px solid rgba(167, 139, 250, 0.3)',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  fontFamily: 'monospace'
+                }}>
+                  blur={val}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div style={{
+          marginTop: '12px',
+          padding: '10px 12px',
+          backgroundColor: 'rgba(15, 23, 42, 0.5)',
+          borderRadius: '8px',
+          border: '1px solid rgba(255, 255, 255, 0.06)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px'
+        }}>
+          <div style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '12px' }}>💡</span>
+            <span>
+              <strong>Multiple Values Tip:</strong> Enter comma-separated values (e.g. <code style={{ color: '#38bdf8', backgroundColor: 'rgba(0,0,0,0.3)', padding: '1px 4px', borderRadius: '3px' }}>100, 200</code>) to run a parameter sweep matrix.
+            </span>
+          </div>
+          
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px', borderTop: '1px solid rgba(255, 255, 255, 0.05)' }}>
+            <span style={{ fontSize: '11px', color: '#cbd5e1' }}>
+              Execution Grid: <strong>{parsedFrameCounts.length}</strong> frame count{parsedFrameCounts.length > 1 ? 's' : ''} × <strong>{parsedBlurThresholds.length}</strong> blur threshold{parsedBlurThresholds.length > 1 ? 's' : ''}
+            </span>
+            <span style={{
+              fontSize: '11px',
+              fontWeight: 600,
+              color: totalPipelines > 1 ? '#38bdf8' : '#94a3b8',
+              backgroundColor: totalPipelines > 1 ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+              padding: '2px 8px',
+              borderRadius: '12px',
+              border: totalPipelines > 1 ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)'
+            }}>
+              {totalPipelines} {totalPipelines === 1 ? 'Pipeline' : 'Pipelines'} Total
+            </span>
+          </div>
+        </div>
+      </div>
+
       <BaseUploader
         onFilesAdded={handleFilesAdded}
         fileGroups={[
@@ -258,26 +463,10 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
         dropzoneText="Drag and drop your videos & metadata here"
         dropzoneSubtext="or click to browse files, or add a full folder"
       />
-
-      {allJobIds.length > 0 && (
-        <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {allJobIds.map(id => {
-            const fileName = jobFileMap[id];
-            const title = fileName ? `Video Reconstruction Job (${fileName})` : undefined;
-            return (
-              <JobProgress
-                key={id}
-                jobId={id}
-                onClose={() => setActiveJobIds(prev => prev.filter(jobId => jobId !== id))}
-                title={title}
-              />
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 };
 
 export default VideoUploader;
+
 
