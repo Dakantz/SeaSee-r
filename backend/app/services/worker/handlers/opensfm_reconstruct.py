@@ -3,6 +3,7 @@ import shutil
 import logging
 import asyncio
 import uuid
+import json
 from typing import Dict, Any, Optional
 
 from sqlalchemy import select
@@ -84,29 +85,6 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
         # 2. Incremental SfM Reconstruction & Mesh
         update_progress(50.0, "reconstruct")
         actions.reconstruct.run_dataset(dataset, algorithm=reconstruction.ReconstructionAlgorithm.INCREMENTAL)
-
-        # Ensure a minimum number of views (shots) were registered across reconstructions
-        MIN_REQUIRED_VIEWS = 15
-        total_views = 0
-        if dataset.reconstruction_exists():
-            reconstructions = dataset.load_reconstruction()
-            for rec in reconstructions:
-                if hasattr(rec, "shots"):
-                    shots = rec.shots
-                elif isinstance(rec, dict):
-                    shots = rec.get("shots", {})
-                else:
-                    shots = {}
-                if isinstance(shots, (dict, list)):
-                    total_views += len(shots)
-
-        if total_views < MIN_REQUIRED_VIEWS:
-            err_msg = (
-                f"OpenSfM reconstruction registered only {total_views} view(s), "
-                f"which is below the minimum required threshold of {MIN_REQUIRED_VIEWS} views."
-            )
-            logger.error(err_msg)
-            raise RuntimeError(err_msg)
 
         update_progress(65.0, "mesh")
         actions.mesh.run_dataset(dataset)

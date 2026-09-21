@@ -14,6 +14,34 @@ from app.services.opensfm.ingest import (
 
 logger = logging.getLogger(__name__)
 
+async def _get_dense_point_count(file_path: Optional[str]) -> int:
+    """Helper to extract dense point count from a PLY or LAS/LAZ point cloud file."""
+    if not file_path or not os.path.exists(file_path):
+        return 0
+
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext == ".ply":
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    if line.startswith("element vertex"):
+                        parts = line.strip().split()
+                        if len(parts) >= 3:
+                            return int(parts[2])
+                    if "end_header" in line:
+                        break
+        except Exception as e:
+            logger.debug(f"Failed to parse PLY header for {file_path}: {e}")
+
+    try:
+        from app.services.pointcloud.pdal import get_pointcloud_stats
+        _, number_of_points = await get_pointcloud_stats(file_path)
+        return number_of_points
+    except Exception as err:
+        logger.warning(f"Could not retrieve point count for {file_path}: {err}")
+        return 0
+
+
 class OpenSfMIngestTaskHandler(BaseTaskHandler):
     task_types = ["opensfm_ingest", "opensfm_append"]
 
@@ -46,9 +74,22 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
             # 2. Process camera trajectory and save CameraHeader and CameraFrames
             if not folder_path:
                 logger.info("No folder_path provided, skipping camera frame processing.")
+                dense_count = await _get_dense_point_count(file_path) if file_path and os.path.exists(file_path) else 0
+                result_data = {
+                    "status": "success",
+                    "file_id": file_id,
+                    "reconstructions": [
+                        {
+                            "reconstruction_index": reconstruction_index,
+                            "views": 0,
+                            "sparse_points": 0,
+                            "dense_points": dense_count
+                        }
+                    ]
+                }
                 if job_id:
-                    await self.update_job_status(job_id, "COMPLETED", 100.0)
-                return {"status": "success", "file_id": file_id}
+                    await self.update_job_status(job_id, "COMPLETED", 100.0, result=result_data)
+                return result_data
 
             shots_geojson_path = os.path.join(folder_path, subfolder, "shots.geojson")
             if not os.path.exists(shots_geojson_path):
@@ -145,9 +186,64 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
 
                     await session.commit()
 
+            # 3. Gather reconstruction statistics (views, sparse_points, dense_points)
+            reconstructions_info = []
+
+            if os.path.exists(reconstruction_json_path):
+                reconstructions = parse_reconstruction_json(reconstruction_json_path)
+                for idx, rec in enumerate(reconstructions):
+                    views_count = len(rec.get("shots", {}))
+                    sparse_count = len(rec.get("points", {}))
+
+                    sub_folder_name = "undistorted" if idx == 0 else f"undistorted_{idx}"
+                    dense_candidates = [
+                        os.path.join(folder_path, sub_folder_name, "depthmaps", "fused.laz"),
+                        os.path.join(folder_path, sub_folder_name, "depthmaps", "merged.ply"),
+                        os.path.join(folder_path, sub_folder_name, "fused.laz"),
+                        os.path.join(folder_path, sub_folder_name, "merged.ply"),
+                    ]
+                    if idx == 0:
+                        dense_candidates.extend([
+                            os.path.join(folder_path, "depthmaps", "fused.laz"),
+                            os.path.join(folder_path, "depthmaps", "merged.ply"),
+                            os.path.join(folder_path, "fused.laz"),
+                            file_path
+                        ])
+
+                    dense_path = None
+                    for cand in dense_candidates:
+                        if cand and os.path.isfile(cand):
+                            dense_path = cand
+                            break
+
+                    dense_count = await _get_dense_point_count(dense_path) if dense_path else 0
+
+                    reconstructions_info.append({
+                        "reconstruction_index": idx,
+                        "views": views_count,
+                        "sparse_points": sparse_count,
+                        "dense_points": dense_count
+                    })
+
+            if not reconstructions_info:
+                views_count = len(frames_list) if frames_list else 0
+                dense_count = await _get_dense_point_count(file_path) if file_path and os.path.exists(file_path) else 0
+                reconstructions_info.append({
+                    "reconstruction_index": reconstruction_index,
+                    "views": views_count,
+                    "sparse_points": 0,
+                    "dense_points": dense_count
+                })
+
+            result_data = {
+                "status": "success",
+                "file_id": file_id,
+                "reconstructions": reconstructions_info
+            }
+
             if job_id:
-                await self.update_job_status(job_id, "COMPLETED", 100.0)
-            return {"status": "success", "file_id": file_id}
+                await self.update_job_status(job_id, "COMPLETED", 100.0, result=result_data)
+            return result_data
         except Exception as e:
             error_msg = str(e)
             logger.error(f"Exception processing OpenSfM ingestion for {file_path}: {error_msg}")
