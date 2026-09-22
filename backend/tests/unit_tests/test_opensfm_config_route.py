@@ -31,6 +31,7 @@ def test_update_and_reset_opensfm_config():
             "depthmap_max_cluster_views": 16,
             "depthmap_fusion_svo_max_voxels": 20000000,
             "undistorted_image_max_size": 1024,
+            "undistorted_image_format": "png",
             "submodel_size": 40
         }
     }
@@ -58,7 +59,7 @@ def test_invalid_raw_yaml_validation():
 def test_preserve_custom_yaml_keys():
     client = TestClient(app)
     # Put raw YAML with custom extra key
-    custom_yaml = "processes: 3\ncustom_extra_param: 99\nmem_ceiling: 12288\nfeature_process_size: 2048\ndepthmap_max_image_size: 2048\ndepthmap_cluster_max_size: 12\ndepthmap_max_cluster_views: 32\ndepthmap_fusion_svo_max_voxels: 50000000\nundistorted_image_max_size: 2048\nsubmodel_size: 60"
+    custom_yaml = "processes: 3\ncustom_extra_param: 99\nmem_ceiling: 12288\nfeature_process_size: 2048\ndepthmap_max_image_size: 2048\ndepthmap_cluster_max_size: 12\ndepthmap_max_cluster_views: 32\ndepthmap_fusion_svo_max_voxels: 50000000\nundistorted_image_max_size: 2048\nundistorted_image_format: png\nsubmodel_size: 60"
     res = client.put("/api/opensfm/config", json={"raw_yaml": custom_yaml})
     assert res.status_code == 200
     assert "custom_extra_param: 99" in res.json()["raw_yaml"]
@@ -74,6 +75,7 @@ def test_preserve_custom_yaml_keys():
             "depthmap_max_cluster_views": 32,
             "depthmap_fusion_svo_max_voxels": 50000000,
             "undistorted_image_max_size": 2048,
+            "undistorted_image_format": "png",
             "submodel_size": 60
         }
     }

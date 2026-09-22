@@ -10,6 +10,7 @@ class OpenSfMConfig(BaseModel):
     depthmap_max_cluster_views: int = Field(default=32, ge=1, description="Max views per cluster for depth maps")
     depthmap_fusion_svo_max_voxels: int = Field(default=50000000, ge=100000, description="Max voxels for SVO fusion")
     undistorted_image_max_size: int = Field(default=2048, ge=256, description="Max size for undistorted images")
+    undistorted_image_format: str = Field(default="png", description="Image format for undistorted images (e.g. png, jpg)")
     submodel_size: int = Field(default=60, ge=1, description="Submodel size parameter")
 
 class OpenSfMConfigResponse(BaseModel):

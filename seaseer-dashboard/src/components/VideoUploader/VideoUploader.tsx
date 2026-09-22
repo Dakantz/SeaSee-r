@@ -39,6 +39,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
   const [videoFiles, setVideoFiles] = useState<File[]>([]);
   const [metadataFiles, setMetadataFiles] = useState<File[]>([]);
   const [batchId, setBatchId] = useState<string>('');
+  const batchIdRef = useRef<string>(batchId);
   
   const [frameCountsInput, setFrameCountsInput] = useState<string>(
     defaultFrameCounts.join(', ')
@@ -49,6 +50,10 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
 
   const frameCountsRef = useRef(frameCountsInput);
   const blurThresholdsRef = useRef(blurThresholdsInput);
+
+  useEffect(() => {
+    batchIdRef.current = batchId;
+  }, [batchId]);
 
   useEffect(() => {
     frameCountsRef.current = frameCountsInput;
@@ -112,9 +117,11 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
         const truncateStr = (str: string, maxLen = 220) =>
           str.length > maxLen ? `${str.slice(0, maxLen - 3)}...` : str;
 
+        const activeBatchId = batchIdRef.current || batchId;
+
         for (const numFrames of frameCounts) {
           for (const blurThreshold of blurThresholds) {
-            const batchSlug = batchId ? batchId.replace(/-/g, '_') : primaryFileId.replace(/-/g, '_');
+            const batchSlug = activeBatchId ? activeBatchId.replace(/-/g, '_') : primaryFileId.replace(/-/g, '_');
             const datasetName = `dataset_${batchSlug}_f${numFrames}_b${blurThreshold}`;
 
             const pipelineRes = await createPipeline({
@@ -127,7 +134,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
                     task_type: 'video_upload',
                     payload: {
                       file_id: primaryFileId,
-                      batch_id: batchId,
+                      batch_id: activeBatchId,
                       filename: primaryFile.name,
                       safe_filename: primarySafeFilename,
                       video_files: videoSafeFilenames
@@ -145,7 +152,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
                       num_frames: numFrames,
                       blur_threshold: blurThreshold,
                       dataset_name: datasetName,
-                      batch_id: batchId
+                      batch_id: activeBatchId
                     },
                     depends_on: []
                   },
@@ -156,7 +163,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
                     payload: {
                       dataset_name: datasetName,
                       file_id: primaryFileId,
-                      batch_id: batchId
+                      batch_id: activeBatchId
                     },
                     depends_on: ['frame_extraction', 'video_upload']
                   },
@@ -167,7 +174,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
                     payload: {
                       dataset_name: datasetName,
                       file_id: primaryFileId,
-                      batch_id: batchId,
+                      batch_id: activeBatchId,
                       reconstruction_index: 0,
                       subfolder: 'undistorted'
                     },
@@ -180,7 +187,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
                     payload: {
                       dataset_name: datasetName,
                       file_id: primaryFileId,
-                      batch_id: batchId,
+                      batch_id: activeBatchId,
                       reconstruction_index: 0,
                       subfolder: 'undistorted'
                     },
@@ -261,15 +268,17 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
     tusResetState(cancel);
     setVideoFiles([]);
     setMetadataFiles([]);
+    batchIdRef.current = '';
     setBatchId('');
   };
 
   const handleStartUpload = (isResume: boolean) => {
     if (videoFiles.length === 0 && metadataFiles.length === 0) return;
 
-    let currentBatchId = batchId;
+    let currentBatchId = batchIdRef.current || batchId;
     if (!isResume || !currentBatchId) {
       currentBatchId = crypto.randomUUID();
+      batchIdRef.current = currentBatchId;
       setBatchId(currentBatchId);
     }
 

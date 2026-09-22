@@ -158,3 +158,43 @@ async def test_create_dynamic_component_jobs(tmp_path):
         assert dense_jobs[1].payload["subfolder"] == "undistorted_2"
 
         assert mock_session.commit.called
+
+
+@pytest.mark.anyio
+async def test_resolve_opensfm_config_path():
+    from app.services.worker.handlers.opensfm_reconstruct import resolve_opensfm_config_path
+    rel_path = "backend/app/core/openSfM/config.yaml"
+    resolved = resolve_opensfm_config_path(rel_path)
+    assert resolved is not None
+    assert os.path.exists(resolved)
+    assert resolved.endswith("config.yaml")
+
+
+@pytest.mark.anyio
+async def test_opensfm_reconstruct_copies_config(tmp_path):
+    handler = OpenSfMReconstructTaskHandler()
+    dataset_dir = tmp_path / "dataset"
+    images_dir = dataset_dir / "images"
+    images_dir.mkdir(parents=True)
+    (images_dir / "img1.png").write_text("dummy")
+
+    config_source = tmp_path / "custom_config.yaml"
+    config_source.write_text("processes: 4\n")
+
+    payload = {
+        "dataset_dir": str(dataset_dir),
+        "opensfm_config": str(config_source)
+    }
+    job_id = "19732560-8306-4484-92d6-b101743fb329"
+
+    with patch.object(handler, "update_job_status", new_callable=AsyncMock), \
+         patch("app.services.worker.handlers.opensfm_reconstruct.HAS_OPENSFM", True), \
+         patch.object(handler, "_run_opensfm_pipeline"), \
+         patch.object(handler, "_create_dynamic_component_jobs", new_callable=AsyncMock):
+        
+        await handler.execute(job_id, payload)
+
+        target_config = dataset_dir / "config.yaml"
+        assert target_config.exists()
+        assert target_config.read_text() == "processes: 4\n"
+

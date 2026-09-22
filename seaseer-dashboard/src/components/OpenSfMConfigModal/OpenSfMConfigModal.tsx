@@ -10,6 +10,7 @@ export interface OpenSfMConfig {
   depthmap_max_cluster_views: number;
   depthmap_fusion_svo_max_voxels: number;
   undistorted_image_max_size: number;
+  undistorted_image_format: string;
   submodel_size: number;
 }
 
@@ -27,6 +28,7 @@ const DEFAULT_CONFIG: OpenSfMConfig = {
   depthmap_max_cluster_views: 32,
   depthmap_fusion_svo_max_voxels: 50000000,
   undistorted_image_max_size: 2048,
+  undistorted_image_format: "png",
   submodel_size: 60,
 };
 
@@ -88,6 +90,13 @@ export const OpenSfMConfigPanel: React.FC<OpenSfMConfigPanelProps> = ({ onClose,
     setConfig((prev) => ({
       ...prev,
       [field]: isNaN(numVal) ? 0 : numVal,
+    }));
+  };
+
+  const handleStringFieldChange = (field: keyof OpenSfMConfig, value: string) => {
+    setConfig((prev) => ({
+      ...prev,
+      [field]: value,
     }));
   };
 
@@ -313,6 +322,21 @@ export const OpenSfMConfigPanel: React.FC<OpenSfMConfigPanelProps> = ({ onClose,
                 className="opensfm-field-input"
                 value={config.undistorted_image_max_size}
                 onChange={(e) => handleFieldChange("undistorted_image_max_size", e.target.value)}
+              />
+            </div>
+
+            {/* Undistorted Image Format */}
+            <div className="opensfm-field-card">
+              <div className="opensfm-field-label">
+                <span>Undistorted Image Format</span>
+                <span style={{ color: "var(--color-accent-text)" }}>undistorted_image_format</span>
+              </div>
+              <div className="opensfm-field-desc">Image format extension for undistorted images</div>
+              <input
+                type="text"
+                className="opensfm-field-input"
+                value={config.undistorted_image_format || "png"}
+                onChange={(e) => handleStringFieldChange("undistorted_image_format", e.target.value)}
               />
             </div>
 

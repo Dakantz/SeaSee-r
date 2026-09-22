@@ -4,6 +4,7 @@ import logging
 import asyncio
 import uuid
 import json
+from pathlib import Path
 from typing import Dict, Any, Optional
 
 from sqlalchemy import select
@@ -14,6 +15,38 @@ from app.models.job import Job, JobStatus
 from app.services.worker.handlers.base import BaseTaskHandler
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_opensfm_config_path(config_path: str) -> Optional[str]:
+    if not config_path:
+        return None
+    p = Path(config_path)
+    if p.is_absolute() and p.exists():
+        return str(p)
+    if p.exists():
+        return str(p.resolve())
+
+    current_file = Path(__file__).resolve()
+    backend_dir = current_file.parents[4]
+    project_root = current_file.parents[5]
+
+    candidates = [
+        project_root / config_path,
+        backend_dir / config_path,
+    ]
+    if config_path.startswith("backend/"):
+        rel_no_backend = config_path[len("backend/"):]
+        candidates.extend([
+            backend_dir / rel_no_backend,
+            project_root / rel_no_backend,
+        ])
+
+    for cand in candidates:
+        if cand.exists():
+            return str(cand.resolve())
+
+    return None
+
 
 try:
     import opensfm
@@ -223,10 +256,17 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
 
         await self.update_job_status(job_id, "RUNNING", 25.0)
 
-        # Copy OpenSfM config if present and target missing
+        # Copy OpenSfM config into dataset working directory at the start of reconstruction job
         target_config = os.path.join(dataset_dir, "config.yaml")
-        if not os.path.exists(target_config) and os.path.exists(opensfm_config):
-            shutil.copy(opensfm_config, target_config)
+        resolved_config = resolve_opensfm_config_path(opensfm_config)
+        if resolved_config:
+            try:
+                shutil.copy(resolved_config, target_config)
+                logger.info(f"Successfully copied OpenSfM config from '{resolved_config}' to '{target_config}'")
+            except Exception as copy_err:
+                logger.warning(f"Failed to copy OpenSfM config from '{resolved_config}' to '{target_config}': {copy_err}")
+        else:
+            logger.warning(f"OpenSfM config file '{opensfm_config}' could not be found or resolved.")
 
         if not HAS_OPENSFM:
             err_msg = "OpenSfM Python library is not available in current Python environment. Ensure task is running inside OpenSfM worker container."
