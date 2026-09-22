@@ -10,4 +10,5 @@ depthmap_max_cluster_views: 32
 depthmap_fusion_svo_max_voxels: 50000000
 
 undistorted_image_max_size: 2048
+undistorted_image_format: png
 submodel_size: 60

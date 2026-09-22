@@ -153,6 +153,10 @@ const ConnectedMetadataCard: React.FC<{
     "max_z",
     "center",
     "transform_matrix",
+    "reconstruction_index",
+    "views",
+    "sparse_points",
+    "dense_points",
   ]);
 
   const extraKeys = Object.keys(meta).filter(
@@ -212,11 +216,6 @@ const ConnectedMetadataCard: React.FC<{
             </div>
 
             <div className="query-summary__connected-field">
-              <span className="query-summary__connected-field-label">Schema ID (pcid):</span>
-              <span className="query-summary__connected-field-value mono">{meta.pcid ?? "N/A"}</span>
-            </div>
-
-            <div className="query-summary__connected-field">
               <span className="query-summary__connected-field-label">Created At:</span>
               <span className="query-summary__connected-field-value">
                 {meta.created_at ? new Date(meta.created_at).toLocaleString() : "N/A"}
@@ -231,6 +230,35 @@ const ConnectedMetadataCard: React.FC<{
             <div className="query-summary__connected-field">
               <span className="query-summary__connected-field-label">Video Metadata ID:</span>
               <span className="query-summary__connected-field-value mono">{meta.video_metadata_id || "None"}</span>
+            </div>
+
+            {/* OpenSfM Statistics */}
+            <div className="query-summary__connected-field">
+              <span className="query-summary__connected-field-label">Reconstruction Index:</span>
+              <span className="query-summary__connected-field-value mono">
+                {meta.reconstruction_index !== undefined && meta.reconstruction_index !== null ? meta.reconstruction_index : 0}
+              </span>
+            </div>
+
+            <div className="query-summary__connected-field">
+              <span className="query-summary__connected-field-label">Views:</span>
+              <span className="query-summary__connected-field-value mono">
+                {meta.views !== undefined && meta.views !== null ? meta.views : "N/A"}
+              </span>
+            </div>
+
+            <div className="query-summary__connected-field">
+              <span className="query-summary__connected-field-label">Sparse Points:</span>
+              <span className="query-summary__connected-field-value mono">
+                {meta.sparse_points !== undefined && meta.sparse_points !== null ? meta.sparse_points.toLocaleString() : "N/A"}
+              </span>
+            </div>
+
+            <div className="query-summary__connected-field">
+              <span className="query-summary__connected-field-label">Dense Points:</span>
+              <span className="query-summary__connected-field-value mono">
+                {meta.dense_points !== undefined && meta.dense_points !== null ? meta.dense_points.toLocaleString() : "N/A"}
+              </span>
             </div>
 
             {/* Bounding Box Min/Max */}

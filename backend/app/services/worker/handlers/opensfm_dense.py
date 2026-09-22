@@ -213,6 +213,66 @@ class OpenSfMDenseTaskHandler(BaseTaskHandler):
             await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)
             raise RuntimeError(err_msg) from proc_err
 
+        # Extract reconstruction stats once dense reconstruction finishes
+        views_count = None
+        sparse_count = None
+        dense_count = 0
+
+        rec_json_path = os.path.join(dataset_dir, "reconstruction.json")
+        if os.path.exists(rec_json_path):
+            try:
+                import json
+                with open(rec_json_path, "r", encoding="utf-8") as f:
+                    reconstructions_data = json.load(f)
+                    if isinstance(reconstructions_data, list) and len(reconstructions_data) > 0:
+                        rec_data = reconstructions_data[rec_idx] if 0 <= rec_idx < len(reconstructions_data) else reconstructions_data[0]
+                        views_count = len(rec_data.get("shots", {}))
+                        sparse_count = len(rec_data.get("points", {}))
+            except Exception as json_err:
+                logger.warning(f"Could not parse reconstruction.json for stats in opensfm_dense: {json_err}")
+
+        dense_candidates = [
+            os.path.join(dataset_dir, subfolder, "depthmaps", "fused.laz"),
+            os.path.join(dataset_dir, subfolder, "depthmaps", "merged.ply"),
+            os.path.join(dataset_dir, subfolder, "fused.laz"),
+            os.path.join(dataset_dir, subfolder, "merged.ply"),
+        ]
+        if rec_idx == 0:
+            dense_candidates.extend([
+                os.path.join(dataset_dir, "depthmaps", "fused.laz"),
+                os.path.join(dataset_dir, "depthmaps", "merged.ply"),
+                os.path.join(dataset_dir, "fused.laz"),
+            ])
+
+        dense_file = None
+        for cand in dense_candidates:
+            if cand and os.path.isfile(cand):
+                dense_file = cand
+                break
+
+        if dense_file:
+            try:
+                from app.services.worker.handlers.opensfm_ingest import _get_dense_point_count
+                dense_count = await _get_dense_point_count(dense_file)
+            except Exception as cnt_err:
+                logger.warning(f"Could not calculate dense point count for {dense_file}: {cnt_err}")
+
+        file_id = payload.get("file_id")
+        if file_id:
+            try:
+                from app.services.pointcloud.db_utils import update_pointcloud_opensfm_stats
+                async with async_session() as session:
+                    await update_pointcloud_opensfm_stats(
+                        session=session,
+                        file_id=file_id,
+                        reconstruction_index=rec_idx,
+                        views=views_count,
+                        sparse_points=sparse_count,
+                        dense_points=dense_count
+                    )
+            except Exception as db_err:
+                logger.warning(f"Could not update PointCloudMetadata in opensfm_dense: {db_err}")
+
         logger.info(f"OpenSfM dense reconstruction completed successfully for {dataset_dir} (component {rec_idx})")
         res_data = {
             "status": "success",
@@ -220,8 +280,12 @@ class OpenSfMDenseTaskHandler(BaseTaskHandler):
             "dataset_dir": dataset_dir,
             "reconstruction_index": rec_idx,
             "subfolder": subfolder,
+            "views": views_count,
+            "sparse_points": sparse_count,
+            "dense_points": dense_count,
             "message": f"OpenSfM dense reconstruction completed successfully for component {rec_idx}."
         }
 
         await self.update_job_status(job_id, "COMPLETED", 100.0, result=res_data)
         return res_data
+

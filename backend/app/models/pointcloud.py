@@ -78,8 +78,15 @@ class PointCloudMetadata(Base):
     pcid = Column(Integer, nullable=False)  # pgPointcloud format format schema ID
     
     transform_matrix = Column(ARRAY(Float), nullable=False, default=[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0])
+    
+    # OpenSfM reconstruction statistics
+    reconstruction_index = Column(Integer, nullable=True, default=0)
+    views = Column(Integer, nullable=True)
+    sparse_points = Column(Integer, nullable=True)
+    dense_points = Column(Integer, nullable=True)
 
     video_metadata = relationship("Video", back_populates="pointclouds")
+
 
 POINTCLOUD_PATCH_MODELS = {}
 

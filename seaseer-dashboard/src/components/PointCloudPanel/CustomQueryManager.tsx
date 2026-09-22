@@ -78,6 +78,10 @@ export interface ConnectedPointCloudMetadata {
   max_z?: number | null;
   center?: [number, number, number] | number[] | null;
   transform_matrix?: number[];
+  reconstruction_index?: number | null;
+  views?: number | null;
+  sparse_points?: number | null;
+  dense_points?: number | null;
   [key: string]: any;
 }
 

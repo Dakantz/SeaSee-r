@@ -79,12 +79,16 @@ async def upsert_pointcloud_metadata(
     override_filename: Optional[str] = None,
     override_safe_filename: Optional[str] = None,
     offset_x: float = 0.0,
-    offset_y: float = 0.0
+    offset_y: float = 0.0,
+    reconstruction_index: Optional[int] = None,
+    views: Optional[int] = None,
+    sparse_points: Optional[int] = None,
+    dense_points: Optional[int] = None
 ) -> PointCloudMetadata:
     """
     Inserts a new PointCloudMetadata record or updates an existing record for append ops,
     merging bounding box bounds, updating center point geometry, and accumulating point counts.
-    Supports global position translation via offset_x and offset_y.
+    Supports global position translation via offset_x and offset_y, and stores OpenSfM stats.
     """
     import os
     target_uuid = uuid.UUID(file_id)
@@ -131,6 +135,15 @@ async def upsert_pointcloud_metadata(
             existing_record.min_y, existing_record.max_y,
             existing_record.min_z, existing_record.max_z
         )
+        if reconstruction_index is not None:
+            existing_record.reconstruction_index = reconstruction_index
+        if views is not None:
+            existing_record.views = views
+        if sparse_points is not None:
+            existing_record.sparse_points = sparse_points
+        if dense_points is not None:
+            existing_record.dense_points = dense_points
+
         await session.commit()
         return existing_record
 
@@ -159,6 +172,15 @@ async def upsert_pointcloud_metadata(
         existing_record.center = center_wkt
         existing_record.pcid = pcid
         existing_record.transform_matrix = transform_matrix
+        if reconstruction_index is not None:
+            existing_record.reconstruction_index = reconstruction_index
+        if views is not None:
+            existing_record.views = views
+        if sparse_points is not None:
+            existing_record.sparse_points = sparse_points
+        if dense_points is not None:
+            existing_record.dense_points = dense_points
+
         await session.commit()
         return existing_record
 
@@ -177,9 +199,43 @@ async def upsert_pointcloud_metadata(
         max_z=max_z,
         center=center_wkt,
         pcid=pcid,
-        transform_matrix=transform_matrix
+        transform_matrix=transform_matrix,
+        reconstruction_index=reconstruction_index if reconstruction_index is not None else 0,
+        views=views,
+        sparse_points=sparse_points,
+        dense_points=dense_points
     )
     session.add(metadata_record)
     await session.commit()
     return metadata_record
+
+
+async def update_pointcloud_opensfm_stats(
+    session: AsyncSession,
+    file_id: str,
+    reconstruction_index: int = 0,
+    views: Optional[int] = None,
+    sparse_points: Optional[int] = None,
+    dense_points: Optional[int] = None
+) -> Optional[PointCloudMetadata]:
+    """Updates OpenSfM statistics on an existing PointCloudMetadata record."""
+    try:
+        target_uuid = uuid.UUID(file_id)
+        stmt = select(PointCloudMetadata).where(PointCloudMetadata.id == target_uuid)
+        res = await session.execute(stmt)
+        record = res.scalar_one_or_none()
+        if record:
+            record.reconstruction_index = reconstruction_index
+            if views is not None:
+                record.views = views
+            if sparse_points is not None:
+                record.sparse_points = sparse_points
+            if dense_points is not None:
+                record.dense_points = dense_points
+            await session.commit()
+            return record
+    except Exception as e:
+        print(f"Failed to update OpenSfM stats for pointcloud {file_id}: {e}")
+    return None
+
 

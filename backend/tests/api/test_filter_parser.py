@@ -107,3 +107,16 @@ def test_parser_all_pointcloud_metadata_fields():
     assert FilterCriterion(field="pcid", operator="eq", value="4326") in filters
     assert FilterCriterion(field="safe_filename", operator="eq", value="clean.ply") in filters
 
+
+def test_parser_opensfm_metadata_fields():
+    from app.api.dependencies.pointcloud import POINTCLOUD_ALLOWED_FIELDS
+    parser = QueryFilterParser(allowed_fields=POINTCLOUD_ALLOWED_FIELDS)
+    req = make_request("reconstruction_index=0&views__gte=10&sparse_points__gt=1000&dense_points__gte=50000")
+    filters = parser(req)
+    assert len(filters) == 4
+    assert FilterCriterion(field="reconstruction_index", operator="eq", value="0") in filters
+    assert FilterCriterion(field="views", operator="gte", value="10") in filters
+    assert FilterCriterion(field="sparse_points", operator="gt", value="1000") in filters
+    assert FilterCriterion(field="dense_points", operator="gte", value="50000") in filters
+
+

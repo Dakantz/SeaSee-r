@@ -14,3 +14,5 @@ This folder contains technical documentation for features, services, setup proce
 - [job_pipeline_and_dependencies.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/job_pipeline_and_dependencies.md): Job Pipeline & Inter-Job Dependency System specification and execution logic.
 - [job_system_overview_ui.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/job_system_overview_ui.md): Job System Overview UI Component (`JobSystemOverview.tsx`), visual DAG graph, matrix view, polling, and action controls.
 - [Docker_Setup.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/Docker_Setup.md): Docker deployment guide.
+- [database_relations.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/database_relations.md): Database Schema & Relations ERD diagram, PostgreSQL PostGIS/pgPointcloud/PostGIS-Raster extensions, table definitions, and cascading foreign key rules.
+

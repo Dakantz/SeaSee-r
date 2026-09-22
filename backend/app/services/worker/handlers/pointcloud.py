@@ -32,7 +32,11 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         offset_x: float = 0.0,
         offset_y: float = 0.0,
         override_filename: Optional[str] = None,
-        override_safe_filename: Optional[str] = None
+        override_safe_filename: Optional[str] = None,
+        reconstruction_index: Optional[int] = None,
+        views: Optional[int] = None,
+        sparse_points: Optional[int] = None,
+        dense_points: Optional[int] = None
     ) -> None:
         """Database Ingestion via PDAL & Metadata insertion/update."""
         logger.info(f"Ingesting pointcloud {file_id} (is_append={is_append}) to database...")
@@ -104,7 +108,11 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
                 offset_x=offset_x,
                 offset_y=offset_y,
                 override_filename=override_filename,
-                override_safe_filename=override_safe_filename
+                override_safe_filename=override_safe_filename,
+                reconstruction_index=reconstruction_index,
+                views=views,
+                sparse_points=sparse_points,
+                dense_points=dense_points
             )
 
         logger.info(f"Successfully ingested pointcloud {file_id} metadata and data to database.")
@@ -119,7 +127,11 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         offset_x: float = 0.0,
         offset_y: float = 0.0,
         override_filename: Optional[str] = None,
-        override_safe_filename: Optional[str] = None
+        override_safe_filename: Optional[str] = None,
+        reconstruction_index: Optional[int] = None,
+        views: Optional[int] = None,
+        sparse_points: Optional[int] = None,
+        dense_points: Optional[int] = None
     ) -> Dict[str, Any]:
         """Core pipeline to convert to EPT and ingest to database."""
         if job_id:
@@ -160,8 +172,13 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
                 offset_x=offset_x,
                 offset_y=offset_y,
                 override_filename=override_filename,
-                override_safe_filename=override_safe_filename
+                override_safe_filename=override_safe_filename,
+                reconstruction_index=reconstruction_index,
+                views=views,
+                sparse_points=sparse_points,
+                dense_points=dense_points
             )
+
 
             if job_id and mark_completed:
                 await self.update_job_status(job_id, "COMPLETED", 100.0)

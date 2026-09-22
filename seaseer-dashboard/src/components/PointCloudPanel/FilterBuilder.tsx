@@ -15,9 +15,12 @@ const AVAILABLE_FIELDS = [
   { label: "Min Z", value: "min_z", type: "number" },
   { label: "Max Z", value: "max_z", type: "number" },
   { label: "Created At", value: "created_at", type: "datetime-local" },
-  { label: "Format Schema PCID", value: "pcid", type: "number" },
   { label: "Video Start Time", value: "video_start_at", type: "datetime-local" },
   { label: "Video Stop Time", value: "video_stop_at", type: "datetime-local" },
+  { label: "Reconstruction Index", value: "reconstruction_index", type: "number" },
+  { label: "Views", value: "views", type: "number" },
+  { label: "Sparse Points", value: "sparse_points", type: "number" },
+  { label: "Dense Points", value: "dense_points", type: "number" },
 ];
 
 const OPERATORS: { label: string; value: FilterOperator }[] = [

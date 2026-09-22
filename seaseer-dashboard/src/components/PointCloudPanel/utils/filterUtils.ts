@@ -14,6 +14,10 @@ export interface FilterRule {
     | "max_y"
     | "min_z"
     | "max_z"
+    | "reconstruction_index"
+    | "views"
+    | "sparse_points"
+    | "dense_points"
     | string;
   operator: FilterOperator;
   value: string | number;

@@ -97,6 +97,11 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
             if not dense_path and file_path and os.path.isfile(file_path):
                 dense_path = file_path
 
+            target_rec = reconstructions[reconstruction_index] if (reconstructions and 0 <= reconstruction_index < len(reconstructions)) else (reconstructions[0] if reconstructions else None)
+            views_count = len(target_rec.get("shots", {})) if target_rec else 0
+            sparse_count = len(target_rec.get("points", {})) if target_rec else 0
+            dense_count = await _get_dense_point_count(dense_path) if dense_path else 0
+
             if dense_path:
                 ext = os.path.splitext(dense_path)[1]
                 rec_prefix = f"{base_dataset_name}_rec_{reconstruction_index}" if (reconstruction_index > 0 or sub_folder_name != "undistorted") else base_dataset_name
@@ -111,13 +116,16 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
                     offset_x=offset_x,
                     offset_y=offset_y,
                     override_filename=pc_name,
-                    override_safe_filename=pc_name
+                    override_safe_filename=pc_name,
+                    reconstruction_index=reconstruction_index,
+                    views=views_count,
+                    sparse_points=sparse_count,
+                    dense_points=dense_count
                 )
 
             # 2. Process camera trajectory for this single reconstruction component
             if not folder_path:
                 logger.info("No folder_path provided, skipping camera frame processing.")
-                dense_count = await _get_dense_point_count(dense_path) if dense_path and os.path.exists(dense_path) else 0
                 result_data = {
                     "status": "success",
                     "file_id": file_id,
@@ -126,8 +134,8 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
                     "reconstructions": [
                         {
                             "reconstruction_index": reconstruction_index,
-                            "views": 0,
-                            "sparse_points": 0,
+                            "views": views_count,
+                            "sparse_points": sparse_count,
                             "dense_points": dense_count
                         }
                     ]
@@ -193,6 +201,9 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
                             "relative_time": sdata.get("relative_time", 0.0)
                         })
 
+            if views_count == 0 and frames_list:
+                views_count = len(frames_list)
+
             if header_info and frames_list:
                 async with async_session() as session:
                     header = CameraHeader(
@@ -226,11 +237,20 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
 
                     await session.commit()
 
-            # 3. Gather reconstruction statistics for this single component
-            target_rec = reconstructions[reconstruction_index] if (reconstructions and 0 <= reconstruction_index < len(reconstructions)) else (reconstructions[0] if reconstructions else None)
-            views_count = len(target_rec.get("shots", {})) if target_rec else len(frames_list)
-            sparse_count = len(target_rec.get("points", {})) if target_rec else 0
-            dense_count = await _get_dense_point_count(dense_path) if dense_path else 0
+            # Update PointCloudMetadata with OpenSfM statistics
+            try:
+                from app.services.pointcloud.db_utils import update_pointcloud_opensfm_stats
+                async with async_session() as session:
+                    await update_pointcloud_opensfm_stats(
+                        session=session,
+                        file_id=file_id,
+                        reconstruction_index=reconstruction_index,
+                        views=views_count,
+                        sparse_points=sparse_count,
+                        dense_points=dense_count
+                    )
+            except Exception as db_err:
+                logger.warning(f"Failed to update PointCloudMetadata stats in opensfm_ingest: {db_err}")
 
             result_data = {
                 "status": "success",
@@ -250,6 +270,7 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
             if job_id:
                 await self.update_job_status(job_id, "COMPLETED", 100.0, result=result_data)
             return result_data
+
         except Exception as e:
             error_msg = str(e)
             logger.error(f"Exception processing OpenSfM ingestion for {file_path}: {error_msg}")

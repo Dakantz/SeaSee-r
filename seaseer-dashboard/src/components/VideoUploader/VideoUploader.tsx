@@ -123,7 +123,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
                 jobs: [
                   {
                     id_key: 'video_upload',
-                    name: truncateStr(`Video Preprocessing & Log Ingestion: ${fileNamesSummary}`),
+                    name: truncateStr(`Log Ingestion: ${fileNamesSummary}`),
                     task_type: 'video_upload',
                     payload: {
                       file_id: primaryFileId,
@@ -147,7 +147,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
                       dataset_name: datasetName,
                       batch_id: batchId
                     },
-                    depends_on: ['video_upload']
+                    depends_on: []
                   },
                   {
                     id_key: 'opensfm_reconstruct',
@@ -158,7 +158,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
                       file_id: primaryFileId,
                       batch_id: batchId
                     },
-                    depends_on: ['frame_extraction']
+                    depends_on: ['frame_extraction', 'video_upload']
                   },
                   {
                     id_key: 'opensfm_dense',

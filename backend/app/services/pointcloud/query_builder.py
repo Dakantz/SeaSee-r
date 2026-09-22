@@ -26,6 +26,10 @@ FILTER_FIELD_MAP = {
     "max_z": {"column": "pm.max_z", "type": "float", "is_spatial": True},
     "video_start_at": {"column": "vm.video_start_at", "type": "datetime"},
     "video_stop_at": {"column": "vm.video_stop_at", "type": "datetime"},
+    "reconstruction_index": {"column": "pm.reconstruction_index", "type": "int"},
+    "views": {"column": "pm.views", "type": "int"},
+    "sparse_points": {"column": "pm.sparse_points", "type": "int"},
+    "dense_points": {"column": "pm.dense_points", "type": "int"},
 }
 
 SPATIAL_FILTER_MAP = {

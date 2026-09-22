@@ -23,6 +23,13 @@ class PointCloudMetadataResponse(BaseModel):
     pcid: int
     transform_matrix: List[float]
 
+    # OpenSfM reconstruction statistics
+    reconstruction_index: Optional[int] = 0
+    views: Optional[int] = None
+    sparse_points: Optional[int] = None
+    dense_points: Optional[int] = None
+
+
     @computed_field
     @property
     def center(self) -> Optional[List[float]]:
