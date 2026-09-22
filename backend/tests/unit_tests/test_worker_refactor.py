@@ -64,7 +64,8 @@ async def test_run_background_job_timeout_updates_status_to_failed():
 
     with patch("app.services.worker.tasks.async_session", return_value=MockAsyncSessionContext()), \
          patch.object(task_registry, "dispatch", side_effect=JobTimeoutException("Task exceeded maximum timeout value (180 seconds)")), \
-         patch("app.services.worker.tasks._update_job_status", new_callable=AsyncMock) as mock_update_status:
+         patch("app.services.worker.tasks._update_job_status", new_callable=AsyncMock) as mock_update_status, \
+         patch("app.services.worker.tasks.logger.error") as mock_logger_error:
         with pytest.raises(JobTimeoutException) as exc_info:
             await _run_background_job_async(dummy_job_id)
 
@@ -73,4 +74,44 @@ async def test_run_background_job_timeout_updates_status_to_failed():
             dummy_job_id,
             "FAILED",
             error_message="Task exceeded maximum timeout value (180 seconds)"
+        )
+        mock_logger_error.assert_any_call(
+            f"Worker job {dummy_job_id} timed out: Task exceeded maximum timeout value (180 seconds)"
+        )
+
+
+@pytest.mark.anyio
+async def test_run_background_job_cancelled_error_updates_status_to_timeout():
+    import uuid
+    import asyncio
+    from app.models.job import Job
+
+    dummy_job_id = str(uuid.uuid4())
+    mock_job = Job(id=uuid.UUID(dummy_job_id), task_type="opensfm_reconstruct", payload={}, name="Test Job")
+
+    async def mock_execute(*args, **kwargs):
+        class MockScalarResult:
+            def scalar_one_or_none(self):
+                return mock_job
+        return MockScalarResult()
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(side_effect=mock_execute)
+
+    class MockAsyncSessionContext:
+        async def __aenter__(self):
+            return mock_session
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    with patch("app.services.worker.tasks.async_session", return_value=MockAsyncSessionContext()), \
+         patch.object(task_registry, "dispatch", side_effect=asyncio.CancelledError()), \
+         patch("app.services.worker.tasks._update_job_status", new_callable=AsyncMock) as mock_update_status:
+        with pytest.raises(asyncio.CancelledError):
+            await _run_background_job_async(dummy_job_id)
+
+        mock_update_status.assert_called_once_with(
+            dummy_job_id,
+            "FAILED",
+            error_message="Task execution timed out after exceeding worker timeout limit (CancelledError)"
         )

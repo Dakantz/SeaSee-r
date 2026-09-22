@@ -512,6 +512,8 @@
   align-items: center;
   gap: 4px;
   margin-right: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .jso-pipe-action-btn {
@@ -1132,17 +1134,6 @@
 .jso-drawer-btn.cancel:hover:not(:disabled) {
   background: rgba(244, 63, 94, 0.35);
   box-shadow: 0 0 12px rgba(244, 63, 94, 0.4);
-}
-
-.jso-drawer-btn.locate {
-  background: rgba(59, 130, 246, 0.2);
-  border-color: rgba(59, 130, 246, 0.5);
-  color: var(--jso-color-blue-light);
-}
-
-.jso-drawer-btn.locate:hover:not(:disabled) {
-  background: rgba(59, 130, 246, 0.35);
-  box-shadow: var(--jso-shadow-glow-blue);
 }
 
 .jso-drawer-btn.retry {

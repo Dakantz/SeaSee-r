@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from sqlalchemy import update, select
+from rq.timeouts import JobTimeoutException
 
 from app.core.database import async_session
 from app.models.job import Job, JobStatus
@@ -156,9 +157,47 @@ def handle_rq_job_failure(job, connection, type, value, traceback):
     Ensures PostgreSQL database and downstream dependencies reflect JobStatus.FAILED.
     """
     job_id_str = str(job.id)
-    error_msg = str(value) if value else (str(type) if type else "Job execution failed in Redis Queue")
-    if job.exc_info and str(job.exc_info) not in error_msg:
-        error_msg = f"{error_msg} | {job.exc_info}"
+    type_name = getattr(type, "__name__", str(type)) if type else ""
+    value_str = str(value) if value else ""
+    exc_info_str = str(job.exc_info) if getattr(job, "exc_info", None) and job.exc_info else ""
+
+    combined_text = f"{type_name}\n{value_str}\n{exc_info_str}"
+
+    is_timeout = (
+        (isinstance(type, type) and issubclass(type, (JobTimeoutException, asyncio.TimeoutError, TimeoutError, asyncio.CancelledError)))
+        or type_name in ("JobTimeoutException", "CancelledError", "TimeoutError", "AbandonedJobError")
+        or "timeout" in combined_text.lower()
+        or "cancellederror" in combined_text.lower()
+    )
+
+    if is_timeout:
+        extracted_msg = None
+        for line in reversed(combined_text.splitlines()):
+            line_str = line.strip()
+            if "jobtimeoutexception" in line_str.lower() or "exceeded maximum timeout" in line_str.lower():
+                if ":" in line_str:
+                    candidate = line_str.split(":", 1)[1].strip()
+                else:
+                    candidate = line_str
+                if candidate and not candidate.startswith("raise ") and not candidate.startswith("File "):
+                    extracted_msg = candidate
+                    break
+            elif "timed out" in line_str.lower() and not line_str.startswith("Traceback") and not line_str.startswith("File "):
+                extracted_msg = line_str
+                break
+
+        if extracted_msg:
+            error_msg = extracted_msg
+        elif value_str and "timeout" in value_str.lower():
+            error_msg = value_str
+        elif value_str and "abandoned" not in value_str.lower():
+            error_msg = f"Task execution timed out: {value_str} ({type_name})"
+        else:
+            error_msg = f"Task execution timed out after exceeding worker timeout limit ({type_name or 'Timeout'})"
+    else:
+        error_msg = value_str or (f"Job execution failed ({type_name})" if type_name else "Job execution failed in Redis Queue")
+        if exc_info_str and exc_info_str not in error_msg:
+            error_msg = f"{error_msg} | {exc_info_str}"
 
     logger.error(f"RQ failure callback triggered for job {job_id_str}: {error_msg}")
     try:
@@ -238,8 +277,26 @@ async def _run_background_job_async(job_id_str: str) -> Dict[str, Any]:
     try:
         return await task_registry.dispatch(job_id_str, task_type=task_type, payload=payload, name=name)
     except BaseException as e:
-        error_msg = str(e) or f"Task execution failed ({type(e).__name__})"
-        logger.error(f"Job {job_id_str} failed with error: {error_msg}", exc_info=True)
+        type_name = type(e).__name__
+        raw_msg = str(e) or ""
+        is_timeout = (
+            isinstance(e, (JobTimeoutException, asyncio.TimeoutError, TimeoutError, asyncio.CancelledError))
+            or type_name in ("JobTimeoutException", "CancelledError", "TimeoutError")
+            or "timeout" in raw_msg.lower()
+        )
+
+        if is_timeout:
+            if raw_msg and "timeout" in raw_msg.lower():
+                error_msg = raw_msg
+            elif raw_msg:
+                error_msg = f"Task execution timed out: {raw_msg} ({type_name})"
+            else:
+                error_msg = f"Task execution timed out after exceeding worker timeout limit ({type_name})"
+            logger.error(f"Worker job {job_id_str} timed out: {error_msg}")
+        else:
+            error_msg = raw_msg or f"Task execution failed ({type_name})"
+            logger.error(f"Job {job_id_str} failed with error: {error_msg}", exc_info=True)
+
         try:
             await _update_job_status(job_id_str, "FAILED", error_message=error_msg)
         except Exception as update_err:

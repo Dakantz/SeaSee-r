@@ -12,6 +12,7 @@ import {
 } from '../../client';
 import { PipelineGraph } from './PipelineGraph';
 import { JobDetailsDrawer } from './JobDetailsDrawer';
+import { calculateDuration, formatDurationSeconds } from '../../utils/durationUtils';
 import './JobSystemOverview.css';
 
 export interface JobSystemOverviewProps {
@@ -96,22 +97,6 @@ const formatTime = (dateStr?: string | null): string => {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 };
 
-const calculateDuration = (startStr?: string | null, endStr?: string | null, nowMs: number = Date.now()): string => {
-  if (!startStr) return '-';
-  const start = new Date(startStr).getTime();
-  if (isNaN(start)) return '-';
-
-  const end = endStr ? new Date(endStr).getTime() : nowMs;
-  if (isNaN(end)) return '-';
-
-  const diffMs = Math.max(0, end - start);
-  const totalSeconds = Math.floor(diffMs / 1000);
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}m ${seconds}s`;
-};
-
 const calculatePipelineDuration = (
   pipeJobs: JobResponse[],
   pipelineStatus: string,
@@ -144,10 +129,7 @@ const calculatePipelineDuration = (
   const endMs = lastCompletionMs !== undefined ? lastCompletionMs : nowMs;
   const diffMs = Math.max(0, endMs - firstStartMs);
   const totalSeconds = Math.floor(diffMs / 1000);
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}m ${seconds}s`;
+  return formatDurationSeconds(totalSeconds);
 };
 
 export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
@@ -166,7 +148,6 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
     jobs,
     pipelines,
     loading,
-    isRefreshing,
     error,
     isPollingFast,
     activeCount,
@@ -609,11 +590,11 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
             type="button"
             className="jso-refresh-btn"
             onClick={() => refetch()}
-            disabled={loading || isRefreshing}
+            disabled={loading}
             title="Refresh pipeline status"
           >
-            <span className={isRefreshing ? 'jso-spin-icon' : ''}>↻</span>
-            {!compact && <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>}
+            <span>↻</span>
+            {!compact && <span>Refresh</span>}
           </button>
         </div>
       </div>
@@ -718,14 +699,6 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
                           ⏱ {calculatePipelineDuration(pipeJobs, pipeline.status, now)}
                         </span>
 
-                        <button
-                          type="button"
-                          className="jso-pipe-action-btn log"
-                          onClick={() => handleDownloadFullLogs(pipeJobs)}
-                          title="Download full pipeline execution logs"
-                        >
-                          <span>📥 Logs</span>
-                        </button>
 
                         <button
                           type="button"
@@ -927,10 +900,6 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
           job={selectedJob}
           isOpen={!!selectedJob}
           onClose={() => setSelectedJob(null)}
-          onLocateJob={() => {
-            handleLocateSelectedJob();
-            updateDrawerAlignment();
-          }}
           onRetryJob={handleRetryJob}
           onCancelJob={handleCancelJob}
           retryingJobId={retryingJobId}

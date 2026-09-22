@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { JobResponse, JobStatus } from '../../client';
+import { calculateDuration } from '../../utils/durationUtils';
 
 export interface JobNodeProps {
   job: JobResponse;
@@ -48,22 +49,6 @@ const getStatusIcon = (status: JobStatus): string => {
     default:
       return '•';
   }
-};
-
-const calculateDuration = (startStr?: string | null, endStr?: string | null, nowMs: number = Date.now()): string => {
-  if (!startStr) return '-';
-  const start = new Date(startStr).getTime();
-  if (isNaN(start)) return '-';
-
-  const end = endStr ? new Date(endStr).getTime() : nowMs;
-  if (isNaN(end)) return '-';
-
-  const diffMs = Math.max(0, end - start);
-  const totalSeconds = Math.floor(diffMs / 1000);
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}m ${seconds}s`;
 };
 
 export const JobNode: React.FC<JobNodeProps> = ({
@@ -128,7 +113,7 @@ export const JobNode: React.FC<JobNodeProps> = ({
           </span>
         )}
         <span className="jso-node-duration">
-          {progressValue.toFixed(0)}%{durationStr !== '-' ? ` • ${durationStr}` : ''}
+          {durationStr !== '-' ? durationStr : ''}
         </span>
       </div>
 

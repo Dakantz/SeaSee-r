@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { JobResponse, JobStatus } from '../../client';
 import { TerminalConsole } from './TerminalConsole';
+import { calculateDuration } from '../../utils/durationUtils';
 
 export interface JobDetailsDrawerProps {
   job: JobResponse | null;
   isOpen: boolean;
   onClose: () => void;
-  onLocateJob?: () => void;
   onRetryJob?: (jobId: string, e?: React.MouseEvent) => void;
   onCancelJob?: (jobId: string, e?: React.MouseEvent) => void;
   retryingJobId?: string | null;
@@ -41,27 +41,10 @@ const formatTime = (dateStr?: string | null): string => {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 };
 
-const calculateDuration = (startStr?: string | null, endStr?: string | null, nowMs: number = Date.now()): string => {
-  if (!startStr) return '-';
-  const start = new Date(startStr).getTime();
-  if (isNaN(start)) return '-';
-
-  const end = endStr ? new Date(endStr).getTime() : nowMs;
-  if (isNaN(end)) return '-';
-
-  const diffMs = Math.max(0, end - start);
-  const totalSeconds = Math.floor(diffMs / 1000);
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}m ${seconds}s`;
-};
-
 export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
   job,
   isOpen,
   onClose,
-  onLocateJob,
   onRetryJob,
   onCancelJob,
   retryingJobId,
@@ -167,20 +150,6 @@ export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
           </div>
 
           <div className="jso-drawer-header-actions">
-            {onLocateJob && (
-              <button
-                type="button"
-                className="jso-drawer-btn locate"
-                onClick={onLocateJob}
-                aria-label="Scroll to Job Location"
-                title="Re-center graph/matrix view on this job node"
-              >
-                <svg className="jso-btn-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                  <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-                </svg>
-                <span>Locate Job</span>
-              </button>
-            )}
 
             {(isRunning || isPending || isBlocked) && onCancelJob && (
               <button
