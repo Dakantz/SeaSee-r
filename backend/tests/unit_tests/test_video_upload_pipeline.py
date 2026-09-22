@@ -39,14 +39,28 @@ def test_video_upload_pipeline_dag_building():
                 depends_on=["frame_extraction"]
             ),
             PipelineJobCreate(
+                id_key="opensfm_dense",
+                name=f"OpenSfM Dense Reconstruction: {file_name}",
+                task_type="opensfm_dense",
+                payload={
+                    "dataset_name": dataset_name,
+                    "file_id": file_id,
+                    "reconstruction_index": 0,
+                    "subfolder": "undistorted"
+                },
+                depends_on=["opensfm_reconstruct"]
+            ),
+            PipelineJobCreate(
                 id_key="opensfm_ingest",
                 name=f"OpenSfM Pointcloud Ingestion: {file_name}",
                 task_type="opensfm_ingest",
                 payload={
                     "dataset_name": dataset_name,
-                    "file_id": file_id
+                    "file_id": file_id,
+                    "reconstruction_index": 0,
+                    "subfolder": "undistorted"
                 },
-                depends_on=["opensfm_reconstruct"]
+                depends_on=["opensfm_dense"]
             )
         ]
     )
@@ -54,9 +68,9 @@ def test_video_upload_pipeline_dag_building():
     pipeline, jobs = build_pipeline_and_jobs(pipeline_payload)
 
     assert pipeline.name == f"Video OpenSfM Pipeline: {file_name}"
-    assert len(jobs) == 3
+    assert len(jobs) == 4
 
-    job1, job2, job3 = jobs[0], jobs[1], jobs[2]
+    job1, job2, job3, job4 = jobs[0], jobs[1], jobs[2], jobs[3]
 
     # Verify Job 1 (frame_extraction)
     assert job1.task_type == "frame_extraction"
@@ -64,14 +78,20 @@ def test_video_upload_pipeline_dag_building():
     assert job1.depends_on == []
     assert get_queue_name_for_task_type(job1.task_type) == "pointcloud_tasks"
 
-    # Verify Job 2 (opensfm_reconstruct)
+    # Verify Job 2 (opensfm_reconstruct - Sparse)
     assert job2.task_type == "opensfm_reconstruct"
     assert job2.status == JobStatus.BLOCKED
     assert job2.depends_on == [str(job1.id)]
     assert get_queue_name_for_task_type(job2.task_type) == "opensfm_tasks"
 
-    # Verify Job 3 (opensfm_ingest)
-    assert job3.task_type == "opensfm_ingest"
+    # Verify Job 3 (opensfm_dense - Dense Component 0)
+    assert job3.task_type == "opensfm_dense"
     assert job3.status == JobStatus.BLOCKED
     assert job3.depends_on == [str(job2.id)]
-    assert get_queue_name_for_task_type(job3.task_type) == "pointcloud_tasks"
+    assert get_queue_name_for_task_type(job3.task_type) == "opensfm_tasks"
+
+    # Verify Job 4 (opensfm_ingest - Ingestion Component 0)
+    assert job4.task_type == "opensfm_ingest"
+    assert job4.status == JobStatus.BLOCKED
+    assert job4.depends_on == [str(job3.id)]
+    assert get_queue_name_for_task_type(job4.task_type) == "pointcloud_tasks"

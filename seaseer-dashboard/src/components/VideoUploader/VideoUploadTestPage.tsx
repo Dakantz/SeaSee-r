@@ -85,8 +85,9 @@ export const VideoUploadTestPage: React.FC = () => {
   return (
     <div style={{
       padding: '40px',
-      maxWidth: '1100px',
-      margin: '0 auto',
+      width: '100%',
+      maxWidth: '100%',
+      boxSizing: 'border-box',
       fontFamily: "'Inter', 'Roboto', sans-serif",
       color: '#e2e8f0',
       flex: 1,

@@ -75,9 +75,6 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
     chunkSize,
     onUploadSuccess: async (fileIdsMap) => {
       const videoIds = videoFiles.map(v => formatUuid(fileIdsMap[v.name])).filter(Boolean);
-      if (onUploadSuccess && videoIds.length > 0) {
-        onUploadSuccess(videoIds);
-      }
 
       // Automatically create job pipeline across user-configured parameter grid (num_frames x blur_threshold)
       try {
@@ -164,15 +161,30 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
                     depends_on: ['frame_extraction']
                   },
                   {
+                    id_key: 'opensfm_dense',
+                    name: truncateStr(datasetName ? `OpenSfM Dense Component 0: ${datasetName}` : `OpenSfM Dense Reconstruction Component 0`),
+                    task_type: 'opensfm_dense',
+                    payload: {
+                      dataset_name: datasetName,
+                      file_id: primaryFileId,
+                      batch_id: batchId,
+                      reconstruction_index: 0,
+                      subfolder: 'undistorted'
+                    },
+                    depends_on: ['opensfm_reconstruct']
+                  },
+                  {
                     id_key: 'opensfm_ingest',
-                    name: truncateStr(`OpenSfM Pointcloud Ingestion: ${fileNamesSummary} (frames=${numFrames}, blur=${blurThreshold})`),
+                    name: truncateStr(datasetName ? `OpenSfM Ingest Component 0: ${datasetName}` : `OpenSfM Pointcloud Ingestion Component 0`),
                     task_type: 'opensfm_ingest',
                     payload: {
                       dataset_name: datasetName,
                       file_id: primaryFileId,
-                      batch_id: batchId
+                      batch_id: batchId,
+                      reconstruction_index: 0,
+                      subfolder: 'undistorted'
                     },
-                    depends_on: ['opensfm_reconstruct']
+                    depends_on: ['opensfm_dense']
                   }
                 ]
               }
@@ -189,6 +201,11 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
         }
       } catch (err) {
         console.warn('Could not auto-create background job pipeline:', err);
+      } finally {
+        window.dispatchEvent(new CustomEvent('job-system-updated'));
+        if (onUploadSuccess && videoIds.length > 0) {
+          onUploadSuccess(videoIds);
+        }
       }
     },
     onUploadError,
@@ -284,7 +301,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
   };
 
   return (
-    <div style={{ width: '100%', maxWidth: '500px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '16px' }}>
       <div style={{
         backgroundColor: 'var(--color-bg-card, #1e293b)',
         backdropFilter: 'blur(12px)',

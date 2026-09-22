@@ -171,7 +171,7 @@ export default function Toolbar() {
                             border: "1px solid rgba(255, 255, 255, 0.15)",
                             borderRadius: "16px",
                             padding: "24px",
-                            maxWidth: "800px",
+                            maxWidth: "100%",
                             width: "100%",
                             maxHeight: "90vh",
                             overflowY: "auto",

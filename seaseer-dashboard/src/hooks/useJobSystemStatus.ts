@@ -181,6 +181,12 @@ export function useJobSystemStatus({
   useEffect(() => {
     isMountedRef.current = true;
 
+    const handleCustomUpdate = () => {
+      fetchData();
+    };
+
+    window.addEventListener('job-system-updated', handleCustomUpdate);
+
     const scheduleNextPoll = () => {
       if (!autoPoll || !isMountedRef.current) return;
 
@@ -198,6 +204,7 @@ export function useJobSystemStatus({
 
     return () => {
       isMountedRef.current = false;
+      window.removeEventListener('job-system-updated', handleCustomUpdate);
       if (timerRef.current !== null) {
         clearTimeout(timerRef.current as number);
       }

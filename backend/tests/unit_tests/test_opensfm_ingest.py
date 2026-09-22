@@ -71,7 +71,6 @@ async def test_opensfm_ingest_result_with_reconstruction_json():
         with open(ply_path, "w") as f:
             f.write("ply\nformat ascii 1.0\nelement vertex 9876\nend_header\n")
 
-        # Mock database ingestion methods inside PointCloudUploadTaskHandler & DB Session
         with patch("app.services.worker.handlers.opensfm_ingest.PointCloudUploadTaskHandler.ingest_pointcloud_pipeline", new_callable=AsyncMock) as mock_pc_pipeline, \
              patch("app.services.worker.handlers.opensfm_ingest.async_session") as mock_session_ctx, \
              patch.object(handler, "update_job_status", new_callable=AsyncMock) as mock_update_status:
@@ -83,24 +82,21 @@ async def test_opensfm_ingest_result_with_reconstruction_json():
                 file_path=pc_path,
                 file_id="11111111-1111-1111-1111-111111111111",
                 job_id="22222222-2222-2222-2222-222222222222",
-                folder_path=tmp_dir
+                folder_path=tmp_dir,
+                subfolder="undistorted",
+                reconstruction_index=0
             )
 
             assert res["status"] == "success"
             assert res["file_id"] == "11111111-1111-1111-1111-111111111111"
-            assert len(res["reconstructions"]) == 2
+            assert mock_pc_pipeline.call_count == 1
+            assert len(res["reconstructions"]) == 1
 
             # Rec 0 stats
             assert res["reconstructions"][0]["reconstruction_index"] == 0
             assert res["reconstructions"][0]["views"] == 2
             assert res["reconstructions"][0]["sparse_points"] == 3
             assert res["reconstructions"][0]["dense_points"] == 9876
-
-            # Rec 1 stats
-            assert res["reconstructions"][1]["reconstruction_index"] == 1
-            assert res["reconstructions"][1]["views"] == 1
-            assert res["reconstructions"][1]["sparse_points"] == 1
-            assert res["reconstructions"][1]["dense_points"] == 0
 
             # Verify update_job_status was called with COMPLETED and result
             mock_update_status.assert_called_with(
@@ -112,7 +108,7 @@ async def test_opensfm_ingest_result_with_reconstruction_json():
 
 
 @pytest.mark.anyio
-async def test_opensfm_ingest_unique_pointcloud_naming():
+async def test_opensfm_ingest_single_reconstruction_component_1():
     handler = OpenSfMIngestTaskHandler()
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -123,20 +119,20 @@ async def test_opensfm_ingest_unique_pointcloud_naming():
         rec_json_path = os.path.join(tmp_dir, "reconstruction.json")
         rec_data = [
             {"cameras": {}, "shots": {}, "points": {}},
-            {"cameras": {}, "shots": {}, "points": {}}
+            {
+                "cameras": {"cam1": {"focal": 0.8, "width": 1920, "height": 1080}},
+                "shots": {"shot3.jpg": {"rotation": [0, 0, 0], "translation": [2, 2, 2]}},
+                "points": {"p4": {"coordinates": [3, 3, 3]}}
+            }
         ]
         with open(rec_json_path, "w") as f:
             json.dump(rec_data, f)
 
-        # Create fused pointclouds for both rec 0 and rec 1
-        dir0 = os.path.join(tmp_dir, "undistorted", "depthmaps")
-        os.makedirs(dir0, exist_ok=True)
-        with open(os.path.join(dir0, "fused.laz"), "wb") as f:
-            f.write(b"laz 0")
-
+        # Create fused pointcloud for component 1
         dir1 = os.path.join(tmp_dir, "undistorted_1", "depthmaps")
         os.makedirs(dir1, exist_ok=True)
-        with open(os.path.join(dir1, "fused.laz"), "wb") as f:
+        fused1_path = os.path.join(dir1, "fused.laz")
+        with open(fused1_path, "wb") as f:
             f.write(b"laz 1")
 
         dataset_name = "dataset_11111111_1111_1111_1111_111111111111_f50_b50"
@@ -150,24 +146,23 @@ async def test_opensfm_ingest_unique_pointcloud_naming():
 
             res = await handler.process_opensfm(
                 file_path=pc_path,
-                file_id="11111111-1111-1111-1111-111111111111",
+                file_id="33333333-3333-3333-3333-333333333333",
                 job_id="22222222-2222-2222-2222-222222222222",
                 folder_path=tmp_dir,
+                subfolder="undistorted_1",
+                reconstruction_index=1,
                 dataset_name=dataset_name
             )
 
             assert res["status"] == "success"
-            assert mock_pc_pipeline.call_count == 2
+            assert mock_pc_pipeline.call_count == 1
 
-            # Check call args for reconstruction 0
-            call0_kwargs = mock_pc_pipeline.call_args_list[0].kwargs
-            assert call0_kwargs["override_filename"] == f"{dataset_name}_rec_0.laz"
-            assert call0_kwargs["override_safe_filename"] == f"{dataset_name}_rec_0.laz"
-            assert call0_kwargs["file_id"] == "11111111-1111-1111-1111-111111111111"
+            call_kwargs = mock_pc_pipeline.call_args.kwargs
+            assert call_kwargs["file_path"] == fused1_path
+            assert call_kwargs["override_filename"] == f"{dataset_name}_rec_1.laz"
+            assert call_kwargs["file_id"] == "33333333-3333-3333-3333-333333333333"
 
-            # Check call args for reconstruction 1
-            call1_kwargs = mock_pc_pipeline.call_args_list[1].kwargs
-            assert call1_kwargs["override_filename"] == f"{dataset_name}_rec_1.laz"
-            assert call1_kwargs["override_safe_filename"] == f"{dataset_name}_rec_1.laz"
-            assert call1_kwargs["file_id"] != "11111111-1111-1111-1111-111111111111"
-
+            assert len(res["reconstructions"]) == 1
+            assert res["reconstructions"][0]["reconstruction_index"] == 1
+            assert res["reconstructions"][0]["views"] == 1
+            assert res["reconstructions"][0]["sparse_points"] == 1

@@ -1,6 +1,7 @@
 .vu-container {
-  max-width: 500px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   font-family: var(--font-sans);
   color: var(--color-text-secondary);
   background: var(--color-bg-card);

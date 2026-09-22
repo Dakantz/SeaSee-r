@@ -1,0 +1,227 @@
+import os
+import shutil
+import logging
+import asyncio
+import uuid
+from typing import Dict, Any, Optional
+
+from sqlalchemy import select
+
+from app.core.config import settings
+from app.core.database import async_session
+from app.models.job import Job, JobStatus
+from app.services.worker.handlers.base import BaseTaskHandler
+
+logger = logging.getLogger(__name__)
+
+try:
+    import opensfm
+    import opensfm.dataset
+    import opensfm.actions.undistort
+    import opensfm.actions.dense_clustering
+    import opensfm.actions.compute_depthmaps
+    import opensfm.actions.fuse_depthmaps
+    import opensfm.actions.dense_merging
+    import opensfm.actions.compute_statistics
+    import opensfm.actions.export_report
+    from opensfm import actions
+    from opensfm.dataset import DataSet
+    HAS_OPENSFM = True
+except ImportError:
+    DataSet = None
+    actions = None
+    HAS_OPENSFM = False
+
+
+class OpenSfMDenseTaskHandler(BaseTaskHandler):
+    """
+    Worker task handler for running OpenSfM dense 3D reconstruction
+    (undistort, dense_clustering, compute_depthmaps, fuse_depthmaps, dense_merging)
+    for a specific reconstruction component index.
+    Targeted to execute inside the dedicated OpenSfM worker container.
+    """
+    task_types = ["opensfm_dense", "opensfm_dense_reconstruct"]
+
+    def _run_opensfm_dense_pipeline(
+        self,
+        dataset_dir: str,
+        loop: asyncio.AbstractEventLoop,
+        job_id: str,
+        rec_idx: int,
+        subfolder: str
+    ) -> None:
+        """
+        Executes OpenSfM dense pipeline steps for a specific reconstruction component.
+        """
+        dataset = DataSet(dataset_dir)
+
+        def update_progress(pct: float, step_name: str) -> None:
+            logger.info(f"OpenSfM Dense [{subfolder}] step: {step_name} ({pct}%)")
+            fut = asyncio.run_coroutine_threadsafe(
+                self.update_job_status(job_id, "RUNNING", pct),
+                loop
+            )
+            try:
+                is_active = fut.result()
+                if is_active is False:
+                    logger.info(f"Job {job_id} was cancelled. Stopping OpenSfM dense reconstruction immediately.")
+                    raise RuntimeError(f"Job {job_id} was cancelled by user.")
+            except RuntimeError:
+                raise
+            except Exception as fut_err:
+                logger.warning(f"Failed to check progress status for job {job_id}: {fut_err}")
+
+        # 1. Undistort images for component rec_idx
+        update_progress(20.0, f"undistort (component {rec_idx})")
+        actions.undistort.run_dataset(dataset, reconstruction_index=rec_idx, output=subfolder)
+
+        # 2. View clustering
+        update_progress(40.0, f"dense_clustering ({subfolder})")
+        actions.dense_clustering.run_dataset(dataset, subfolder=subfolder)
+
+        # 3. Compute raw depthmaps and clean depthmaps
+        update_progress(60.0, f"compute_depthmaps ({subfolder})")
+        actions.compute_depthmaps.run_dataset(dataset, subfolder=subfolder, interactive=False)
+
+        # 4. Fuse cleaned depthmaps into combined point cloud
+        update_progress(80.0, f"fuse_depthmaps ({subfolder})")
+        actions.fuse_depthmaps.run_dataset(dataset, subfolder=subfolder)
+
+        # 5. Export LAZ/LAS/PLY point cloud files
+        update_progress(90.0, f"dense_merging ({subfolder})")
+        actions.dense_merging.run_dataset(dataset, subfolder=subfolder)
+
+        # 6. Statistics and Report
+        update_progress(95.0, f"compute_statistics ({subfolder})")
+        try:
+            actions.compute_statistics.run_dataset(dataset)
+        except Exception as stat_err:
+            logger.warning(f"Failed to compute statistics for {subfolder}: {stat_err}")
+
+        update_progress(98.0, f"export_report ({subfolder})")
+        try:
+            actions.export_report.run_dataset(dataset)
+        except Exception as rpt_err:
+            logger.warning(f"Failed to export report for {subfolder}: {rpt_err}")
+
+        # 7. Verification: Ensure dense fusion/merging produced point cloud file
+        dense_candidates = [
+            os.path.join(dataset_dir, subfolder, "depthmaps", "fused.laz"),
+            os.path.join(dataset_dir, subfolder, "depthmaps", "merged.ply"),
+            os.path.join(dataset_dir, subfolder, "fused.laz"),
+            os.path.join(dataset_dir, subfolder, "merged.ply"),
+        ]
+        if rec_idx == 0:
+            dense_candidates.extend([
+                os.path.join(dataset_dir, "depthmaps", "fused.laz"),
+                os.path.join(dataset_dir, "depthmaps", "merged.ply"),
+                os.path.join(dataset_dir, "fused.laz"),
+            ])
+
+        has_pointcloud = any(os.path.isfile(cand) for cand in dense_candidates)
+        if not has_pointcloud:
+            err_msg = (
+                f"Dense reconstruction failed for component {rec_idx} ({subfolder}): "
+                f"fused.laz point cloud file was not generated by OpenSfM fuse_depthmaps / dense_merging."
+            )
+            logger.error(err_msg)
+            raise RuntimeError(err_msg)
+
+    async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:
+        is_active = await self.update_job_status(job_id, "RUNNING", 10.0)
+        if is_active is False:
+            logger.info(f"Job {job_id} is cancelled. Aborting OpenSfM dense reconstruction.")
+            return {
+                "status": "cancelled",
+                "job_id": job_id,
+                "message": "OpenSfM dense reconstruction stopped due to job cancellation."
+            }
+
+        dataset_dir = payload.get("dataset_dir") or payload.get("folder_path")
+        rec_idx = int(payload.get("reconstruction_index", 0))
+        subfolder = payload.get("subfolder") or ("undistorted" if rec_idx == 0 else f"undistorted_{rec_idx}")
+
+        # If dataset_dir is missing, check parent job results in DB
+        if not dataset_dir and job_id:
+            try:
+                job_uuid = uuid.UUID(job_id)
+                async with async_session() as session:
+                    j_res = await session.execute(select(Job).where(Job.id == job_uuid))
+                    job_rec = j_res.scalar_one_or_none()
+                    if job_rec and job_rec.depends_on:
+                        parent_uuids = [uuid.UUID(d) for d in job_rec.depends_on if isinstance(d, str)]
+                        if parent_uuids:
+                            p_res = await session.execute(select(Job).where(Job.id.in_(parent_uuids)))
+                            parents = p_res.scalars().all()
+                            for p in parents:
+                                if p.result and isinstance(p.result, dict):
+                                    dataset_dir = p.result.get("dataset_dir") or p.result.get("folder_path")
+                                    if dataset_dir:
+                                        logger.info(f"Retrieved dataset_dir '{dataset_dir}' from parent job {p.id}")
+                                        break
+            except Exception as lookup_err:
+                logger.warning(f"Could not look up parent job result for job {job_id}: {lookup_err}")
+
+        # Fallback to default ingestion directory if still missing
+        if not dataset_dir:
+            num_frames = payload.get("num_frames", 500)
+            dataset_name = payload.get("dataset_name") or f"video_dataset_fixed_{num_frames}_frames_entire_video"
+            dataset_dir = os.path.join(settings.opensfm_ingestion_dir, dataset_name)
+
+        if not os.path.exists(dataset_dir):
+            err_msg = f"Dataset directory '{dataset_dir}' does not exist for OpenSfM dense reconstruction."
+            logger.error(err_msg)
+            await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)
+            raise RuntimeError(err_msg)
+
+        if not HAS_OPENSFM:
+            err_msg = "OpenSfM Python library is not available in current Python environment. Ensure task is running inside OpenSfM worker container."
+            logger.error(err_msg)
+            await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)
+            raise RuntimeError(err_msg)
+
+        logger.info(f"Executing OpenSfM dense reconstruction (component {rec_idx}, subfolder '{subfolder}') on dataset: {dataset_dir}")
+        loop = asyncio.get_running_loop()
+
+        try:
+            await asyncio.to_thread(self._run_opensfm_dense_pipeline, dataset_dir, loop, job_id, rec_idx, subfolder)
+        except Exception as proc_err:
+            if "cancelled" in str(proc_err).lower():
+                logger.info(f"OpenSfM dense reconstruction execution stopped for cancelled job {job_id}.")
+                return {
+                    "status": "cancelled",
+                    "job_id": job_id,
+                    "message": "OpenSfM dense reconstruction stopped due to job cancellation."
+                }
+            try:
+                job_uuid = uuid.UUID(job_id)
+                async with async_session() as session:
+                    res = await session.execute(select(Job.status).where(Job.id == job_uuid))
+                    curr_status = res.scalar_one_or_none()
+                    if curr_status == JobStatus.CANCELLED:
+                        logger.info(f"OpenSfM dense reconstruction execution stopped for cancelled job {job_id}.")
+                        return {
+                            "status": "cancelled",
+                            "job_id": job_id,
+                            "message": "OpenSfM dense reconstruction stopped due to job cancellation."
+                        }
+            except Exception as chk_err:
+                logger.warning(f"Could not verify cancellation status for {job_id}: {chk_err}")
+
+            err_msg = f"OpenSfM dense reconstruction failed: {proc_err}"
+            logger.error(err_msg, exc_info=True)
+            await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)
+            raise RuntimeError(err_msg) from proc_err
+
+        logger.info(f"OpenSfM dense reconstruction completed successfully for {dataset_dir} (component {rec_idx})")
+        res_data = {
+            "status": "success",
+            "job_id": job_id,
+            "dataset_dir": dataset_dir,
+            "reconstruction_index": rec_idx,
+            "subfolder": subfolder,
+            "message": f"OpenSfM dense reconstruction completed successfully for component {rec_idx}."
+        }
+
+        await self.update_job_status(job_id, "COMPLETED", 100.0, result=res_data)
+        return res_data

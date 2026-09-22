@@ -58,7 +58,7 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
         offset_y: float = 0.0,
         dataset_name: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Async implementation for OpenSfM pointcloud and camera trajectory processing."""
+        """Async implementation for OpenSfM pointcloud and camera trajectory processing for a single reconstruction component."""
         try:
             base_dataset_name = dataset_name or (os.path.basename(folder_path) if folder_path else f"dataset_{file_id}")
             reconstruction_json_path = os.path.join(folder_path, "reconstruction.json") if folder_path else None
@@ -68,58 +68,42 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
                 reconstructions = parse_reconstruction_json(reconstruction_json_path)
 
             pc_handler = PointCloudUploadTaskHandler()
+            sub_folder_name = subfolder or ("undistorted" if reconstruction_index == 0 else f"undistorted_{reconstruction_index}")
 
-            if reconstructions:
-                for idx, rec in enumerate(reconstructions):
-                    sub_folder_name = "undistorted" if idx == 0 else f"undistorted_{idx}"
-                    dense_candidates = [
-                        os.path.join(folder_path, sub_folder_name, "depthmaps", "fused.laz"),
-                        os.path.join(folder_path, sub_folder_name, "depthmaps", "merged.ply"),
-                        os.path.join(folder_path, sub_folder_name, "fused.laz"),
-                        os.path.join(folder_path, sub_folder_name, "merged.ply"),
-                    ]
-                    if idx == 0:
-                        dense_candidates.extend([
-                            os.path.join(folder_path, "depthmaps", "fused.laz"),
-                            os.path.join(folder_path, "depthmaps", "merged.ply"),
-                            os.path.join(folder_path, "fused.laz"),
-                            file_path
-                        ])
+            # 1. Determine candidate dense point cloud files for this single reconstruction component
+            dense_candidates = [
+                os.path.join(folder_path, sub_folder_name, "depthmaps", "fused.laz"),
+                os.path.join(folder_path, sub_folder_name, "depthmaps", "merged.ply"),
+                os.path.join(folder_path, sub_folder_name, "fused.laz"),
+                os.path.join(folder_path, sub_folder_name, "merged.ply"),
+            ] if folder_path else []
 
-                    dense_path = None
-                    for cand in dense_candidates:
-                        if cand and os.path.isfile(cand):
-                            dense_path = cand
-                            break
+            if reconstruction_index == 0 or sub_folder_name == "undistorted":
+                if folder_path:
+                    dense_candidates.extend([
+                        os.path.join(folder_path, "depthmaps", "fused.laz"),
+                        os.path.join(folder_path, "depthmaps", "merged.ply"),
+                        os.path.join(folder_path, "fused.laz"),
+                    ])
+                if file_path:
+                    dense_candidates.append(file_path)
 
-                    if dense_path:
-                        ext = os.path.splitext(dense_path)[1]
-                        pc_name = f"{base_dataset_name}_rec_{idx}{ext}"
+            dense_path = None
+            for cand in dense_candidates:
+                if cand and os.path.isfile(cand):
+                    dense_path = cand
+                    break
 
-                        if idx == 0:
-                            pc_id = file_id
-                        else:
-                            try:
-                                pc_id = str(uuid.uuid5(uuid.UUID(file_id), f"{base_dataset_name}_rec_{idx}"))
-                            except ValueError:
-                                pc_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{file_id}_{base_dataset_name}_rec_{idx}"))
+            if not dense_path and file_path and os.path.isfile(file_path):
+                dense_path = file_path
 
-                        await pc_handler.ingest_pointcloud_pipeline(
-                            file_path=dense_path,
-                            file_id=pc_id,
-                            job_id=job_id,
-                            mark_completed=False,
-                            is_append=is_append,
-                            offset_x=offset_x,
-                            offset_y=offset_y,
-                            override_filename=pc_name,
-                            override_safe_filename=pc_name
-                        )
-            else:
-                ext = os.path.splitext(file_path)[1] if file_path else ".laz"
-                pc_name = f"{base_dataset_name}_rec_{reconstruction_index}{ext}"
+            if dense_path:
+                ext = os.path.splitext(dense_path)[1]
+                rec_prefix = f"{base_dataset_name}_rec_{reconstruction_index}" if (reconstruction_index > 0 or sub_folder_name != "undistorted") else base_dataset_name
+                pc_name = f"{rec_prefix}{ext}"
+
                 await pc_handler.ingest_pointcloud_pipeline(
-                    file_path=file_path,
+                    file_path=dense_path,
                     file_id=file_id,
                     job_id=job_id,
                     mark_completed=False,
@@ -130,13 +114,15 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
                     override_safe_filename=pc_name
                 )
 
-            # 2. Process camera trajectory and save CameraHeader and CameraFrames
+            # 2. Process camera trajectory for this single reconstruction component
             if not folder_path:
                 logger.info("No folder_path provided, skipping camera frame processing.")
-                dense_count = await _get_dense_point_count(file_path) if file_path and os.path.exists(file_path) else 0
+                dense_count = await _get_dense_point_count(dense_path) if dense_path and os.path.exists(dense_path) else 0
                 result_data = {
                     "status": "success",
                     "file_id": file_id,
+                    "reconstruction_index": reconstruction_index,
+                    "subfolder": sub_folder_name,
                     "reconstructions": [
                         {
                             "reconstruction_index": reconstruction_index,
@@ -150,14 +136,12 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
                     await self.update_job_status(job_id, "COMPLETED", 100.0, result=result_data)
                 return result_data
 
-            shots_geojson_path = os.path.join(folder_path, subfolder, "shots.geojson")
+            shots_geojson_path = os.path.join(folder_path, sub_folder_name, "shots.geojson")
             if not os.path.exists(shots_geojson_path):
                 shots_geojson_path = os.path.join(folder_path, "shots.geojson")
 
             from app.models.camera import CameraHeader, CameraFrame
             from app.services.opensfm.ingest import (
-                parse_reconstruction_json,
-                extract_camera_route_csv,
                 parse_shots_geojson,
                 get_camera_center,
                 get_camera_viewing_direction,
@@ -168,7 +152,7 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
             header_info = {}
             frames_list = []
 
-            if os.path.exists(shots_geojson_path):
+            if os.path.exists(shots_geojson_path) and (reconstruction_index == 0 or sub_folder_name == "undistorted"):
                 header_info, frames_list = parse_shots_geojson(shots_geojson_path)
             elif reconstruction_json_path and os.path.exists(reconstruction_json_path):
                 if reconstructions:
@@ -180,7 +164,7 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
                     cameras = data.get("cameras", {})
                     first_cam_key = next(iter(cameras), "v2 unknown unknown 3840 2160 brown 0.85") if cameras else "v2 unknown unknown 3840 2160 brown 0.85"
                     cam_data = cameras.get(first_cam_key, {}) if cameras else {}
-                    
+
                     header_info = {
                         "focal": cam_data.get("focal", 0.48455320009205993),
                         "width": cam_data.get("width", 3840),
@@ -199,7 +183,7 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
                         rot_quat = get_camera_three_quaternion(rotation)
                         capture_time = sdata.get("capture_time", 0.0)
                         ts_val = int(capture_time * 1000) if capture_time > 1e8 else int(capture_time)
-                        
+
                         frames_list.append({
                             "filename": shot_id,
                             "timestamp": ts_val,
@@ -242,58 +226,25 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
 
                     await session.commit()
 
-            # 3. Gather reconstruction statistics (views, sparse_points, dense_points)
-            reconstructions_info = []
-
-            if reconstruction_json_path and os.path.exists(reconstruction_json_path):
-                for idx, rec in enumerate(reconstructions):
-                    views_count = len(rec.get("shots", {}))
-                    sparse_count = len(rec.get("points", {}))
-
-                    sub_folder_name = "undistorted" if idx == 0 else f"undistorted_{idx}"
-                    dense_candidates = [
-                        os.path.join(folder_path, sub_folder_name, "depthmaps", "fused.laz"),
-                        os.path.join(folder_path, sub_folder_name, "depthmaps", "merged.ply"),
-                        os.path.join(folder_path, sub_folder_name, "fused.laz"),
-                        os.path.join(folder_path, sub_folder_name, "merged.ply"),
-                    ]
-                    if idx == 0:
-                        dense_candidates.extend([
-                            os.path.join(folder_path, "depthmaps", "fused.laz"),
-                            os.path.join(folder_path, "depthmaps", "merged.ply"),
-                            os.path.join(folder_path, "fused.laz"),
-                            file_path
-                        ])
-
-                    dense_path = None
-                    for cand in dense_candidates:
-                        if cand and os.path.isfile(cand):
-                            dense_path = cand
-                            break
-
-                    dense_count = await _get_dense_point_count(dense_path) if dense_path else 0
-
-                    reconstructions_info.append({
-                        "reconstruction_index": idx,
-                        "views": views_count,
-                        "sparse_points": sparse_count,
-                        "dense_points": dense_count
-                    })
-
-            if not reconstructions_info:
-                views_count = len(frames_list) if frames_list else 0
-                dense_count = await _get_dense_point_count(file_path) if file_path and os.path.exists(file_path) else 0
-                reconstructions_info.append({
-                    "reconstruction_index": reconstruction_index,
-                    "views": views_count,
-                    "sparse_points": 0,
-                    "dense_points": dense_count
-                })
+            # 3. Gather reconstruction statistics for this single component
+            target_rec = reconstructions[reconstruction_index] if (reconstructions and 0 <= reconstruction_index < len(reconstructions)) else (reconstructions[0] if reconstructions else None)
+            views_count = len(target_rec.get("shots", {})) if target_rec else len(frames_list)
+            sparse_count = len(target_rec.get("points", {})) if target_rec else 0
+            dense_count = await _get_dense_point_count(dense_path) if dense_path else 0
 
             result_data = {
                 "status": "success",
                 "file_id": file_id,
-                "reconstructions": reconstructions_info
+                "reconstruction_index": reconstruction_index,
+                "subfolder": sub_folder_name,
+                "reconstructions": [
+                    {
+                        "reconstruction_index": reconstruction_index,
+                        "views": views_count,
+                        "sparse_points": sparse_count,
+                        "dense_points": dense_count
+                    }
+                ]
             }
 
             if job_id:
@@ -312,7 +263,7 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
         reconstruction_index = int(payload.get("reconstruction_index", 0))
         is_append = payload.get("is_append", False) or (task_type == "opensfm_append")
         file_id = (payload.get("existing_id") or payload.get("file_id")) if is_append else (payload.get("file_id") or job_id)
-        
+
         file_path = payload.get("file_path")
 
         # If file_path and folder_path are missing, look up parent job results in DB
@@ -387,5 +338,3 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
             offset_y=offset_y,
             dataset_name=dataset_name
         )
-
-

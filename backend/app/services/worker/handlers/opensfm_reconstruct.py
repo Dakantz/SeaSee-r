@@ -24,23 +24,18 @@ try:
     import opensfm.actions.create_tracks
     import opensfm.actions.reconstruct
     import opensfm.actions.mesh
-    import opensfm.actions.undistort
-    import opensfm.actions.dense_clustering
-    import opensfm.actions.compute_depthmaps
-    import opensfm.actions.fuse_depthmaps
-    import opensfm.actions.dense_merging
-    import opensfm.actions.compute_statistics
-    import opensfm.actions.export_report
     from opensfm import actions, reconstruction
     from opensfm.dataset import DataSet
     HAS_OPENSFM = True
 except ImportError:
+    DataSet = None
     HAS_OPENSFM = False
 
 
 class OpenSfMReconstructTaskHandler(BaseTaskHandler):
     """
-    Worker task handler for running OpenSfM 3D reconstruction
+    Worker task handler for running OpenSfM 3D sparse reconstruction & mesh generation
+    (Extraction, Detection, Matching, Tracks, Incremental SfM Reconstruction & Mesh)
     directly via Python API on a dataset directory containing extracted images.
     Targeted to execute inside the dedicated OpenSfM worker container.
     """
@@ -48,7 +43,7 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
 
     def _run_opensfm_pipeline(self, dataset_dir: str, loop: asyncio.AbstractEventLoop, job_id: str) -> None:
         """
-        Executes all OpenSfM pipeline steps sequentially via Python API.
+        Executes OpenSfM sparse pipeline steps (up to actions.mesh.run_dataset).
         Progress updates are dispatched back to the main event loop.
         """
         dataset = DataSet(dataset_dir)
@@ -73,64 +68,105 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
         update_progress(30.0, "extract_metadata")
         actions.extract_metadata.run_dataset(dataset)
 
-        update_progress(35.0, "detect_features")
+        update_progress(45.0, "detect_features")
         actions.detect_features.run_dataset(dataset)
 
-        update_progress(40.0, "match_features")
+        update_progress(60.0, "match_features")
         actions.match_features.run_dataset(dataset)
 
-        update_progress(45.0, "create_tracks")
+        update_progress(75.0, "create_tracks")
         actions.create_tracks.run_dataset(dataset)
 
         # 2. Incremental SfM Reconstruction & Mesh
-        update_progress(50.0, "reconstruct")
+        update_progress(85.0, "reconstruct")
         actions.reconstruct.run_dataset(dataset, algorithm=reconstruction.ReconstructionAlgorithm.INCREMENTAL)
 
-        update_progress(65.0, "mesh")
+        update_progress(95.0, "mesh")
         actions.mesh.run_dataset(dataset)
 
-        # 3. Dense reconstruction for primary reconstruction component (index 0)
-        update_progress(70.0, "undistort (component 0)")
-        actions.undistort.run_dataset(dataset, reconstruction_index=0, output="undistorted")
+    async def _create_dynamic_component_jobs(self, dataset_dir: str, job_id: str, payload: Dict[str, Any]) -> None:
+        """
+        If OpenSfM generated multiple reconstruction components (components 1, 2, ...),
+        create dynamic OpenSfM Dense Reconstruction & OpenSfM Ingestion job pairs for each additional component.
+        """
+        if not HAS_OPENSFM or not dataset_dir:
+            return
 
-        update_progress(75.0, "dense_clustering (component 0)")
-        actions.dense_clustering.run_dataset(dataset, subfolder="undistorted")
+        try:
+            dataset = DataSet(dataset_dir)
+            if not dataset.reconstruction_exists():
+                return
 
-        update_progress(80.0, "compute_depthmaps (component 0)")
-        actions.compute_depthmaps.run_dataset(dataset, subfolder="undistorted", interactive=False)
-
-        update_progress(85.0, "fuse_depthmaps (component 0)")
-        actions.fuse_depthmaps.run_dataset(dataset, subfolder="undistorted")
-
-        update_progress(88.0, "dense_merging (component 0)")
-        actions.dense_merging.run_dataset(dataset, subfolder="undistorted")
-
-        # Process additional reconstruction components if present
-        if dataset.reconstruction_exists():
             reconstructions = dataset.load_reconstruction()
             num_recs = len(reconstructions)
-            if num_recs > 1:
-                logger.info(f"OpenSfM found {num_recs} reconstruction component(s).")
-            for i in range(1, num_recs):
-                subfolder = f"undistorted_{i}"
-                logger.info(f"Processing Reconstruction Component {i} -> Folder: {subfolder}")
-                update_progress(88.0 + (i / num_recs) * 4.0, f"undistort (component {i})")
-                actions.undistort.run_dataset(dataset, reconstruction_index=i, output=subfolder)
-                update_progress(88.0 + (i / num_recs) * 4.0, f"dense_clustering (component {i})")
-                actions.dense_clustering.run_dataset(dataset, subfolder=subfolder)
-                update_progress(88.0 + (i / num_recs) * 4.0, f"compute_depthmaps (component {i})")
-                actions.compute_depthmaps.run_dataset(dataset, subfolder=subfolder, interactive=False)
-                update_progress(88.0 + (i / num_recs) * 4.0, f"fuse_depthmaps (component {i})")
-                actions.fuse_depthmaps.run_dataset(dataset, subfolder=subfolder)
-                update_progress(88.0 + (i / num_recs) * 4.0, f"dense_merging (component {i})")
-                actions.dense_merging.run_dataset(dataset, subfolder=subfolder)
+            if num_recs <= 1:
+                return
 
-        # 4. Statistics and Report
-        update_progress(92.0, "compute_statistics")
-        actions.compute_statistics.run_dataset(dataset)
+            logger.info(f"OpenSfM produced {num_recs} reconstruction components. Creating dynamic dense & ingest jobs for components 1 to {num_recs - 1}.")
 
-        update_progress(96.0, "export_report")
-        actions.export_report.run_dataset(dataset)
+            job_uuid = uuid.UUID(job_id) if job_id else None
+            async with async_session() as session:
+                pipeline_id = None
+                if job_uuid:
+                    res = await session.execute(select(Job.pipeline_id).where(Job.id == job_uuid))
+                    pipeline_id = res.scalar_one_or_none()
+
+                dataset_name = payload.get("dataset_name") or os.path.basename(dataset_dir)
+
+                for i in range(1, num_recs):
+                    subfolder = f"undistorted_{i}"
+                    comp_file_id = str(uuid.uuid4())
+                    dense_job_id = uuid.uuid4()
+                    ingest_job_id = uuid.uuid4()
+
+                    dense_job_name = f"OpenSfM Dense Reconstruction Component {i}"
+                    if dataset_name:
+                        dense_job_name = f"OpenSfM Dense Component {i}: {dataset_name}"
+
+                    ingest_job_name = f"OpenSfM Pointcloud Ingestion Component {i}"
+                    if dataset_name:
+                        ingest_job_name = f"OpenSfM Ingest Component {i}: {dataset_name}"
+
+                    dense_job = Job(
+                        id=dense_job_id,
+                        name=dense_job_name,
+                        task_type="opensfm_dense",
+                        payload={
+                            "dataset_dir": dataset_dir,
+                            "dataset_name": dataset_name,
+                            "file_id": payload.get("file_id"),
+                            "reconstruction_index": i,
+                            "subfolder": subfolder,
+                        },
+                        status=JobStatus.BLOCKED,
+                        progress=0.0,
+                        pipeline_id=pipeline_id,
+                        depends_on=[job_id] if job_id else []
+                    )
+                    session.add(dense_job)
+
+                    ingest_job = Job(
+                        id=ingest_job_id,
+                        name=ingest_job_name,
+                        task_type="opensfm_ingest",
+                        payload={
+                            "dataset_name": dataset_name,
+                            "file_id": comp_file_id,
+                            "folder_path": dataset_dir,
+                            "subfolder": subfolder,
+                            "reconstruction_index": i,
+                        },
+                        status=JobStatus.BLOCKED,
+                        progress=0.0,
+                        pipeline_id=pipeline_id,
+                        depends_on=[str(dense_job_id)]
+                    )
+                    session.add(ingest_job)
+
+                await session.commit()
+                logger.info(f"Successfully created dynamic dense & ingest jobs for components 1 to {num_recs - 1}.")
+        except Exception as dyn_err:
+            logger.error(f"Failed to create dynamic dense/ingest jobs for additional components: {dyn_err}", exc_info=True)
 
     async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:
         is_active = await self.update_job_status(job_id, "RUNNING", 10.0)
@@ -198,7 +234,7 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
             await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)
             raise RuntimeError(err_msg)
 
-        logger.info(f"Executing OpenSfM reconstruction via Python API on dataset: {dataset_dir}")
+        logger.info(f"Executing OpenSfM sparse reconstruction via Python API on dataset: {dataset_dir}")
         loop = asyncio.get_running_loop()
 
         try:
@@ -231,7 +267,10 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
             await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)
             raise RuntimeError(err_msg) from proc_err
 
-        logger.info(f"OpenSfM reconstruction completed successfully for {dataset_dir}")
+        # Check for multiple reconstruction components and dynamically add jobs for components 1, 2, ...
+        await self._create_dynamic_component_jobs(dataset_dir, job_id, payload)
+
+        logger.info(f"OpenSfM sparse reconstruction completed successfully for {dataset_dir}")
         res_data = {
             "status": "success",
             "job_id": job_id,
@@ -241,4 +280,3 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
 
         await self.update_job_status(job_id, "COMPLETED", 100.0, result=res_data)
         return res_data
-
