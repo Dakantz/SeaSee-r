@@ -32,7 +32,7 @@ export function isSpatialFilter(rule: FilterRule): boolean {
 
 export function sanitizeNonSpatialFilters(filters?: FilterRule[] | null): FilterRule[] {
   if (!filters || !Array.isArray(filters)) return [];
-  return filters.filter((rule) => !isSpatialFilter(rule));
+  return filters.filter((rule) => rule && rule.field);
 }
 
 /**

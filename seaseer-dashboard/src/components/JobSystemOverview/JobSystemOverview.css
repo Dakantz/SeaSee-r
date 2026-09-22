@@ -710,6 +710,26 @@
   flex-shrink: 0;
 }
 
+.jso-job-node.search-match {
+  border-color: var(--jso-color-amber-light) !important;
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.6), 0 0 16px rgba(245, 158, 11, 0.4) !important;
+  background: rgba(30, 41, 59, 0.95) !important;
+}
+
+.jso-search-match-badge {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #ffffff;
+  border: 1px solid rgba(253, 230, 138, 0.6);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 .jso-node-header {
   display: flex;
   align-items: center;

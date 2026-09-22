@@ -86,3 +86,24 @@ def test_parser_invalid_operator_raises_400():
         parser(req)
     assert exc_info.value.status_code == 400
     assert "Invalid filter operator" in exc_info.value.detail
+
+
+def test_parser_invalid_type_raises_400():
+    parser = QueryFilterParser(allowed_fields=ALLOWED_FIELDS)
+    req = make_request("number_of_points__gte=490e4bfb-d08b-5ebc-b039-a9ce436dd944")
+    with pytest.raises(HTTPException) as exc_info:
+        parser(req)
+    assert exc_info.value.status_code == 400
+    assert "Invalid input format for filter field 'number_of_points'" in exc_info.value.detail
+
+
+def test_parser_all_pointcloud_metadata_fields():
+    from app.api.dependencies.pointcloud import POINTCLOUD_ALLOWED_FIELDS
+    parser = QueryFilterParser(allowed_fields=POINTCLOUD_ALLOWED_FIELDS)
+    req = make_request("min_x__gte=10.5&pcid=4326&safe_filename=clean.ply")
+    filters = parser(req)
+    assert len(filters) == 3
+    assert FilterCriterion(field="min_x", operator="gte", value="10.5") in filters
+    assert FilterCriterion(field="pcid", operator="eq", value="4326") in filters
+    assert FilterCriterion(field="safe_filename", operator="eq", value="clean.ply") in filters
+

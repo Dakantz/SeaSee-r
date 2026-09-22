@@ -7,6 +7,7 @@ export interface PipelineGraphProps {
   pipelineName?: string;
   pipelineId?: string;
   selectedJobId?: string | null;
+  searchQuery?: string;
   optimisticJobStatuses?: Record<string, JobStatus>;
   onSelectJob: (job: JobResponse) => void;
   onRetryJob?: (jobId: string, e: React.MouseEvent) => void;
@@ -70,6 +71,7 @@ const getStageNameForJob = (job: JobResponse, depth: number): string => {
 export const PipelineGraph: React.FC<PipelineGraphProps> = ({
   jobs,
   selectedJobId,
+  searchQuery = '',
   optimisticJobStatuses = {},
   onSelectJob,
   onRetryJob,
@@ -334,6 +336,7 @@ export const PipelineGraph: React.FC<PipelineGraphProps> = ({
             stageIndex={idx}
             jobs={stage.jobs}
             selectedJobId={selectedJobId}
+            searchQuery={searchQuery}
             optimisticJobStatuses={optimisticJobStatuses}
             onSelectJob={onSelectJob}
             onRetryJob={onRetryJob}

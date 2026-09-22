@@ -132,6 +132,29 @@ const calculatePipelineDuration = (
   return formatDurationSeconds(totalSeconds);
 };
 
+const matchesSearchQuery = (
+  query: string,
+  target?: { id?: string | null; name?: string | null; task_type?: string | null; pipeline_id?: string | null }
+): boolean => {
+  if (!query || !query.trim() || !target) return false;
+  const q = query.toLowerCase().trim();
+  const qClean = q.replace(/^#/, '');
+
+  if (target.id && (target.id.toLowerCase().includes(q) || target.id.toLowerCase().includes(qClean))) {
+    return true;
+  }
+  if (target.name && target.name.toLowerCase().includes(q)) {
+    return true;
+  }
+  if (target.task_type && target.task_type.toLowerCase().includes(q)) {
+    return true;
+  }
+  if (target.pipeline_id && (target.pipeline_id.toLowerCase().includes(q) || target.pipeline_id.toLowerCase().includes(qClean))) {
+    return true;
+  }
+  return false;
+};
+
 export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
   limit = 0,
   activePollInterval = 2500,
@@ -416,17 +439,40 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  // Filter jobs by search query
+  // Find pipeline IDs matching the search query
+  const matchingPipelineIds = useMemo(() => {
+    if (!searchQuery.trim()) return new Set<string>();
+    const q = searchQuery.trim();
+    const set = new Set<string>();
+
+    pipelines.forEach((p) => {
+      if (matchesSearchQuery(q, { id: p.id, name: p.name })) {
+        set.add(p.id);
+      } else if (p.jobs && p.jobs.some((j) => matchesSearchQuery(q, j))) {
+        set.add(p.id);
+      }
+    });
+
+    jobs.forEach((j) => {
+      if (j.pipeline_id && matchesSearchQuery(q, j)) {
+        set.add(j.pipeline_id);
+      }
+    });
+
+    return set;
+  }, [pipelines, jobs, searchQuery]);
+
+  // Filter jobs for Matrix View (includes all jobs from matching pipelines)
   const filteredJobs = useMemo(() => {
     if (!searchQuery.trim()) return jobs;
-    const q = searchQuery.toLowerCase();
-    return jobs.filter(
-      (j) =>
-        j.name.toLowerCase().includes(q) ||
-        j.id.toLowerCase().includes(q) ||
-        (j.task_type && j.task_type.toLowerCase().includes(q))
-    );
-  }, [jobs, searchQuery]);
+    const q = searchQuery.trim();
+
+    return jobs.filter((j) => {
+      if (matchesSearchQuery(q, j)) return true;
+      if (j.pipeline_id && matchingPipelineIds.has(j.pipeline_id)) return true;
+      return false;
+    });
+  }, [jobs, searchQuery, matchingPipelineIds]);
 
   // Intermix pipelines & standalone jobs into a single list ordered descending by created_at (latest first)
   const unifiedItems = useMemo<OverviewItem[]>(() => {
@@ -438,9 +484,22 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
 
     const standaloneJobs: JobResponse[] = [];
 
-    filteredJobs.forEach((job) => {
+    jobs.forEach((job) => {
       const jobPipeId = job.pipeline_id;
-      if (jobPipeId && pipelineMap.has(jobPipeId)) {
+      if (jobPipeId) {
+        if (!pipelineMap.has(jobPipeId)) {
+          pipelineMap.set(jobPipeId, {
+            pipeline: {
+              id: jobPipeId,
+              name: `Pipeline #${jobPipeId.substring(0, 8)}`,
+              status: job.status as any,
+              created_at: job.created_at,
+              updated_at: job.created_at,
+              jobs: [],
+            },
+            jobs: [],
+          });
+        }
         const existing = pipelineMap.get(jobPipeId)!;
         const idx = existing.jobs.findIndex((j) => j.id === job.id);
         if (idx >= 0) {
@@ -448,7 +507,7 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
         } else {
           existing.jobs.push(job);
         }
-      } else if (!jobPipeId) {
+      } else {
         standaloneJobs.push(job);
       }
     });
@@ -476,24 +535,17 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
 
     let filteredItems = items;
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+      const q = searchQuery.trim();
       filteredItems = items.filter((item) => {
         if (item.type === 'pipeline') {
-          return (
-            item.pipeline.name.toLowerCase().includes(q) ||
-            item.pipeline.id.toLowerCase().includes(q) ||
-            item.jobs.some(
-              (j) =>
-                j.name.toLowerCase().includes(q) ||
-                (j.task_type && j.task_type.toLowerCase().includes(q))
-            )
-          );
+          const pipeMatch = matchesSearchQuery(q, {
+            id: item.pipeline.id,
+            name: item.pipeline.name,
+          });
+          const jobMatch = item.jobs.some((j) => matchesSearchQuery(q, j));
+          return pipeMatch || jobMatch;
         } else {
-          return (
-            item.job.name.toLowerCase().includes(q) ||
-            item.job.id.toLowerCase().includes(q) ||
-            (item.job.task_type && item.job.task_type.toLowerCase().includes(q))
-          );
+          return matchesSearchQuery(q, item.job);
         }
       });
     }
@@ -503,7 +555,7 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
       const timeB = new Date(b.created_at).getTime();
       return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
     });
-  }, [pipelines, filteredJobs, searchQuery]);
+  }, [pipelines, jobs, searchQuery]);
 
   const sortedFilteredJobs = useMemo(() => {
     return [...filteredJobs].sort((a, b) => {
@@ -699,7 +751,6 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
                           ⏱ {calculatePipelineDuration(pipeJobs, pipeline.status, now)}
                         </span>
 
-
                         <button
                           type="button"
                           className="jso-pipe-action-btn delete"
@@ -718,6 +769,7 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
                       pipelineName={pipeline.name}
                       pipelineId={pipeline.id}
                       selectedJobId={selectedJob?.id}
+                      searchQuery={searchQuery}
                       optimisticJobStatuses={optimisticJobStatuses}
                       onSelectJob={(job) => {
                         setSelectedJob(job);
@@ -779,6 +831,7 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
                       jobs={[job]}
                       pipelineName={job.name}
                       selectedJobId={selectedJob?.id}
+                      searchQuery={searchQuery}
                       optimisticJobStatuses={optimisticJobStatuses}
                       onSelectJob={(j) => {
                         setSelectedJob(j);

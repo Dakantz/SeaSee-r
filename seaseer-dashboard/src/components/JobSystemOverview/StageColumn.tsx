@@ -7,6 +7,7 @@ export interface StageColumnProps {
   stageIndex: number;
   jobs: JobResponse[];
   selectedJobId?: string | null;
+  searchQuery?: string;
   optimisticJobStatuses?: Record<string, JobStatus>;
   onSelectJob: (job: JobResponse) => void;
   onRetryJob?: (jobId: string, e: React.MouseEvent) => void;
@@ -18,6 +19,7 @@ export interface StageColumnProps {
 export const StageColumn: React.FC<StageColumnProps> = ({
   jobs,
   selectedJobId,
+  searchQuery = '',
   optimisticJobStatuses = {},
   onSelectJob,
   onRetryJob,
@@ -39,6 +41,9 @@ export const StageColumn: React.FC<StageColumnProps> = ({
     return 'pending';
   };
 
+  const q = searchQuery.trim().toLowerCase();
+  const qClean = q.replace(/^#/, '');
+
   return (
     <div className="jso-stage-column">
       {/* Stage Column Header */}
@@ -57,11 +62,20 @@ export const StageColumn: React.FC<StageColumnProps> = ({
             const optStatus = optimisticJobStatuses[job.id];
             const effectiveJob = optStatus ? { ...job, status: optStatus } : job;
 
+            const isSearchMatch = Boolean(
+              q &&
+                (job.id.toLowerCase().includes(q) ||
+                  job.id.toLowerCase().includes(qClean) ||
+                  (job.name && job.name.toLowerCase().includes(q)) ||
+                  (job.task_type && job.task_type.toLowerCase().includes(q)))
+            );
+
             return (
               <JobNode
                 key={job.id}
                 job={effectiveJob}
                 isSelected={selectedJobId === job.id}
+                isSearchMatch={isSearchMatch}
                 isOptimistic={!!optStatus}
                 onSelect={onSelectJob}
                 onRetry={onRetryJob}

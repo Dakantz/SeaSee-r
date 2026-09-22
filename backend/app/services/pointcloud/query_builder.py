@@ -11,15 +11,19 @@ logger = logging.getLogger(__name__)
 FILTER_FIELD_MAP = {
     "pointcloud_id": {"column": "pm.id", "type": "uuid"},
     "id": {"column": "pm.id", "type": "uuid"},
+    "job_id": {"column": "pm.job_id", "type": "uuid"},
+    "video_metadata_id": {"column": "pm.video_metadata_id", "type": "uuid"},
     "number_of_points": {"column": "pm.number_of_points", "type": "int"},
-    "created_at": {"column": "pm.created_at", "type": "datetime"},
     "orig_filename": {"column": "pm.orig_filename", "type": "string"},
-    "min_x": {"type": "float", "is_spatial": True},
-    "max_x": {"type": "float", "is_spatial": True},
-    "min_y": {"type": "float", "is_spatial": True},
-    "max_y": {"type": "float", "is_spatial": True},
-    "min_z": {"type": "float", "is_spatial": True},
-    "max_z": {"type": "float", "is_spatial": True},
+    "safe_filename": {"column": "pm.safe_filename", "type": "string"},
+    "pcid": {"column": "pm.pcid", "type": "int"},
+    "created_at": {"column": "pm.created_at", "type": "datetime"},
+    "min_x": {"column": "pm.min_x", "type": "float", "is_spatial": True},
+    "max_x": {"column": "pm.max_x", "type": "float", "is_spatial": True},
+    "min_y": {"column": "pm.min_y", "type": "float", "is_spatial": True},
+    "max_y": {"column": "pm.max_y", "type": "float", "is_spatial": True},
+    "min_z": {"column": "pm.min_z", "type": "float", "is_spatial": True},
+    "max_z": {"column": "pm.max_z", "type": "float", "is_spatial": True},
     "video_start_at": {"column": "vm.video_start_at", "type": "datetime"},
     "video_stop_at": {"column": "vm.video_stop_at", "type": "datetime"},
 }
@@ -88,7 +92,7 @@ def cast_value(val: Any, val_type: str) -> Any:
             return str(val)
     except Exception as e:
         logger.warning(f"Failed to cast value {val} to type {val_type}: {e}")
-        return val
+        raise ValueError(f"Invalid {val_type} value '{val}'") from e
     return val
 
 

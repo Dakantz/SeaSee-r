@@ -5,6 +5,7 @@ import { calculateDuration } from '../../utils/durationUtils';
 export interface JobNodeProps {
   job: JobResponse;
   isSelected?: boolean;
+  isSearchMatch?: boolean;
   isOptimistic?: boolean;
   onSelect: (job: JobResponse) => void;
   onRetry?: (jobId: string, e: React.MouseEvent) => void;
@@ -54,6 +55,7 @@ const getStatusIcon = (status: JobStatus): string => {
 export const JobNode: React.FC<JobNodeProps> = ({
   job,
   isSelected = false,
+  isSearchMatch = false,
   isOptimistic = false,
   onSelect,
   onRetry,
@@ -88,9 +90,9 @@ export const JobNode: React.FC<JobNodeProps> = ({
     <div
       id={`job-node-${job.id}`}
       data-job-id={job.id}
-      className={`jso-job-node ${getJobStatusClass(job.status)} ${isSelected ? 'selected' : ''} ${isOptimistic ? 'optimistic' : ''}`}
+      className={`jso-job-node ${getJobStatusClass(job.status)} ${isSelected ? 'selected' : ''} ${isSearchMatch ? 'search-match' : ''} ${isOptimistic ? 'optimistic' : ''}`}
       onClick={() => onSelect(job)}
-      title={`Job: ${job.name}\nStatus: ${job.status}\nProgress: ${progressValue.toFixed(0)}%\nClick to view drawer details`}
+      title={`Job: ${job.name}\nID: ${job.id}\nStatus: ${job.status}\nProgress: ${progressValue.toFixed(0)}%\nClick to view drawer details`}
     >
       <div className="jso-node-header">
         <span className={`jso-node-icon status-${job.status.toLowerCase()}`}>
@@ -99,11 +101,15 @@ export const JobNode: React.FC<JobNodeProps> = ({
         <span className="jso-node-name" title={job.name}>
           {job.name}
         </span>
-        {isSelected && (
+        {isSelected ? (
           <span className="jso-target-anchor-badge" title="Currently selected target job in drawer">
             TARGET
           </span>
-        )}
+        ) : isSearchMatch ? (
+          <span className="jso-search-match-badge" title="Matches search filter">
+            MATCH
+          </span>
+        ) : null}
       </div>
 
       <div className="jso-node-meta">

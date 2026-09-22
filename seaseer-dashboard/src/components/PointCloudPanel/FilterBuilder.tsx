@@ -3,8 +3,19 @@ import type { FilterRule, FilterOperator } from "./utils/filterUtils.ts";
 
 const AVAILABLE_FIELDS = [
   { label: "Point Cloud ID", value: "pointcloud_id", type: "string" },
-  { label: "Points Count", value: "number_of_points", type: "number" },
+  { label: "Job ID", value: "job_id", type: "string" },
+  { label: "Video Metadata ID", value: "video_metadata_id", type: "string" },
   { label: "Original Filename", value: "orig_filename", type: "string" },
+  { label: "Safe Filename", value: "safe_filename", type: "string" },
+  { label: "Points Count", value: "number_of_points", type: "number" },
+  { label: "Min X", value: "min_x", type: "number" },
+  { label: "Max X", value: "max_x", type: "number" },
+  { label: "Min Y", value: "min_y", type: "number" },
+  { label: "Max Y", value: "max_y", type: "number" },
+  { label: "Min Z", value: "min_z", type: "number" },
+  { label: "Max Z", value: "max_z", type: "number" },
+  { label: "Created At", value: "created_at", type: "datetime-local" },
+  { label: "Format Schema PCID", value: "pcid", type: "number" },
   { label: "Video Start Time", value: "video_start_at", type: "datetime-local" },
   { label: "Video Stop Time", value: "video_stop_at", type: "datetime-local" },
 ];
@@ -57,6 +68,7 @@ export const FilterBuilder: React.FC<FilterBuilderProps> = ({ filters, onChange 
           updateRule(rule.id, {
             field: newField,
             operator: rule.operator,
+            value: "",
           });
         };
 
