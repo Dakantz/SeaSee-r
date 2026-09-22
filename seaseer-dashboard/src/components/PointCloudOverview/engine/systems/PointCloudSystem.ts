@@ -61,26 +61,49 @@ export class PointCloudSystem {
                 const qId = query.id;
                 if (!qId) continue;
 
-                const pcFilter = query.filters?.find(
-                    (f: any) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator)
-                );
-                const pcId = pcFilter ? String(pcFilter.value) : (qId.includes("-") && qId.length >= 32 ? qId : qId);
+                const summary = this.summaryMap ? this.summaryMap[qId] : undefined;
+                if (summary?.connected_pointclouds && summary.connected_pointclouds.length > 0) {
+                    for (const pc of summary.connected_pointclouds) {
+                        if (!pc.id) continue;
+                        const pcId = String(pc.id);
+                        const key = pcId;
 
-                const cleanFilters = query.filters
-                    ? query.filters.filter((f: any) => !["min_x", "max_x", "min_y", "max_y", "min_z", "max_z"].includes(f.field))
-                    : undefined;
+                        if (!seenKeys.has(key)) {
+                            seenKeys.add(key);
 
-                const key = `${qId}-${pcId}`;
-                if (!seenKeys.has(key)) {
-                    seenKeys.add(key);
-                    targets.push({ key, pcId, filters: cleanFilters });
-                }
-            }
-        } else if (this.catalog && this.catalog.length > 0) {
-            for (const item of this.catalog) {
-                if (item.id && !seenKeys.has(item.id)) {
-                    seenKeys.add(item.id);
-                    targets.push({ key: item.id, pcId: item.id });
+                            const baseFilters = query.filters
+                                ? query.filters.filter(
+                                    (f: any) => !["min_x", "max_x", "min_y", "max_y", "min_z", "max_z"].includes(f.field)
+                                )
+                                : [];
+                            const hasPcFilter = baseFilters.some(
+                                (f: any) => f.field === "pointcloud_id" && String(f.value) === pcId
+                            );
+                            const cleanFilters = hasPcFilter
+                                ? baseFilters
+                                : [
+                                    ...baseFilters,
+                                    { id: `filter-pc-${pcId}`, field: "pointcloud_id", operator: "eq", value: pcId },
+                                ];
+
+                            targets.push({ key, pcId, filters: cleanFilters });
+                        }
+                    }
+                } else if (query.filters && query.filters.length > 0) {
+                    const pcFilter = query.filters.find(
+                        (f: any) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator)
+                    );
+                    if (pcFilter && pcFilter.value) {
+                        const pcId = String(pcFilter.value);
+                        const key = pcId;
+                        if (!seenKeys.has(key)) {
+                            seenKeys.add(key);
+                            const cleanFilters = query.filters.filter(
+                                (f: any) => !["min_x", "max_x", "min_y", "max_y", "min_z", "max_z"].includes(f.field)
+                            );
+                            targets.push({ key, pcId, filters: cleanFilters });
+                        }
+                    }
                 }
             }
         }
@@ -192,6 +215,7 @@ export class PointCloudSystem {
             }
             this.rootGroup.remove(loaded.group);
             this.loadedPointClouds.delete(key);
+            this.notifyPointCount();
         }
     }
 
