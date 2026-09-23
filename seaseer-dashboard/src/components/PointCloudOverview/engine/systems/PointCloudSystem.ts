@@ -192,7 +192,7 @@ export class PointCloudSystem {
         }
     }
 
-    private notifyPointCount(): void {
+    public getTotalPointCount(): number {
         let totalCount = 0;
         for (const loaded of this.loadedPointClouds.values()) {
             const posAttr = loaded.pointsMesh.geometry?.getAttribute("position");
@@ -200,6 +200,11 @@ export class PointCloudSystem {
                 totalCount += posAttr.count;
             }
         }
+        return totalCount;
+    }
+
+    private notifyPointCount(): void {
+        const totalCount = this.getTotalPointCount();
         this.callbacks.onPointCountChange?.(totalCount);
     }
 

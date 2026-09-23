@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import type { CameraViewTarget, EngineCallbacks, EngineConfig } from "./types";
+import type { CameraViewTarget, EngineCallbacks, EngineConfig, PerfTestMetric, PerfTestSummary } from "./types";
 import { patchGeoThreeHeight } from "./patches/patchGeoThreeHeight";
 import { PointCloudSystem } from "./systems/PointCloudSystem";
 import { TerrainSystem } from "./systems/TerrainSystem";
@@ -8,6 +8,11 @@ import { TransformGizmoSystem } from "./systems/TransformGizmoSystem";
 
 export const TARGET_X = 0;
 export const TARGET_Y = 0;
+
+export const PERF_TEST_START_POS = new THREE.Vector3(10, -100, 10);
+export const PERF_TEST_END_POS = new THREE.Vector3(10, 100, -10);
+export const PERF_TEST_LOOK_TARGET = new THREE.Vector3(0, 0, 0);
+export const PERF_TEST_DURATION_SEC = 30;
 
 export class PointCloudOverviewEngine {
     private container: HTMLElement;
@@ -28,6 +33,16 @@ export class PointCloudOverviewEngine {
     private animationFrameId: number | null = null;
     private clock: THREE.Clock;
     private resizeObserver: ResizeObserver | null = null;
+
+    // Performance Test State
+    private isPerfRunning: boolean = false;
+    private perfTotalElapsedSec: number = 0;
+    private perfTotalFrames: number = 0;
+    private perfFramesInSec: number = 0;
+    private perfSecTimer: number = 0;
+    private perfSecondCount: number = 0;
+    private perfMetrics: PerfTestMetric[] = [];
+    private prevControlsEnabled: boolean = true;
 
     constructor(container: HTMLElement, callbacks: EngineCallbacks = {}, initialConfig: Partial<EngineConfig> = {}) {
         this.container = container;
@@ -146,8 +161,157 @@ export class PointCloudOverviewEngine {
         this.controls.update();
     }
 
+    public startPerformanceTest(): void {
+        this.perfTotalElapsedSec = 0;
+        this.perfTotalFrames = 0;
+        this.perfFramesInSec = 0;
+        this.perfSecTimer = 0;
+        this.perfSecondCount = 0;
+        this.perfMetrics = [];
+
+        this.prevControlsEnabled = this.controls.enabled;
+        this.controls.enabled = false;
+
+        this.camera.position.copy(PERF_TEST_START_POS);
+        this.camera.up.set(0, 0, 1);
+        this.camera.lookAt(PERF_TEST_LOOK_TARGET);
+
+        this.isPerfRunning = true;
+
+        console.log("=================================================");
+        console.log("[PointCloudOverviewEngine Performance Test Started]");
+        console.log("Start Camera Position:", PERF_TEST_START_POS);
+        console.log("End Camera Position:", PERF_TEST_END_POS);
+        console.log("Look At Target:", PERF_TEST_LOOK_TARGET);
+        console.log(`Duration: ${PERF_TEST_DURATION_SEC} seconds`);
+        console.log("=================================================");
+    }
+
+    public stopPerformanceTest(cancelled: boolean = true): void {
+        if (!this.isPerfRunning) return;
+        this.isPerfRunning = false;
+        this.controls.enabled = this.prevControlsEnabled;
+        this.controls.target.set(this.camera.position.x, this.camera.position.y + 1, this.camera.position.z);
+        this.controls.update();
+
+        if (cancelled) {
+            console.log("[PointCloudOverviewEngine Performance Test Cancelled by User]");
+            this.callbacks.onPerfTestCancel?.();
+        }
+    }
+
+    public isPerformanceTestRunning(): boolean {
+        return this.isPerfRunning;
+    }
+
     private tick(): void {
-        this.clock.getDelta();
+        const delta = this.clock.getDelta();
+
+        if (this.isPerfRunning) {
+            this.perfTotalElapsedSec += delta;
+            const progress = Math.min(1, this.perfTotalElapsedSec / PERF_TEST_DURATION_SEC);
+
+            // Lerp camera position between start and end while rotating to continuously look at the center
+            this.camera.position.lerpVectors(PERF_TEST_START_POS, PERF_TEST_END_POS, progress);
+            this.camera.up.set(0, 0, 1);
+            this.camera.lookAt(PERF_TEST_LOOK_TARGET);
+
+            this.perfTotalFrames++;
+            this.perfFramesInSec++;
+            this.perfSecTimer += delta;
+
+            if (this.perfSecTimer >= 1.0) {
+                this.perfSecondCount += 1;
+                const windowDuration = this.perfSecTimer;
+                const count = this.perfFramesInSec;
+                const calculatedFps = count > 0 && windowDuration > 0 ? Math.round((count / windowDuration) * 100) / 100 : 0;
+                const calculatedFrameTimeMs = count > 0 ? Math.round((windowDuration / count) * 1000 * 100) / 100 : 0;
+                const currentPoints = this.pointCloudSystem?.getTotalPointCount?.() ?? 0;
+
+                const metric: PerfTestMetric = {
+                    second: this.perfSecondCount,
+                    fps: calculatedFps,
+                    frameTimeMs: calculatedFrameTimeMs,
+                    pointsCount: currentPoints,
+                    position: {
+                        x: Math.round(this.camera.position.x * 1000) / 1000,
+                        y: Math.round(this.camera.position.y * 1000) / 1000,
+                        z: Math.round(this.camera.position.z * 1000) / 1000,
+                    },
+                };
+
+                this.perfMetrics.push(metric);
+                this.callbacks.onPerfTestProgress?.(calculatedFps, calculatedFrameTimeMs, metric);
+
+                console.log(
+                    `[PointCloudOverviewEngine Performance Test] Second ${metric.second}s: ${metric.fps} FPS | ${metric.frameTimeMs} ms | ${metric.pointsCount.toLocaleString()} points | Pos: (${metric.position.x}, ${metric.position.y}, ${metric.position.z})`
+                );
+
+                this.perfFramesInSec = 0;
+                this.perfSecTimer = 0;
+            }
+
+            if (progress >= 1.0) {
+                if (this.perfFramesInSec > 0) {
+                    this.perfSecondCount += 1;
+                    const windowDuration = this.perfSecTimer;
+                    const count = this.perfFramesInSec;
+                    const calculatedFps = count > 0 && windowDuration > 0 ? Math.round((count / windowDuration) * 100) / 100 : 0;
+                    const calculatedFrameTimeMs = count > 0 ? Math.round((windowDuration / count) * 1000 * 100) / 100 : 0;
+                    const currentPoints = this.pointCloudSystem?.getTotalPointCount?.() ?? 0;
+
+                    const metric: PerfTestMetric = {
+                        second: this.perfSecondCount,
+                        fps: calculatedFps,
+                        frameTimeMs: calculatedFrameTimeMs,
+                        pointsCount: currentPoints,
+                        position: {
+                            x: Math.round(this.camera.position.x * 1000) / 1000,
+                            y: Math.round(this.camera.position.y * 1000) / 1000,
+                            z: Math.round(this.camera.position.z * 1000) / 1000,
+                        },
+                    };
+
+                    this.perfMetrics.push(metric);
+                    this.callbacks.onPerfTestProgress?.(calculatedFps, calculatedFrameTimeMs, metric);
+
+                    this.perfFramesInSec = 0;
+                    this.perfSecTimer = 0;
+                }
+
+                this.camera.position.copy(PERF_TEST_END_POS);
+                this.camera.up.set(0, 0, 1);
+                this.camera.lookAt(PERF_TEST_LOOK_TARGET);
+
+                const totalDurationSec = this.perfTotalElapsedSec;
+                const totalFrames = this.perfTotalFrames;
+                const averageFps = totalFrames > 0 && totalDurationSec > 0 ? Math.round((totalFrames / totalDurationSec) * 100) / 100 : 0;
+                const averageFrameTimeMs = totalFrames > 0 ? Math.round((totalDurationSec / totalFrames) * 1000 * 100) / 100 : 0;
+
+                const summary: PerfTestSummary = {
+                    averageFps,
+                    averageFrameTimeMs,
+                    totalFrames,
+                    totalDurationSec: Math.round(totalDurationSec * 100) / 100,
+                    metrics: [...this.perfMetrics],
+                };
+
+                (window as any).__PLY_PERFORMANCE_TEST_RESULTS__ = summary;
+
+                this.callbacks.onPerfTestComplete?.(summary);
+                this.stopPerformanceTest(false);
+
+                console.log("=================================================");
+                console.log("[PointCloudOverviewEngine Performance Test Completed]");
+                console.log(`Average FPS: ${summary.averageFps}`);
+                console.log(`Average Frametime: ${summary.averageFrameTimeMs} ms`);
+                console.log(`Total Frames: ${summary.totalFrames}`);
+                console.log(`Total Duration: ${summary.totalDurationSec}s`);
+                console.log("Per-second breakdown:", summary.metrics);
+                console.log("=================================================");
+            }
+        }
+
         this.controls.update();
         this.terrainSystem.update(this.camera, this.renderer);
         this.renderer.render(this.scene, this.camera);
@@ -155,6 +319,10 @@ export class PointCloudOverviewEngine {
     }
 
     public destroy(): void {
+        if (this.isPerfRunning) {
+            this.stopPerformanceTest(true);
+        }
+
         if (this.animationFrameId !== null) {
             cancelAnimationFrame(this.animationFrameId);
             this.animationFrameId = null;

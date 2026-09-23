@@ -21,6 +21,13 @@ export const PointCloudOverviewContainer: React.FC = () => {
         setCameraView,
         setIsGizmoDragging,
         setPointCount,
+        perfTestTrigger,
+        isPerfTestRunning,
+        setIsPerfTestRunning,
+        setCurrentFps,
+        setCurrentFrameTimeMs,
+        setPerfTestMetrics,
+        setPerfTestSummary,
     } = usePLYPointCloudContext();
 
     return (
@@ -46,6 +53,20 @@ export const PointCloudOverviewContainer: React.FC = () => {
             }}
             onSetIsGizmoDragging={setIsGizmoDragging}
             onPointCountChange={setPointCount}
+            perfTestTrigger={perfTestTrigger}
+            isPerfTestRunning={isPerfTestRunning}
+            onPerfTestProgress={(fps, frameTimeMs, metric) => {
+                setCurrentFps(fps);
+                setCurrentFrameTimeMs(frameTimeMs);
+                setPerfTestMetrics((prev) => [...prev, metric]);
+            }}
+            onPerfTestComplete={(summary) => {
+                setPerfTestSummary(summary);
+                setIsPerfTestRunning(false);
+            }}
+            onPerfTestCancel={() => {
+                setIsPerfTestRunning(false);
+            }}
         />
     );
 };

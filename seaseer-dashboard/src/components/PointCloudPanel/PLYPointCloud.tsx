@@ -746,6 +746,7 @@ export function PointCloudTransformItem({
 
 const PERF_TEST_START_POS = new THREE.Vector3(10, -100, 10);
 const PERF_TEST_END_POS = new THREE.Vector3(10, 100, -10);
+const PERF_TEST_LOOK_TARGET = new THREE.Vector3(0, 0, 0);
 const PERF_TEST_DURATION_SEC = 30;
 
 export function PerformanceTestController() {
@@ -755,6 +756,9 @@ export function PerformanceTestController() {
         isPerfTestRunning,
         setIsPerfTestRunning,
         setPerfTestSummary,
+        setPerfTestMetrics,
+        setCurrentFps,
+        setCurrentFrameTimeMs,
         pointCount,
     } = usePLYPointCloudContext();
 
@@ -780,7 +784,7 @@ export function PerformanceTestController() {
 
         camera.position.copy(PERF_TEST_START_POS);
         camera.up.set(0, 0, 1);
-        camera.lookAt(PERF_TEST_END_POS);
+        camera.lookAt(PERF_TEST_LOOK_TARGET);
 
         totalElapsedSecRef.current = 0;
         totalFramesRef.current = 0;
@@ -796,6 +800,7 @@ export function PerformanceTestController() {
         console.log("[Performance Test Started]");
         console.log("Start Camera Position:", PERF_TEST_START_POS);
         console.log("End Camera Position:", PERF_TEST_END_POS);
+        console.log("Look At Target:", PERF_TEST_LOOK_TARGET);
         console.log(`Duration: ${PERF_TEST_DURATION_SEC} seconds`);
         console.log("=================================================");
     }, [perfTestTrigger, camera]);
@@ -806,12 +811,10 @@ export function PerformanceTestController() {
         totalElapsedSecRef.current += delta;
         const progress = Math.min(1, totalElapsedSecRef.current / PERF_TEST_DURATION_SEC);
 
-        // Move camera slowly between start and end positions
+        // Move camera slowly between start and end positions while rotating to continuously look at the center
         camera.position.lerpVectors(PERF_TEST_START_POS, PERF_TEST_END_POS, progress);
         camera.up.set(0, 0, 1);
-        if (camera.position.distanceToSquared(PERF_TEST_END_POS) > 0.001) {
-            camera.lookAt(PERF_TEST_END_POS);
-        }
+        camera.lookAt(PERF_TEST_LOOK_TARGET);
 
         // Frame counting
         totalFramesRef.current++;
@@ -840,6 +843,9 @@ export function PerformanceTestController() {
             };
 
             metricsRef.current.push(metric);
+            setCurrentFps(calculatedFps);
+            setCurrentFrameTimeMs(calculatedFrameTimeMs);
+            setPerfTestMetrics((prev) => [...prev, metric]);
 
             console.log(
                 `[Performance Test] Second ${metric.second}s: ${metric.fps} FPS | ${metric.frameTimeMs} ms | ${metric.pointsCount.toLocaleString()} points | Pos: (${metric.position.x}, ${metric.position.y}, ${metric.position.z})`
@@ -873,6 +879,9 @@ export function PerformanceTestController() {
                 };
 
                 metricsRef.current.push(metric);
+                setCurrentFps(calculatedFps);
+                setCurrentFrameTimeMs(calculatedFrameTimeMs);
+                setPerfTestMetrics((prev) => [...prev, metric]);
 
                 console.log(
                     `[Performance Test] Second ${metric.second}s (Final): ${metric.fps} FPS | ${metric.frameTimeMs} ms | ${metric.pointsCount.toLocaleString()} points | Pos: (${metric.position.x}, ${metric.position.y}, ${metric.position.z})`
@@ -883,6 +892,8 @@ export function PerformanceTestController() {
             }
 
             camera.position.copy(PERF_TEST_END_POS);
+            camera.up.set(0, 0, 1);
+            camera.lookAt(PERF_TEST_LOOK_TARGET);
 
             const totalDurationSec = totalElapsedSecRef.current;
             const totalFrames = totalFramesRef.current;

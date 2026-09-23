@@ -12,7 +12,10 @@ export interface PointCloudOverviewProps extends EngineConfig, EngineCallbacks {
 export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
     style, className, onSelectPointcloud, onHoverPointcloud, onFocusCameraTarget,
     onUpdatePointcloudTransform, onCameraViewChange,
-    onSetIsGizmoDragging, onPointCountChange, defaultShowJobOverview = false, ...configProps
+    onSetIsGizmoDragging, onPointCountChange,
+    onPerfTestProgress, onPerfTestComplete, onPerfTestCancel,
+    perfTestTrigger, isPerfTestRunning,
+    defaultShowJobOverview = false, ...configProps
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const engineRef = useRef<PointCloudOverviewEngine | null>(null);
@@ -21,6 +24,7 @@ export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
         onSelectPointcloud, onHoverPointcloud, onFocusCameraTarget,
         onUpdatePointcloudTransform, onCameraViewChange,
         onSetIsGizmoDragging, onPointCountChange,
+        onPerfTestProgress, onPerfTestComplete, onPerfTestCancel,
     });
 
     useEffect(() => {
@@ -28,11 +32,13 @@ export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
             onSelectPointcloud, onHoverPointcloud, onFocusCameraTarget,
             onUpdatePointcloudTransform, onCameraViewChange,
             onSetIsGizmoDragging, onPointCountChange,
+            onPerfTestProgress, onPerfTestComplete, onPerfTestCancel,
         };
     }, [
         onSelectPointcloud, onHoverPointcloud, onFocusCameraTarget,
         onUpdatePointcloudTransform, onCameraViewChange,
         onSetIsGizmoDragging, onPointCountChange,
+        onPerfTestProgress, onPerfTestComplete, onPerfTestCancel,
     ]);
 
     useEffect(() => {
@@ -45,6 +51,9 @@ export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
             onCameraViewChange: (v) => callbacksRef.current.onCameraViewChange?.(v),
             onSetIsGizmoDragging: (d) => callbacksRef.current.onSetIsGizmoDragging?.(d),
             onPointCountChange: (c) => callbacksRef.current.onPointCountChange?.(c),
+            onPerfTestProgress: (fps, ft, m) => callbacksRef.current.onPerfTestProgress?.(fps, ft, m),
+            onPerfTestComplete: (s) => callbacksRef.current.onPerfTestComplete?.(s),
+            onPerfTestCancel: () => callbacksRef.current.onPerfTestCancel?.(),
         };
         const engine = new PointCloudOverviewEngine(containerRef.current, proxyCallbacks, configProps);
         engineRef.current = engine;
@@ -59,6 +68,20 @@ export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
             engineRef.current.updateConfig(configProps);
         }
     }, [configProps]);
+
+    useEffect(() => {
+        if (!engineRef.current) return;
+        if (perfTestTrigger && perfTestTrigger > 0) {
+            engineRef.current.startPerformanceTest();
+        }
+    }, [perfTestTrigger]);
+
+    useEffect(() => {
+        if (!engineRef.current) return;
+        if (isPerfTestRunning === false && engineRef.current.isPerformanceTestRunning()) {
+            engineRef.current.stopPerformanceTest(true);
+        }
+    }, [isPerfTestRunning]);
 
     return (
         <div

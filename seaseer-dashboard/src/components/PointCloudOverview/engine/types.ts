@@ -1,5 +1,8 @@
 import type { CustomQuery, QuerySummaryData } from "../../PointCloudPanel/CustomQueryManager";
 import type { PointCloudMetadataResponse } from "../../../client";
+import type { PerfTestMetric, PerfTestSummary } from "../../PointCloudPanel/PLYPointCloudContext";
+
+export type { PerfTestMetric, PerfTestSummary };
 
 export type MapProviderChoice =
     | "OpenStreetMaps"
@@ -48,6 +51,10 @@ export interface EngineConfig {
 
     // Camera view targets
     cameraViewTarget?: CameraViewTarget | null;
+
+    // Performance Testing
+    perfTestTrigger?: number;
+    isPerfTestRunning?: boolean;
 }
 
 export interface EngineCallbacks {
@@ -58,4 +65,10 @@ export interface EngineCallbacks {
     onCameraViewChange?: (view: { position?: [number, number, number]; quaternion?: [number, number, number, number]; fov?: number; target?: [number, number, number] }) => void;
     onSetIsGizmoDragging?: (dragging: boolean) => void;
     onPointCountChange?: (count: number) => void;
+
+    // Performance Testing
+    onPerfTestProgress?: (fps: number, frameTimeMs: number, metric: PerfTestMetric) => void;
+    onPerfTestComplete?: (summary: PerfTestSummary) => void;
+    onPerfTestCancel?: () => void;
 }
+
