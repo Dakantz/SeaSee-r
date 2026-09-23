@@ -11,8 +11,8 @@ export interface PointCloudOverviewProps extends EngineConfig, EngineCallbacks {
 
 export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
     style, className, onSelectPointcloud, onHoverPointcloud, onFocusCameraTarget,
-    onUpdatePointcloudTransform, onCameraViewChange,
-    onSetIsGizmoDragging, onPointCountChange,
+    onPreviewPointcloudTransform, onUpdatePointcloudTransform, onCameraViewChange,
+    onSetIsGizmoDragging, onToggleCameraUpFixed, onSetIsCameraUpFixed, onPointCountChange,
     onPerfTestProgress, onPerfTestComplete, onPerfTestCancel,
     perfTestTrigger, isPerfTestRunning, cameraTarget,
     defaultShowJobOverview = false, ...configProps
@@ -22,22 +22,22 @@ export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
 
     const callbacksRef = useRef<EngineCallbacks>({
         onSelectPointcloud, onHoverPointcloud, onFocusCameraTarget,
-        onUpdatePointcloudTransform, onCameraViewChange,
-        onSetIsGizmoDragging, onPointCountChange,
+        onPreviewPointcloudTransform, onUpdatePointcloudTransform, onCameraViewChange,
+        onSetIsGizmoDragging, onToggleCameraUpFixed, onSetIsCameraUpFixed, onPointCountChange,
         onPerfTestProgress, onPerfTestComplete, onPerfTestCancel,
     });
 
     useEffect(() => {
         callbacksRef.current = {
             onSelectPointcloud, onHoverPointcloud, onFocusCameraTarget,
-            onUpdatePointcloudTransform, onCameraViewChange,
-            onSetIsGizmoDragging, onPointCountChange,
+            onPreviewPointcloudTransform, onUpdatePointcloudTransform, onCameraViewChange,
+            onSetIsGizmoDragging, onToggleCameraUpFixed, onSetIsCameraUpFixed, onPointCountChange,
             onPerfTestProgress, onPerfTestComplete, onPerfTestCancel,
         };
     }, [
         onSelectPointcloud, onHoverPointcloud, onFocusCameraTarget,
-        onUpdatePointcloudTransform, onCameraViewChange,
-        onSetIsGizmoDragging, onPointCountChange,
+        onPreviewPointcloudTransform, onUpdatePointcloudTransform, onCameraViewChange,
+        onSetIsGizmoDragging, onToggleCameraUpFixed, onSetIsCameraUpFixed, onPointCountChange,
         onPerfTestProgress, onPerfTestComplete, onPerfTestCancel,
     ]);
 
@@ -47,9 +47,12 @@ export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
             onSelectPointcloud: (id) => callbacksRef.current.onSelectPointcloud?.(id),
             onHoverPointcloud: (id) => callbacksRef.current.onHoverPointcloud?.(id),
             onFocusCameraTarget: (c, o) => callbacksRef.current.onFocusCameraTarget?.(c, o),
+            onPreviewPointcloudTransform: (id, m) => callbacksRef.current.onPreviewPointcloudTransform?.(id, m),
             onUpdatePointcloudTransform: (id, m) => callbacksRef.current.onUpdatePointcloudTransform?.(id, m),
             onCameraViewChange: (v) => callbacksRef.current.onCameraViewChange?.(v),
             onSetIsGizmoDragging: (d) => callbacksRef.current.onSetIsGizmoDragging?.(d),
+            onToggleCameraUpFixed: () => callbacksRef.current.onToggleCameraUpFixed?.(),
+            onSetIsCameraUpFixed: (f) => callbacksRef.current.onSetIsCameraUpFixed?.(f),
             onPointCountChange: (c) => callbacksRef.current.onPointCountChange?.(c),
             onPerfTestProgress: (fps, ft, m) => callbacksRef.current.onPerfTestProgress?.(fps, ft, m),
             onPerfTestComplete: (s) => callbacksRef.current.onPerfTestComplete?.(s),
@@ -68,6 +71,12 @@ export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
             engineRef.current.updateConfig(configProps);
         }
     }, [configProps]);
+
+    useEffect(() => {
+        if (engineRef.current && configProps.showOutlines !== undefined) {
+            engineRef.current.setShowOutlines(configProps.showOutlines);
+        }
+    }, [configProps.showOutlines]);
 
     useEffect(() => {
         if (!engineRef.current || !cameraTarget) return;

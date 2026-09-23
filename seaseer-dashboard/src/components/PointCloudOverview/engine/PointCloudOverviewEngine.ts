@@ -109,8 +109,25 @@ export class PointCloudOverviewEngine {
                 this.cameraMovementSystem.setIsGizmoDragging(dragging);
                 this.callbacks.onSetIsGizmoDragging?.(dragging);
             },
+            onToggleCameraUpFixed: () => {
+                this.cameraMovementSystem.isFixedUp = !this.cameraMovementSystem.isFixedUp;
+                this.callbacks.onToggleCameraUpFixed?.();
+                this.callbacks.onSetIsCameraUpFixed?.(this.cameraMovementSystem.isFixedUp);
+            },
+            onSetIsCameraUpFixed: (fixed: boolean) => {
+                this.cameraMovementSystem.isFixedUp = fixed;
+                this.callbacks.onSetIsCameraUpFixed?.(fixed);
+            },
+            onPreviewPointcloudTransform: (id: string, matrixArray: number[]) => {
+                this.pointCloudSystem.updateTargetTransform(id, matrixArray);
+                this.callbacks.onPreviewPointcloudTransform?.(id, matrixArray);
+            },
+            onUpdatePointcloudTransform: (id: string, matrixArray: number[]) => {
+                this.pointCloudSystem.updateTargetTransform(id, matrixArray);
+                this.callbacks.onUpdatePointcloudTransform?.(id, matrixArray);
+            },
         };
-        this.transformGizmoSystem = new TransformGizmoSystem(this.scene, this.camera, this.renderer.domElement, gizmoCallbacks, initialConfig);
+        this.transformGizmoSystem = new TransformGizmoSystem(this.scene, this.camera, this.renderer, gizmoCallbacks, initialConfig);
 
         // Bind Resize Observer
         this.initResizeObserver();
@@ -177,6 +194,10 @@ export class PointCloudOverviewEngine {
 
     public setIsCameraUpFixed(fixed: boolean): void {
         this.cameraMovementSystem.isFixedUp = fixed;
+    }
+
+    public setShowOutlines(show: boolean): void {
+        this.pointCloudSystem.setShowOutlines(show);
     }
 
     public startPerformanceTest(): void {
@@ -331,6 +352,7 @@ export class PointCloudOverviewEngine {
         this.pointCloudSystem.update(this.camera);
         this.terrainSystem.update(this.camera, this.renderer);
         this.renderer.render(this.scene, this.camera);
+        this.transformGizmoSystem.render();
         this.animationFrameId = requestAnimationFrame(this.tick);
     }
 

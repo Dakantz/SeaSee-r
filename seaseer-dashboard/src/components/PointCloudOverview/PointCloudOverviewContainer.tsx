@@ -8,6 +8,7 @@ export const PointCloudOverviewContainer: React.FC = () => {
         heightmapMode,
         heightmapMapProvider,
         heightmapHeightProvider,
+        showOutlines,
         queries,
         summaryMap,
         catalog,
@@ -16,6 +17,8 @@ export const PointCloudOverviewContainer: React.FC = () => {
         cameraTarget,
         cameraViewTarget,
         isCameraUpFixed,
+        setIsCameraUpFixed,
+        toggleCameraUpFixed,
         selectPointcloud,
         hoverPointcloud,
         focusCameraTarget,
@@ -38,6 +41,7 @@ export const PointCloudOverviewContainer: React.FC = () => {
             heightmapMode={heightmapMode}
             heightmapMapProvider={heightmapMapProvider}
             heightmapHeightProvider={heightmapHeightProvider}
+            showOutlines={showOutlines}
             queries={queries}
             summaryMap={summaryMap}
             catalog={catalog}
@@ -56,6 +60,8 @@ export const PointCloudOverviewContainer: React.FC = () => {
                 }
             }}
             onSetIsGizmoDragging={setIsGizmoDragging}
+            onToggleCameraUpFixed={toggleCameraUpFixed}
+            onSetIsCameraUpFixed={setIsCameraUpFixed}
             onPointCountChange={setPointCount}
             perfTestTrigger={perfTestTrigger}
             isPerfTestRunning={isPerfTestRunning}

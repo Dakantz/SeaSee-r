@@ -20,6 +20,24 @@ export interface DynamicLODConfig {
     switchDistanceFactor: number;
     maxConcurrentFetches: number;
     movementThresholdSq: number;
+    showOutlines?: boolean;
+}
+
+export function getLodColor(lod: number): string {
+    const colors: Record<number, string> = {
+        0: "#ff0055", // Red/Pink (LOD 0 - highest detail)
+        1: "#ffaa00", // Orange (LOD 1)
+        2: "#ffff00", // Yellow (LOD 2)
+        3: "#00ff66", // Bright Green (LOD 3)
+        4: "#00ffff", // Cyan (LOD 4)
+        5: "#0088ff", // Blue (LOD 5)
+        6: "#aa00ff", // Purple (LOD 6)
+        7: "#ff00aa", // Magenta (LOD 7)
+        8: "#888888", // Gray (LOD 8)
+        9: "#ffffff", // White (LOD 9)
+        10: "#445566", // Slate (LOD 10 - Global)
+    };
+    return colors[lod] || "#ffffff";
 }
 
 export interface PointCloudTarget {
@@ -47,8 +65,10 @@ interface OctreeNode {
 interface LoadedChunk {
     key: string;
     lod: number;
+    bounds: Bounds3D;
     geometry?: THREE.BufferGeometry;
     mesh?: THREE.Points;
+    outlineMesh?: THREE.LineSegments;
     status: "loading" | "loaded" | "empty";
     abortController?: AbortController;
 }
@@ -57,6 +77,7 @@ interface FetchTask {
     key: string;
     pcId: string;
     lod: number;
+    bounds: Bounds3D;
     filters: FilterRule[];
     distSq: number;
     isWholeDomain: boolean;
@@ -70,6 +91,7 @@ class TargetLODManager {
     public target: PointCloudTarget;
     public group: THREE.Group;
     private config: DynamicLODConfig;
+    private showOutlines: boolean = false;
 
     private domainBounds: Bounds3D;
     private domainCenter: THREE.Vector3;
@@ -90,10 +112,12 @@ class TargetLODManager {
     constructor(
         target: PointCloudTarget,
         parentGroup: THREE.Group,
-        config: DynamicLODConfig
+        config: DynamicLODConfig,
+        showOutlines: boolean = false
     ) {
         this.target = target;
         this.config = config;
+        this.showOutlines = showOutlines;
 
         this.group = new THREE.Group();
         this.group.name = `PointCloudGroup_${target.key}`;
@@ -133,6 +157,37 @@ class TargetLODManager {
             this.group.position.set(target.center[0], target.center[1], target.center[2]);
             this.worldTransformMatrix.makeTranslation(target.center[0], target.center[1], target.center[2]);
             this.invWorldTransformMatrix.copy(this.worldTransformMatrix).invert();
+        }
+        this.group.matrixWorldNeedsUpdate = true;
+        this.group.updateMatrixWorld(true);
+
+        if (this.octreeRoot) {
+            this.updateOctreeWorldBoxes(this.octreeRoot);
+        }
+    }
+
+    public updateTransformMatrix(matrixArr: number[]): void {
+        this.target.matrixArr = matrixArr;
+        this.worldTransformMatrix.fromArray(matrixArr);
+        this.invWorldTransformMatrix.copy(this.worldTransformMatrix).invert();
+        this.group.matrixAutoUpdate = false;
+        this.group.matrix.copy(this.worldTransformMatrix);
+        this.group.matrixWorldNeedsUpdate = true;
+        this.group.updateMatrixWorld(true);
+
+        if (this.octreeRoot) {
+            this.updateOctreeWorldBoxes(this.octreeRoot);
+        }
+    }
+
+    private updateOctreeWorldBoxes(node: OctreeNode): void {
+        const localBox = new THREE.Box3(
+            new THREE.Vector3(node.bounds.minX, node.bounds.minY, node.bounds.minZ),
+            new THREE.Vector3(node.bounds.maxX, node.bounds.maxY, node.bounds.maxZ)
+        );
+        node.worldBox.copy(localBox).applyMatrix4(this.worldTransformMatrix);
+        for (const child of node.children) {
+            this.updateOctreeWorldBoxes(child);
         }
     }
 
@@ -258,6 +313,7 @@ class TargetLODManager {
                         key: chunkKey,
                         pcId: this.target.pcId,
                         lod: leaf.lod,
+                        bounds: { ...leaf.bounds },
                         filters: spatialFilters,
                         distSq,
                         isWholeDomain: false,
@@ -291,6 +347,7 @@ class TargetLODManager {
                         key: wholeDomainKey,
                         pcId: this.target.pcId,
                         lod: targetLod,
+                        bounds: { ...this.domainBounds },
                         filters: this.target.filters || [],
                         distSq: distToCenter * distToCenter,
                         isWholeDomain: true,
@@ -363,10 +420,16 @@ class TargetLODManager {
         return this.config.maxLOD;
     }
 
-    public registerLoadingChunk(key: string, lod: number, abortController: AbortController): void {
+    public registerLoadingChunk(
+        key: string,
+        lod: number,
+        bounds: Bounds3D,
+        abortController: AbortController
+    ): void {
         const chunk: LoadedChunk = {
             key,
             lod,
+            bounds: { ...bounds },
             status: "loading",
             abortController,
         };
@@ -397,8 +460,72 @@ class TargetLODManager {
 
         this.group.add(pointsMesh);
 
+        if (this.showOutlines) {
+            this.createChunkOutline(chunk);
+        }
+
         if (key.includes("whole_domain")) {
             this.wholeDomainChunk = chunk;
+        }
+    }
+
+    private createChunkOutline(chunk: LoadedChunk): void {
+        if (chunk.outlineMesh) return;
+        const bounds = chunk.bounds;
+        if (!bounds) return;
+
+        const width = Math.max(0.001, bounds.maxX - bounds.minX);
+        const height = Math.max(0.001, bounds.maxY - bounds.minY);
+        const depth = Math.max(0.001, bounds.maxZ - bounds.minZ);
+
+        const boxGeom = new THREE.BoxGeometry(width, height, depth);
+        const edgesGeom = new THREE.EdgesGeometry(boxGeom);
+        boxGeom.dispose();
+
+        const color = getLodColor(chunk.lod);
+        const lineMat = new THREE.LineBasicMaterial({
+            color: new THREE.Color(color),
+            transparent: true,
+            opacity: 0.8,
+            depthTest: true,
+            depthWrite: false,
+        });
+
+        const outlineMesh = new THREE.LineSegments(edgesGeom, lineMat);
+        outlineMesh.name = `ChunkOutline_${chunk.key}`;
+        outlineMesh.position.set(
+            (bounds.minX + bounds.maxX) / 2,
+            (bounds.minY + bounds.maxY) / 2,
+            (bounds.minZ + bounds.maxZ) / 2
+        );
+
+        chunk.outlineMesh = outlineMesh;
+        this.group.add(outlineMesh);
+    }
+
+    public setShowOutlines(show: boolean): void {
+        this.showOutlines = show;
+        for (const chunk of this.loadedChunks.values()) {
+            if (chunk.status === "loaded") {
+                if (show) {
+                    if (!chunk.outlineMesh) {
+                        this.createChunkOutline(chunk);
+                    } else {
+                        chunk.outlineMesh.visible = true;
+                    }
+                } else {
+                    if (chunk.outlineMesh) {
+                        this.group.remove(chunk.outlineMesh);
+                        chunk.outlineMesh.geometry.dispose();
+                        if (Array.isArray(chunk.outlineMesh.material)) {
+                            chunk.outlineMesh.material.forEach((m) => m.dispose());
+                        } else {
+                            chunk.outlineMesh.material.dispose();
+                        }
+                        chunk.outlineMesh = undefined;
+                    }
+                }
+            }
         }
     }
 
@@ -453,7 +580,24 @@ class TargetLODManager {
         }
         if (chunk.mesh) {
             this.group.remove(chunk.mesh);
+            if (chunk.mesh.material) {
+                if (Array.isArray(chunk.mesh.material)) {
+                    chunk.mesh.material.forEach((m) => m.dispose());
+                } else {
+                    chunk.mesh.material.dispose();
+                }
+            }
             chunk.mesh = undefined;
+        }
+        if (chunk.outlineMesh) {
+            this.group.remove(chunk.outlineMesh);
+            chunk.outlineMesh.geometry.dispose();
+            if (Array.isArray(chunk.outlineMesh.material)) {
+                chunk.outlineMesh.material.forEach((m) => m.dispose());
+            } else {
+                chunk.outlineMesh.material.dispose();
+            }
+            chunk.outlineMesh = undefined;
         }
         if (chunk.geometry) {
             chunk.geometry.dispose();
@@ -485,6 +629,7 @@ export class DynamicLODController {
     private activeKeys: Set<string> = new Set();
     private pendingQueue: FetchTask[] = [];
     private activeFetches: number = 0;
+    private showOutlines: boolean = false;
 
     private lastCamPos: THREE.Vector3 = new THREE.Vector3(NaN, NaN, NaN);
     private frustum: THREE.Frustum = new THREE.Frustum();
@@ -505,6 +650,7 @@ export class DynamicLODController {
             movementThresholdSq: 0.05,
             ...config,
         };
+        this.showOutlines = !!this.config.showOutlines;
     }
 
     public syncTargets(targets: PointCloudTarget[]): void {
@@ -524,7 +670,7 @@ export class DynamicLODController {
             if (existing) {
                 existing.updateTransform(target);
             } else {
-                const manager = new TargetLODManager(target, this.rootGroup, this.config);
+                const manager = new TargetLODManager(target, this.rootGroup, this.config, this.showOutlines);
                 this.targetManagers.set(target.key, manager);
             }
         }
@@ -599,7 +745,7 @@ export class DynamicLODController {
             if (!manager) continue;
 
             const abortController = new AbortController();
-            manager.registerLoadingChunk(task.key, task.lod, abortController);
+            manager.registerLoadingChunk(task.key, task.lod, task.bounds, abortController);
             this.activeFetches++;
 
             fetchBinaryGeometry(task.pcId, task.lod, abortController.signal, task.filters)
@@ -629,6 +775,21 @@ export class DynamicLODController {
                     this.activeFetches--;
                     this.processQueue();
                 });
+        }
+    }
+
+    public setShowOutlines(show: boolean): void {
+        this.showOutlines = show;
+        for (const manager of this.targetManagers.values()) {
+            manager.setShowOutlines(show);
+        }
+    }
+
+    public updateTargetTransform(key: string, matrixArray: number[]): void {
+        const manager = this.targetManagers.get(key);
+        if (manager) {
+            manager.updateTransformMatrix(matrixArray);
+            this.lastCamPos.set(NaN, NaN, NaN);
         }
     }
 

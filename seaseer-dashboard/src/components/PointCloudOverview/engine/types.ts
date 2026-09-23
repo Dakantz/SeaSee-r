@@ -40,6 +40,9 @@ export interface EngineConfig {
     heightmapMapProvider?: MapProviderChoice;
     heightmapHeightProvider?: HeightProviderChoice;
 
+    // Outlines / Debug
+    showOutlines?: boolean;
+
     // Point Cloud & Queries
     queries?: CustomQuery[];
     summaryMap?: Record<string, QuerySummaryData>;
@@ -63,9 +66,12 @@ export interface EngineCallbacks {
     onSelectPointcloud?: (id: string) => void;
     onHoverPointcloud?: (id: string | null) => void;
     onFocusCameraTarget?: (center: [number, number, number], offset?: [number, number, number] | number) => void;
+    onPreviewPointcloudTransform?: (id: string, matrixArray: number[]) => void;
     onUpdatePointcloudTransform?: (id: string, matrixArray: number[]) => void;
     onCameraViewChange?: (view: { position?: [number, number, number]; quaternion?: [number, number, number, number]; fov?: number; target?: [number, number, number] }) => void;
     onSetIsGizmoDragging?: (dragging: boolean) => void;
+    onToggleCameraUpFixed?: () => void;
+    onSetIsCameraUpFixed?: (fixed: boolean) => void;
     onPointCountChange?: (count: number) => void;
 
     // Performance Testing

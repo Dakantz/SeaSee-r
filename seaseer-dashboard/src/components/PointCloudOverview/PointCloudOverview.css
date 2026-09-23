@@ -170,3 +170,84 @@
     height: 100%;
     overflow-y: auto;
 }
+
+/* ==========================================================================
+   Viewport Gizmo Camera Roll Ring
+   ========================================================================== */
+.gizmo-roll-ring-overlay-host {
+    position: absolute;
+    top: 0;
+    right: 0;
+    pointer-events: none;
+    z-index: 1010;
+}
+
+.gizmo-roll-ring-container {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 156px;
+    height: 156px;
+    margin: 56px 11px 0 0;
+    pointer-events: none;
+    z-index: 1010;
+    user-select: none;
+}
+
+.gizmo-roll-ring-svg {
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+}
+
+.gizmo-roll-ring-track {
+    pointer-events: stroke;
+    stroke: rgba(56, 189, 248, 0.4);
+    stroke-linecap: round;
+    transition: stroke 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease;
+    cursor: grab;
+}
+
+.gizmo-roll-ring-track:hover {
+    stroke: rgba(56, 189, 248, 0.9);
+    stroke-width: 10px;
+    filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.8));
+}
+
+.gizmo-roll-ring-track--active {
+    stroke: #00e5ff !important;
+    stroke-width: 10px !important;
+    filter: drop-shadow(0 0 10px #00e5ff) !important;
+    cursor: grabbing !important;
+}
+
+.gizmo-roll-ring-track--fixed {
+    stroke: rgba(0, 255, 102, 0.6);
+    filter: drop-shadow(0 0 6px rgba(0, 255, 102, 0.5));
+}
+
+.gizmo-roll-ring-notch {
+    pointer-events: none;
+    stroke: rgba(255, 255, 255, 0.4);
+    stroke-width: 1.5;
+}
+
+.gizmo-roll-ring-tooltip {
+    position: absolute;
+    bottom: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    color: #38bdf8;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+}
+

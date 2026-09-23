@@ -19,10 +19,16 @@ export class PointCloudSystem {
     private queries: CustomQuery[] = [];
     private summaryMap: Record<string, QuerySummaryData> = {};
     private catalog: PointCloudMetadataResponse[] = [];
+    private showOutlines: boolean = false;
+    private editingPointcloudId: string | null = null;
 
     constructor(scene: THREE.Scene, callbacks: EngineCallbacks = {}, config: Partial<EngineConfig> = {}) {
         this.scene = scene;
         this.callbacks = callbacks;
+        this.showOutlines = !!config.showOutlines;
+        if (config.editingPointcloudId !== undefined) {
+            this.editingPointcloudId = config.editingPointcloudId;
+        }
 
         this.rootGroup = new THREE.Group();
         this.rootGroup.name = "PointCloudSystemGroup";
@@ -34,6 +40,7 @@ export class PointCloudSystem {
             {
                 distanceFactor: 1.0,
                 switchDistanceFactor: 1.0,
+                showOutlines: this.showOutlines,
             }
         );
 
@@ -42,6 +49,16 @@ export class PointCloudSystem {
 
     public updateConfig(config: Partial<EngineConfig>): void {
         let dirty = false;
+
+        if (config.showOutlines !== undefined && config.showOutlines !== this.showOutlines) {
+            this.showOutlines = config.showOutlines;
+            this.dynamicLodController.setShowOutlines(this.showOutlines);
+        }
+
+        if (config.editingPointcloudId !== undefined && config.editingPointcloudId !== this.editingPointcloudId) {
+            this.editingPointcloudId = config.editingPointcloudId;
+            dirty = true;
+        }
 
         if (config.queries !== undefined) {
             this.queries = config.queries;
@@ -229,6 +246,40 @@ export class PointCloudSystem {
 
     public getTotalPointCount(): number {
         return this.dynamicLodController.getTotalPointCount();
+    }
+
+    public setShowOutlines(show: boolean): void {
+        if (this.showOutlines !== show) {
+            this.showOutlines = show;
+            this.dynamicLodController.setShowOutlines(show);
+        }
+    }
+
+    public updateTargetTransform(id: string, matrixArray: number[]): void {
+        const targetKeys = new Set<string>();
+
+        // 1. Direct match with target key
+        targetKeys.add(id);
+
+        // 2. If id is query ID, resolve connected pointclouds
+        const summary = this.summaryMap ? this.summaryMap[id] : undefined;
+        if (summary?.connected_pointclouds) {
+            for (const pc of summary.connected_pointclouds) {
+                if (pc?.id) targetKeys.add(String(pc.id));
+            }
+        }
+
+        // 3. Query filters
+        const query = this.queries?.find((q) => q.id === id);
+        const pcFilter = query?.filters?.find((f) => f.field === "pointcloud_id")?.value;
+        if (pcFilter) {
+            targetKeys.add(String(pcFilter));
+        }
+
+        // 4. Update targets in dynamicLodController
+        for (const key of targetKeys) {
+            this.dynamicLodController.updateTargetTransform(key, matrixArray);
+        }
     }
 
     public destroy(): void {

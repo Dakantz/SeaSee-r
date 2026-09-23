@@ -305,14 +305,19 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
             setSummaryMap((prev) => {
                 const next = { ...prev };
                 for (const [key, currSummary] of Object.entries(next)) {
-                    if (!currSummary?.connected_pointclouds) continue;
-                    const updatedConnected = currSummary.connected_pointclouds.map((pc) =>
-                        targetUuids.has(pc.id) ? { ...pc, transform_matrix: matrix } : pc
-                    );
-                    next[key] = {
-                        ...currSummary,
-                        connected_pointclouds: updatedConnected,
-                    };
+                    let updatedConnected = currSummary?.connected_pointclouds;
+                    if (currSummary?.connected_pointclouds) {
+                        updatedConnected = currSummary.connected_pointclouds.map((pc) =>
+                            targetUuids.has(pc.id) ? { ...pc, transform_matrix: matrix } : pc
+                        );
+                    }
+                    if (targetUuids.has(key) || key === id || currSummary?.connected_pointclouds) {
+                        next[key] = {
+                            ...currSummary,
+                            connected_pointclouds: updatedConnected,
+                            ...(targetUuids.has(key) || key === id ? { transform_matrix: matrix } : {}),
+                        };
+                    }
                 }
                 return next;
             });
