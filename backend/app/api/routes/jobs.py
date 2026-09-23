@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.database import get_db_session
 from app.models.job import Job, JobStatus, Pipeline, PipelineStatus
-from app.schemas.job import JobResponse, PipelineCreate, PipelineResponse
+from app.schemas.job import JobCreate, JobResponse, PipelineCreate, PipelineResponse
 from app.services.worker.pipeline_service import build_pipeline_and_jobs
 
 logger = logging.getLogger(__name__)
@@ -171,6 +171,33 @@ async def list_jobs(
     stmt = select(Job).order_by(Job.created_at.desc())
     result = await db.execute(stmt)
     return result.scalars().all()
+
+
+@router.post("", response_model=JobResponse, status_code=201)
+@router.post("/", response_model=JobResponse, status_code=201)
+async def create_job(
+    job_in: JobCreate,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Create and enqueue an individual job."""
+    job = Job(
+        name=job_in.name,
+        task_type=job_in.task_type,
+        payload=job_in.payload or {},
+        depends_on=[str(d) for d in (job_in.depends_on or [])],
+        pipeline_id=job_in.pipeline_id,
+        status=JobStatus.PENDING if not job_in.depends_on else JobStatus.BLOCKED,
+        progress=0.0
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    if job.status == JobStatus.PENDING:
+        await _enqueue_job_to_redis(job.id, job.task_type)
+
+    return job
+
 
 
 @router.get("/pipelines", response_model=List[PipelineResponse])

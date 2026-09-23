@@ -25,7 +25,7 @@ class JobResponse(BaseModel):
     result: Optional[Dict[str, Any]] = None
     error_message: Optional[str] = None
     pipeline_id: Optional[UUID] = None
-    depends_on: Optional[List[Any]] = []
+    depends_on: Optional[List[str]] = []
 
     model_config = ConfigDict(from_attributes=True)
 
