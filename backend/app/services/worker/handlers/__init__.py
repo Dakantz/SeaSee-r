@@ -2,7 +2,7 @@ from app.services.worker.handlers.base import BaseTaskHandler
 from app.services.worker.handlers.pointcloud import PointCloudUploadTaskHandler
 from app.services.worker.handlers.video import VideoTaskHandler
 from app.services.worker.handlers.opensfm_ingest import OpenSfMIngestTaskHandler
-from app.services.worker.handlers.opensfm_reconstruct import OpenSfMReconstructTaskHandler
+from app.services.worker.handlers.opensfm_sparse import OpenSfMSparseTaskHandler
 from app.services.worker.handlers.opensfm_dense import OpenSfMDenseTaskHandler
 from app.services.worker.handlers.emodnet import EMODnetGeoTIFFTaskHandler, EMODnetCSVTaskHandler
 from app.services.worker.handlers.frame_extraction import FrameExtractionTaskHandler
@@ -12,7 +12,7 @@ def register_all_handlers(registry):
     registry.register(PointCloudUploadTaskHandler())
     registry.register(VideoTaskHandler())
     registry.register(OpenSfMIngestTaskHandler())
-    registry.register(OpenSfMReconstructTaskHandler())
+    registry.register(OpenSfMSparseTaskHandler())
     registry.register(OpenSfMDenseTaskHandler())
     registry.register(EMODnetGeoTIFFTaskHandler())
     registry.register(EMODnetCSVTaskHandler())
@@ -24,7 +24,7 @@ __all__ = [
     "PointCloudUploadTaskHandler",
     "VideoTaskHandler",
     "OpenSfMIngestTaskHandler",
-    "OpenSfMReconstructTaskHandler",
+    "OpenSfMSparseTaskHandler",
     "OpenSfMDenseTaskHandler",
     "EMODnetGeoTIFFTaskHandler",
     "EMODnetCSVTaskHandler",

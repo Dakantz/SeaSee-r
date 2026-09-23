@@ -157,9 +157,9 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
                     depends_on: []
                   },
                   {
-                    id_key: 'opensfm_reconstruct',
-                    name: truncateStr(`OpenSfM Reconstruction: ${fileNamesSummary} (frames=${numFrames}, blur=${blurThreshold})`),
-                    task_type: 'opensfm_reconstruct',
+                    id_key: 'opensfm_sparse',
+                    name: truncateStr(`OpenSfM Sparse: ${fileNamesSummary} (frames=${numFrames}, blur=${blurThreshold})`),
+                    task_type: 'opensfm_sparse',
                     payload: {
                       dataset_name: datasetName,
                       file_id: primaryFileId,
@@ -178,7 +178,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
                       reconstruction_index: 0,
                       subfolder: 'undistorted'
                     },
-                    depends_on: ['opensfm_reconstruct']
+                    depends_on: ['opensfm_sparse']
                   },
                   {
                     id_key: 'opensfm_ingest',

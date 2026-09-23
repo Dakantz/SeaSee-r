@@ -87,7 +87,7 @@ async def test_run_background_job_cancelled_error_updates_status_to_timeout():
     from app.models.job import Job
 
     dummy_job_id = str(uuid.uuid4())
-    mock_job = Job(id=uuid.UUID(dummy_job_id), task_type="opensfm_reconstruct", payload={}, name="Test Job")
+    mock_job = Job(id=uuid.UUID(dummy_job_id), task_type="opensfm_sparse", payload={}, name="Test Job")
 
     async def mock_execute(*args, **kwargs):
         class MockScalarResult:

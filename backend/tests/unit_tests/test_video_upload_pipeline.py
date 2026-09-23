@@ -42,9 +42,9 @@ def test_video_upload_pipeline_dag_building():
                 depends_on=[]
             ),
             PipelineJobCreate(
-                id_key="opensfm_reconstruct",
-                name=f"OpenSfM Reconstruction: {file_name}",
-                task_type="opensfm_reconstruct",
+                id_key="opensfm_sparse",
+                name=f"OpenSfM Sparse: {file_name}",
+                task_type="opensfm_sparse",
                 payload={
                     "dataset_name": dataset_name,
                     "file_id": file_id
@@ -61,7 +61,7 @@ def test_video_upload_pipeline_dag_building():
                     "reconstruction_index": 0,
                     "subfolder": "undistorted"
                 },
-                depends_on=["opensfm_reconstruct"]
+                depends_on=["opensfm_sparse"]
             ),
             PipelineJobCreate(
                 id_key="opensfm_ingest",
@@ -96,8 +96,8 @@ def test_video_upload_pipeline_dag_building():
     assert job_frame.depends_on == []
     assert get_queue_name_for_task_type(job_frame.task_type) == "pointcloud_tasks"
 
-    # Verify Job 2 (opensfm_reconstruct - Sparse)
-    assert job_reconstruct.task_type == "opensfm_reconstruct"
+    # Verify Job 2 (opensfm_sparse - Sparse)
+    assert job_reconstruct.task_type == "opensfm_sparse"
     assert job_reconstruct.status == JobStatus.BLOCKED
     assert set(job_reconstruct.depends_on) == {str(job_frame.id), str(job_upload.id)}
     assert get_queue_name_for_task_type(job_reconstruct.task_type) == "opensfm_tasks"

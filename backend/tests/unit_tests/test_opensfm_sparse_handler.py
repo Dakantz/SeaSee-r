@@ -3,12 +3,12 @@ import pytest
 import uuid
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from app.services.worker.handlers.opensfm_reconstruct import OpenSfMReconstructTaskHandler
+from app.services.worker.handlers.opensfm_sparse import OpenSfMSparseTaskHandler
 
 
 @pytest.mark.anyio
-async def test_opensfm_reconstruct_missing_dataset_dir_raises(tmp_path):
-    handler = OpenSfMReconstructTaskHandler()
+async def test_opensfm_sparse_missing_dataset_dir_raises(tmp_path):
+    handler = OpenSfMSparseTaskHandler()
     non_existent = str(tmp_path / "non_existent_dataset")
     payload = {"dataset_dir": non_existent}
 
@@ -19,8 +19,8 @@ async def test_opensfm_reconstruct_missing_dataset_dir_raises(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_opensfm_reconstruct_missing_images_raises(tmp_path):
-    handler = OpenSfMReconstructTaskHandler()
+async def test_opensfm_sparse_missing_images_raises(tmp_path):
+    handler = OpenSfMSparseTaskHandler()
     dataset_dir = tmp_path / "dataset"
     dataset_dir.mkdir()
     payload = {"dataset_dir": str(dataset_dir)}
@@ -32,8 +32,8 @@ async def test_opensfm_reconstruct_missing_images_raises(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_opensfm_reconstruct_missing_opensfm_library_raises(tmp_path):
-    handler = OpenSfMReconstructTaskHandler()
+async def test_opensfm_sparse_missing_opensfm_library_raises(tmp_path):
+    handler = OpenSfMSparseTaskHandler()
     dataset_dir = tmp_path / "dataset"
     images_dir = dataset_dir / "images"
     images_dir.mkdir(parents=True)
@@ -42,15 +42,15 @@ async def test_opensfm_reconstruct_missing_opensfm_library_raises(tmp_path):
     payload = {"dataset_dir": str(dataset_dir)}
 
     with patch.object(handler, "update_job_status", new_callable=AsyncMock) as mock_update, \
-         patch("app.services.worker.handlers.opensfm_reconstruct.HAS_OPENSFM", False):
+         patch("app.services.worker.handlers.opensfm_sparse.HAS_OPENSFM", False):
         with pytest.raises(RuntimeError, match="OpenSfM Python library is not available"):
             await handler.execute("19732560-8306-4484-92d6-b101743fb329", payload)
         assert mock_update.called
 
 
 @pytest.mark.anyio
-async def test_opensfm_reconstruct_success(tmp_path):
-    handler = OpenSfMReconstructTaskHandler()
+async def test_opensfm_sparse_success(tmp_path):
+    handler = OpenSfMSparseTaskHandler()
     dataset_dir = tmp_path / "dataset"
     images_dir = dataset_dir / "images"
     images_dir.mkdir(parents=True)
@@ -60,8 +60,8 @@ async def test_opensfm_reconstruct_success(tmp_path):
     job_id = "19732560-8306-4484-92d6-b101743fb329"
 
     with patch.object(handler, "update_job_status", new_callable=AsyncMock) as mock_update, \
-         patch("app.services.worker.handlers.opensfm_reconstruct.HAS_OPENSFM", True), \
-         patch.object(handler, "_run_opensfm_pipeline") as mock_pipeline, \
+         patch("app.services.worker.handlers.opensfm_sparse.HAS_OPENSFM", True), \
+         patch.object(handler, "_run_opensfm_sparse_pipeline") as mock_pipeline, \
          patch.object(handler, "_create_dynamic_component_jobs", new_callable=AsyncMock) as mock_dyn:
         res = await handler.execute(job_id, payload)
 
@@ -73,8 +73,8 @@ async def test_opensfm_reconstruct_success(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_opensfm_reconstruct_cancelled_initial_status(tmp_path):
-    handler = OpenSfMReconstructTaskHandler()
+async def test_opensfm_sparse_cancelled_initial_status(tmp_path):
+    handler = OpenSfMSparseTaskHandler()
     dataset_dir = tmp_path / "dataset"
     images_dir = dataset_dir / "images"
     images_dir.mkdir(parents=True)
@@ -92,8 +92,8 @@ async def test_opensfm_reconstruct_cancelled_initial_status(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_opensfm_reconstruct_cancelled_during_pipeline(tmp_path):
-    handler = OpenSfMReconstructTaskHandler()
+async def test_opensfm_sparse_cancelled_during_pipeline(tmp_path):
+    handler = OpenSfMSparseTaskHandler()
     dataset_dir = tmp_path / "dataset"
     images_dir = dataset_dir / "images"
     images_dir.mkdir(parents=True)
@@ -106,8 +106,8 @@ async def test_opensfm_reconstruct_cancelled_during_pipeline(tmp_path):
         raise RuntimeError(f"Job {test_job_id} was cancelled by user.")
 
     with patch.object(handler, "update_job_status", new_callable=AsyncMock) as mock_update, \
-         patch("app.services.worker.handlers.opensfm_reconstruct.HAS_OPENSFM", True), \
-         patch.object(handler, "_run_opensfm_pipeline", side_effect=raise_cancellation):
+         patch("app.services.worker.handlers.opensfm_sparse.HAS_OPENSFM", True), \
+         patch.object(handler, "_run_opensfm_sparse_pipeline", side_effect=raise_cancellation):
         mock_update.return_value = True
 
         res = await handler.execute(test_job_id, payload)
@@ -119,7 +119,7 @@ async def test_opensfm_reconstruct_cancelled_during_pipeline(tmp_path):
 
 @pytest.mark.anyio
 async def test_create_dynamic_component_jobs(tmp_path):
-    handler = OpenSfMReconstructTaskHandler()
+    handler = OpenSfMSparseTaskHandler()
     dataset_dir = str(tmp_path / "dataset")
     test_job_id = str(uuid.uuid4())
 
@@ -138,9 +138,9 @@ async def test_create_dynamic_component_jobs(tmp_path):
     added_jobs = []
     mock_session.add.side_effect = lambda j: added_jobs.append(j)
 
-    with patch("app.services.worker.handlers.opensfm_reconstruct.HAS_OPENSFM", True), \
-         patch("app.services.worker.handlers.opensfm_reconstruct.DataSet", return_value=mock_dataset), \
-         patch("app.services.worker.handlers.opensfm_reconstruct.async_session", return_value=mock_session_ctx):
+    with patch("app.services.worker.handlers.opensfm_sparse.HAS_OPENSFM", True), \
+         patch("app.services.worker.handlers.opensfm_sparse.DataSet", return_value=mock_dataset), \
+         patch("app.services.worker.handlers.opensfm_sparse.async_session", return_value=mock_session_ctx):
         
         await handler._create_dynamic_component_jobs(dataset_dir, test_job_id, {"dataset_name": "test_ds"})
 
@@ -162,7 +162,7 @@ async def test_create_dynamic_component_jobs(tmp_path):
 
 @pytest.mark.anyio
 async def test_resolve_opensfm_config_path():
-    from app.services.worker.handlers.opensfm_reconstruct import resolve_opensfm_config_path
+    from app.services.worker.handlers.opensfm_sparse import resolve_opensfm_config_path
     rel_path = "backend/app/core/openSfM/config.yaml"
     resolved = resolve_opensfm_config_path(rel_path)
     assert resolved is not None
@@ -171,8 +171,8 @@ async def test_resolve_opensfm_config_path():
 
 
 @pytest.mark.anyio
-async def test_opensfm_reconstruct_copies_config(tmp_path):
-    handler = OpenSfMReconstructTaskHandler()
+async def test_opensfm_sparse_copies_config(tmp_path):
+    handler = OpenSfMSparseTaskHandler()
     dataset_dir = tmp_path / "dataset"
     images_dir = dataset_dir / "images"
     images_dir.mkdir(parents=True)
@@ -188,8 +188,8 @@ async def test_opensfm_reconstruct_copies_config(tmp_path):
     job_id = "19732560-8306-4484-92d6-b101743fb329"
 
     with patch.object(handler, "update_job_status", new_callable=AsyncMock), \
-         patch("app.services.worker.handlers.opensfm_reconstruct.HAS_OPENSFM", True), \
-         patch.object(handler, "_run_opensfm_pipeline"), \
+         patch("app.services.worker.handlers.opensfm_sparse.HAS_OPENSFM", True), \
+         patch.object(handler, "_run_opensfm_sparse_pipeline"), \
          patch.object(handler, "_create_dynamic_component_jobs", new_callable=AsyncMock):
         
         await handler.execute(job_id, payload)
@@ -197,4 +197,3 @@ async def test_opensfm_reconstruct_copies_config(tmp_path):
         target_config = dataset_dir / "config.yaml"
         assert target_config.exists()
         assert target_config.read_text() == "processes: 4\n"
-

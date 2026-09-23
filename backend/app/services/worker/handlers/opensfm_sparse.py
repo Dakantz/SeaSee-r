@@ -65,16 +65,16 @@ except ImportError:
     HAS_OPENSFM = False
 
 
-class OpenSfMReconstructTaskHandler(BaseTaskHandler):
+class OpenSfMSparseTaskHandler(BaseTaskHandler):
     """
     Worker task handler for running OpenSfM 3D sparse reconstruction & mesh generation
     (Extraction, Detection, Matching, Tracks, Incremental SfM Reconstruction & Mesh)
     directly via Python API on a dataset directory containing extracted images.
     Targeted to execute inside the dedicated OpenSfM worker container.
     """
-    task_types = ["opensfm_reconstruct"]
+    task_types = ["opensfm_sparse"]
 
-    def _run_opensfm_pipeline(self, dataset_dir: str, loop: asyncio.AbstractEventLoop, job_id: str) -> None:
+    def _run_opensfm_sparse_pipeline(self, dataset_dir: str, loop: asyncio.AbstractEventLoop, job_id: str) -> None:
         """
         Executes OpenSfM sparse pipeline steps (up to actions.mesh.run_dataset).
         Progress updates are dispatched back to the main event loop.
@@ -82,7 +82,7 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
         dataset = DataSet(dataset_dir)
 
         def update_progress(pct: float, step_name: str) -> None:
-            logger.info(f"OpenSfM step: {step_name} ({pct}%)")
+            logger.info(f"OpenSfM Sparse step: {step_name} ({pct}%)")
             fut = asyncio.run_coroutine_threadsafe(
                 self.update_job_status(job_id, "RUNNING", pct),
                 loop
@@ -90,7 +90,7 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
             try:
                 is_active = fut.result()
                 if is_active is False:
-                    logger.info(f"Job {job_id} was cancelled. Stopping OpenSfM reconstruction immediately.")
+                    logger.info(f"Job {job_id} was cancelled. Stopping OpenSfM sparse reconstruction immediately.")
                     raise RuntimeError(f"Job {job_id} was cancelled by user.")
             except RuntimeError:
                 raise
@@ -242,14 +242,14 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
             dataset_dir = os.path.join(settings.opensfm_ingestion_dir, dataset_name)
 
         if not os.path.exists(dataset_dir):
-            err_msg = f"Dataset directory '{dataset_dir}' does not exist for OpenSfM reconstruction."
+            err_msg = f"Dataset directory '{dataset_dir}' does not exist for OpenSfM sparse reconstruction."
             logger.error(err_msg)
             await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)
             raise RuntimeError(err_msg)
 
         images_dir = os.path.join(dataset_dir, "images")
         if not os.path.exists(images_dir) or not os.listdir(images_dir):
-            err_msg = f"No images found in '{images_dir}'. Ensure frame extraction completed before running reconstruction."
+            err_msg = f"No images found in '{images_dir}'. Ensure frame extraction completed before running sparse reconstruction."
             logger.error(err_msg)
             await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)
             raise RuntimeError(err_msg)
@@ -278,14 +278,14 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
         loop = asyncio.get_running_loop()
 
         try:
-            await asyncio.to_thread(self._run_opensfm_pipeline, dataset_dir, loop, job_id)
+            await asyncio.to_thread(self._run_opensfm_sparse_pipeline, dataset_dir, loop, job_id)
         except Exception as proc_err:
             if "cancelled" in str(proc_err).lower():
-                logger.info(f"OpenSfM reconstruction execution stopped for cancelled job {job_id}.")
+                logger.info(f"OpenSfM sparse reconstruction execution stopped for cancelled job {job_id}.")
                 return {
                     "status": "cancelled",
                     "job_id": job_id,
-                    "message": "OpenSfM reconstruction stopped due to job cancellation."
+                    "message": "OpenSfM sparse reconstruction stopped due to job cancellation."
                 }
             try:
                 job_uuid = uuid.UUID(job_id)
@@ -293,16 +293,16 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
                     res = await session.execute(select(Job.status).where(Job.id == job_uuid))
                     curr_status = res.scalar_one_or_none()
                     if curr_status == JobStatus.CANCELLED:
-                        logger.info(f"OpenSfM reconstruction execution stopped for cancelled job {job_id}.")
+                        logger.info(f"OpenSfM sparse reconstruction execution stopped for cancelled job {job_id}.")
                         return {
                             "status": "cancelled",
                             "job_id": job_id,
-                            "message": "OpenSfM reconstruction stopped due to job cancellation."
+                            "message": "OpenSfM sparse reconstruction stopped due to job cancellation."
                         }
             except Exception as chk_err:
                 logger.warning(f"Could not verify cancellation status for {job_id}: {chk_err}")
 
-            err_msg = f"OpenSfM reconstruction failed: {proc_err}"
+            err_msg = f"OpenSfM sparse reconstruction failed: {proc_err}"
             logger.error(err_msg, exc_info=True)
             await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)
             raise RuntimeError(err_msg) from proc_err
@@ -315,7 +315,7 @@ class OpenSfMReconstructTaskHandler(BaseTaskHandler):
             "status": "success",
             "job_id": job_id,
             "dataset_dir": dataset_dir,
-            "message": "OpenSfM reconstruction completed successfully."
+            "message": "OpenSfM sparse reconstruction completed successfully."
         }
 
         await self.update_job_status(job_id, "COMPLETED", 100.0, result=res_data)
