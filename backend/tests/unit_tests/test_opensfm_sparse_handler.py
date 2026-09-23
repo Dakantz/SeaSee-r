@@ -6,6 +6,30 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from app.services.worker.handlers.opensfm_sparse import OpenSfMSparseTaskHandler
 
 
+@pytest.fixture(autouse=True)
+def mock_opensfm_health_default():
+    with patch("app.services.worker.handlers.opensfm_sparse.check_opensfm_gpu_health", return_value=(True, "Healthy")):
+        yield
+
+
+@pytest.mark.anyio
+async def test_opensfm_sparse_unhealthy_container_raises(tmp_path):
+    handler = OpenSfMSparseTaskHandler()
+    payload = {"dataset_dir": str(tmp_path)}
+
+    with patch.object(handler, "update_job_status", new_callable=AsyncMock) as mock_update, \
+         patch("app.services.worker.handlers.opensfm_sparse.check_opensfm_gpu_health", return_value=(False, "OpenCL/GPU DepthmapClusterEstimator is unavailable")):
+        with pytest.raises(RuntimeError, match="OpenSfM health check failed"):
+            await handler.execute("19732560-8306-4484-92d6-b101743fb329", payload)
+
+        mock_update.assert_any_call(
+            "19732560-8306-4484-92d6-b101743fb329",
+            "FAILED",
+            0.0,
+            error_message="OpenSfM health check failed: OpenCL/GPU DepthmapClusterEstimator is unavailable"
+        )
+
+
 @pytest.mark.anyio
 async def test_opensfm_sparse_missing_dataset_dir_raises(tmp_path):
     handler = OpenSfMSparseTaskHandler()

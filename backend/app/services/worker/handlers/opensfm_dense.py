@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.core.database import async_session
 from app.models.job import Job, JobStatus
 from app.services.worker.handlers.base import BaseTaskHandler
+from app.services.worker.handlers.opensfm_health import check_opensfm_gpu_health
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +137,14 @@ class OpenSfMDenseTaskHandler(BaseTaskHandler):
                 "job_id": job_id,
                 "message": "OpenSfM dense reconstruction stopped due to job cancellation."
             }
+
+        # Check if the opensfm docker container is healthy before proceeding
+        is_healthy, health_msg = check_opensfm_gpu_health()
+        if not is_healthy:
+            err_msg = f"OpenSfM health check failed: {health_msg}"
+            logger.error(err_msg)
+            await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)
+            raise RuntimeError(err_msg)
 
         dataset_dir = payload.get("dataset_dir") or payload.get("folder_path")
         rec_idx = int(payload.get("reconstruction_index", 0))
