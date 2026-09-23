@@ -87,6 +87,16 @@ async def check_tusd_online() -> bool:
         logger.error(f"TUSD health check failed: {e}")
         return False
 
+async def check_frontend_online() -> bool:
+    try:
+        url = settings.frontend_url.rstrip("/") + "/"
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            response = await client.get(url)
+            return response.status_code == 200
+    except Exception as e:
+        logger.error(f"Frontend health check failed: {e}")
+        return False
+
 @router.get("", response_model=HealthCheck)
 async def health_check():
     """
@@ -121,6 +131,9 @@ async def get_diagnostics(
     tusd_online = await check_tusd_online()
     tusd_status = "online" if tusd_online else "offline"
 
+    frontend_online = await check_frontend_online()
+    frontend_status = "online" if frontend_online else "offline"
+
     # Fail the health check if critical services are offline
     if db_status == "offline" or redis_status == "offline" or tusd_status == "offline":
         raise HTTPException(
@@ -144,6 +157,7 @@ async def get_diagnostics(
             "worker": worker_status,
             "opensfm": opensfm_status,
             "tusd": tusd_status,
+            "frontend": frontend_status,
         },
         recent_errors=[],
         workers=workers_info

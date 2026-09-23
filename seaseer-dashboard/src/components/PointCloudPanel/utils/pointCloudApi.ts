@@ -1,7 +1,7 @@
 import { buildFilterQueryParams, type StreamQueryParams } from "./filterUtils.ts";
 import type { QuerySummaryData } from "../CustomQueryManager.tsx";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 const API_BASE = `${API_BASE_URL}/pointclouds`;
 
 export async function fetchPointCloudSummary(params: StreamQueryParams): Promise<QuerySummaryData> {

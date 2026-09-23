@@ -36,7 +36,7 @@ export interface PLYPointCloudSidebarProps {
     setPauseCubicLodUpdate?: (pause: boolean) => void;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const [isOpenSfMModalOpen, setIsOpenSfMModalOpen] = useState(false);

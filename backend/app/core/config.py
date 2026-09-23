@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # Default timeout in seconds for RQ background jobs (default: 3600s * 8 = 8h)
     job_timeout: int = 3600 * 8
 
+    # Frontend container URL for health checks (defaults to Docker network host)
+    frontend_url: str = "http://frontend:80"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

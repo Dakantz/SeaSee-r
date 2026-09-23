@@ -35,7 +35,7 @@ export class TerrainSystem {
         try {
             let provider: any;
             let heightProvider: any = null;
-            const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+            const apiBaseUrl = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
             switch (mapChoice) {
                 case "Bathymetry":

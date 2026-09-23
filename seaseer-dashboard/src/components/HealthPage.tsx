@@ -355,6 +355,7 @@ export default function HealthPage() {
                                              service === "opensfm" ? "OpenSfM Worker" :
                                              service === "worker" ? "Task Worker" :
                                              service === "tusd" ? "TUSD Resumable" :
+                                             service === "frontend" ? "Frontend Dashboard" :
                                              service.charAt(0).toUpperCase() + service.slice(1)}
                                         </span>
                                     </div>

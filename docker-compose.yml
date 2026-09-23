@@ -143,6 +143,29 @@ services:
       backend:
         condition: service_healthy
 
+  # Frontend Dashboard (Nginx SPA)
+  frontend:
+    build:
+      context: ./seaseer-dashboard
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api/}
+        VITE_TUS_URL: ${VITE_TUS_URL:-/files/}
+    container_name: seasee-r-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+      tusd:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider http://localhost/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+
 volumes:
   pgdata:
   redisdata:

@@ -9,7 +9,7 @@ export const useLoadPLY = (identifier: string, enabled: boolean) => {
     useEffect(() => {
         if (!viewer || !identifier || !enabled) return;
 
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
         const url = `${API_BASE_URL}/pointclouds/${identifier}`;
 
         let isCancelled = false;

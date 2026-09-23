@@ -34,6 +34,24 @@ To get the frontend up and running locally, follow these steps:
 
 ---
 
+## Running with Docker
+
+You can build and run the production dashboard using Docker:
+
+### Standalone Docker Build:
+```bash
+docker build -t seaseer-frontend .
+docker run -p 3000:80 seaseer-frontend
+```
+
+### With Docker Compose (Root Directory):
+```bash
+docker compose up -d --build frontend
+```
+The dashboard will be accessible at `http://localhost:3000`.
+
+---
+
 ## React Compiler
 
 The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.

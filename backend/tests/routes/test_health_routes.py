@@ -46,7 +46,8 @@ def test_get_diagnostics(client):
 
     with patch("app.api.routes.health.check_redis_online", return_value=True), \
          patch("app.api.routes.health.get_workers_info_sync", return_value=("online", "online", mock_workers)), \
-         patch("app.api.routes.health.check_tusd_online", return_value=True):
+         patch("app.api.routes.health.check_tusd_online", return_value=True), \
+         patch("app.api.routes.health.check_frontend_online", return_value=True):
         
         response = client.get("/health/diagnostics")
         assert response.status_code == 200
@@ -58,6 +59,7 @@ def test_get_diagnostics(client):
         assert data["services_status"]["worker"] == "online"
         assert data["services_status"]["opensfm"] == "online"
         assert data["services_status"]["tusd"] == "online"
+        assert data["services_status"]["frontend"] == "online"
         
         assert "workers" in data
         assert len(data["workers"]) == 2

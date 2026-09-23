@@ -41,7 +41,7 @@ This single command builds the container images, initializes databases and volum
 
 ## Architecture & Container Services Overview
 
-The Docker setup orchestrates 6 main containerized services:
+The Docker setup orchestrates 7 main containerized services:
 
 | Container Name | Service | Image / Build Source | Ports | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -51,6 +51,7 @@ The Docker setup orchestrates 6 main containerized services:
 | `seasee-r-worker` | Task Worker | `./backend/Dockerfile` | N/A | Background task worker handling general processing queues (`pointcloud_tasks`, `job_tasks`, `default`). |
 | `seasee-r-opensfm` | OpenSfM Worker | `backend/Dockerfile.opensfm-worker` | N/A | Dedicated GPU-accelerated worker running OpenSfM photogrammetry & point cloud pipelines. |
 | `seasee-r-tusd` | Resumable Uploads | `tusproject/tusd:latest` | `8080:8080` | TUSD server handling large resumable media uploads linked to backend webhooks. |
+| `seasee-r-frontend` | Frontend Dashboard | `./seaseer-dashboard/Dockerfile` | `3000:80` | React/Vite web application served via Nginx with SPA routing & reverse proxy. |
 
 ---
 
@@ -58,6 +59,7 @@ The Docker setup orchestrates 6 main containerized services:
 
 Once the containers are running (`docker compose up -d --build`), the following endpoints are accessible on `localhost`:
 
+- **Frontend Dashboard**: [http://localhost:3000](http://localhost:3000)
 - **FastAPI Backend API**: [http://localhost:8000](http://localhost:8000)
 - **Interactive OpenAPI Specs (Swagger UI)**: [http://localhost:8000/docs](http://localhost:8000/docs)
 - **Backend Health Check**: [http://localhost:8000/health](http://localhost:8000/health)

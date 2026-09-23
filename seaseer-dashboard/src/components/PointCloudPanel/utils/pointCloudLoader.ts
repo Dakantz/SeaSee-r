@@ -56,7 +56,7 @@ export async function fetchBinaryGeometry(
     signal?: AbortSignal,
     filters?: FilterRule[]
 ): Promise<THREE.BufferGeometry> {
-    const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+    const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
     // Convert structured filters into URL query parameters
     const searchParams = buildFilterQueryParams({ lod: lodToLoad, filters });

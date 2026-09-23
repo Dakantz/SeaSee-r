@@ -143,7 +143,7 @@ function GeoThreeHeightmap() {
         try {
             let provider: any;
             let heightProvider: any = null;
-            const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+            const apiBaseUrl = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
             const mapChoice = heightmapMapProvider ?? "OpenStreetMaps";
             const heightChoice = heightmapHeightProvider ?? "Bathymetry";
@@ -548,7 +548,7 @@ function DBCameraTrajectoryDisplay() {
 
     if (!showCameraTrajectories || queries.length === 0) return null;
 
-    const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+    const apiBaseUrl = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
     const routesToRender: Array<{
         key: string;
