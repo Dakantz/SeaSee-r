@@ -1,24 +1,24 @@
 import * as THREE from "three";
 import type { EngineCallbacks, EngineConfig } from "../types";
-import { loadProgressivePointCloud } from "../../../PointCloudPanel/utils/pointCloudLoader";
+import type { CustomQuery, QuerySummaryData } from "../../PointCloudPanel/CustomQueryManager";
+import type { PointCloudMetadataResponse } from "../../../client";
+import type { FilterRule } from "../../PointCloudPanel/utils/filterUtils";
 import { getPointCloudTransform } from "../../../PointCloudPanel/utils/pointCloudTransform";
-
-interface LoadedPointCloud {
-    group: THREE.Group;
-    pointsMesh: THREE.Points;
-    abortController: AbortController;
-    pcId: string;
-}
+import {
+    DynamicLODController,
+    type Bounds3D,
+    type PointCloudTarget,
+} from "./DynamicLODController";
 
 export class PointCloudSystem {
     private scene: THREE.Scene;
     private callbacks: EngineCallbacks;
     private rootGroup: THREE.Group;
+    private dynamicLodController: DynamicLODController;
 
-    private loadedPointClouds: Map<string, LoadedPointCloud> = new Map();
-    private queries: any[] = [];
-    private summaryMap: Record<string, any> = {};
-    private catalog: any[] = [];
+    private queries: CustomQuery[] = [];
+    private summaryMap: Record<string, QuerySummaryData> = {};
+    private catalog: PointCloudMetadataResponse[] = [];
 
     constructor(scene: THREE.Scene, callbacks: EngineCallbacks = {}, config: Partial<EngineConfig> = {}) {
         this.scene = scene;
@@ -27,6 +27,15 @@ export class PointCloudSystem {
         this.rootGroup = new THREE.Group();
         this.rootGroup.name = "PointCloudSystemGroup";
         this.scene.add(this.rootGroup);
+
+        this.dynamicLodController = new DynamicLODController(
+            this.rootGroup,
+            this.callbacks,
+            {
+                distanceFactor: 1.0,
+                switchDistanceFactor: 1.0,
+            }
+        );
 
         this.updateConfig(config);
     }
@@ -52,8 +61,91 @@ export class PointCloudSystem {
         }
     }
 
+    private getTargetBounds(pcId: string): Bounds3D {
+        // 1. Check summaryMap connected_pointclouds
+        if (this.summaryMap) {
+            for (const summary of Object.values(this.summaryMap)) {
+                if (summary?.connected_pointclouds) {
+                    const match = summary.connected_pointclouds.find(
+                        (p) => p && String(p.id) === pcId
+                    );
+                    if (
+                        match &&
+                        match.min_x != null &&
+                        match.max_x != null &&
+                        match.min_y != null &&
+                        match.max_y != null &&
+                        match.min_z != null &&
+                        match.max_z != null
+                    ) {
+                        return {
+                            minX: Number(match.min_x),
+                            maxX: Number(match.max_x),
+                            minY: Number(match.min_y),
+                            maxY: Number(match.max_y),
+                            minZ: Number(match.min_z),
+                            maxZ: Number(match.max_z),
+                        };
+                    }
+                }
+                if (
+                    summary?.bounding_box &&
+                    summary.bounding_box.min_x != null &&
+                    summary.bounding_box.max_x != null &&
+                    summary.bounding_box.min_y != null &&
+                    summary.bounding_box.max_y != null &&
+                    summary.bounding_box.min_z != null &&
+                    summary.bounding_box.max_z != null
+                ) {
+                    const bbox = summary.bounding_box;
+                    return {
+                        minX: Number(bbox.min_x),
+                        maxX: Number(bbox.max_x),
+                        minY: Number(bbox.min_y),
+                        maxY: Number(bbox.max_y),
+                        minZ: Number(bbox.min_z),
+                        maxZ: Number(bbox.max_z),
+                    };
+                }
+            }
+        }
+
+        // 2. Check catalog
+        if (this.catalog) {
+            const match = this.catalog.find((c) => c && String(c.id) === pcId);
+            if (
+                match &&
+                match.min_x != null &&
+                match.max_x != null &&
+                match.min_y != null &&
+                match.max_y != null &&
+                match.min_z != null &&
+                match.max_z != null
+            ) {
+                return {
+                    minX: Number(match.min_x),
+                    maxX: Number(match.max_x),
+                    minY: Number(match.min_y),
+                    maxY: Number(match.max_y),
+                    minZ: Number(match.min_z),
+                    maxZ: Number(match.max_z),
+                };
+            }
+        }
+
+        // 3. Sensible default fallback bounds if not yet loaded in metadata
+        return {
+            minX: -50,
+            maxX: 50,
+            minY: -50,
+            maxY: 50,
+            minZ: -20,
+            maxZ: 20,
+        };
+    }
+
     private syncPointClouds(): void {
-        const targets: Array<{ key: string; pcId: string; filters?: any[] }> = [];
+        const targets: PointCloudTarget[] = [];
         const seenKeys = new Set<string>();
 
         if (this.queries && this.queries.length > 0) {
@@ -73,161 +165,74 @@ export class PointCloudSystem {
 
                             const baseFilters = query.filters
                                 ? query.filters.filter(
-                                    (f: any) => !["min_x", "max_x", "min_y", "max_y", "min_z", "max_z"].includes(f.field)
+                                    (f) => !["min_x", "max_x", "min_y", "max_y", "min_z", "max_z"].includes(f.field)
                                 )
                                 : [];
                             const hasPcFilter = baseFilters.some(
-                                (f: any) => f.field === "pointcloud_id" && String(f.value) === pcId
+                                (f) => f.field === "pointcloud_id" && String(f.value) === pcId
                             );
-                            const cleanFilters = hasPcFilter
+                            const cleanFilters: FilterRule[] = hasPcFilter
                                 ? baseFilters
                                 : [
                                     ...baseFilters,
                                     { id: `filter-pc-${pcId}`, field: "pointcloud_id", operator: "eq", value: pcId },
                                 ];
 
-                            targets.push({ key, pcId, filters: cleanFilters });
+                            const bounds = this.getTargetBounds(pcId);
+                            const { matrixArr, center } = getPointCloudTransform(pcId, this.summaryMap, this.catalog);
+
+                            targets.push({
+                                key,
+                                pcId,
+                                filters: cleanFilters,
+                                bounds,
+                                matrixArr,
+                                center,
+                            });
                         }
                     }
                 } else if (query.filters && query.filters.length > 0) {
                     const pcFilter = query.filters.find(
-                        (f: any) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator)
+                        (f) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator)
                     );
                     if (pcFilter && pcFilter.value) {
                         const pcId = String(pcFilter.value);
                         const key = pcId;
                         if (!seenKeys.has(key)) {
                             seenKeys.add(key);
-                            const cleanFilters = query.filters.filter(
-                                (f: any) => !["min_x", "max_x", "min_y", "max_y", "min_z", "max_z"].includes(f.field)
+                            const cleanFilters: FilterRule[] = query.filters.filter(
+                                (f) => !["min_x", "max_x", "min_y", "max_y", "min_z", "max_z"].includes(f.field)
                             );
-                            targets.push({ key, pcId, filters: cleanFilters });
+                            const bounds = this.getTargetBounds(pcId);
+                            const { matrixArr, center } = getPointCloudTransform(pcId, this.summaryMap, this.catalog);
+
+                            targets.push({
+                                key,
+                                pcId,
+                                filters: cleanFilters,
+                                bounds,
+                                matrixArr,
+                                center,
+                            });
                         }
                     }
                 }
             }
         }
 
-        const targetKeySet = new Set(targets.map((t) => t.key));
-        for (const [key] of this.loadedPointClouds.entries()) {
-            if (!targetKeySet.has(key)) {
-                this.removePointCloud(key);
-            }
-        }
-
-        for (const target of targets) {
-            if (!this.loadedPointClouds.has(target.key)) {
-                this.loadPointCloud(target);
-            } else {
-                this.updatePointCloudTransform(target.key, target.pcId);
-            }
-        }
+        this.dynamicLodController.syncTargets(targets);
     }
 
-    private loadPointCloud(target: { key: string; pcId: string; filters?: any[] }): void {
-        const group = new THREE.Group();
-        group.name = `PointCloudGroup_${target.key}`;
-
-        const material = new THREE.PointsMaterial({
-            size: 2.0,
-            vertexColors: true,
-            sizeAttenuation: false,
-        });
-
-        const pointsMesh = new THREE.Points(new THREE.BufferGeometry(), material);
-        group.add(pointsMesh);
-        this.rootGroup.add(group);
-
-        this.updateGroupTransform(group, target.pcId);
-
-        const abortController = new AbortController();
-
-        this.loadedPointClouds.set(target.key, {
-            group,
-            pointsMesh,
-            abortController,
-            pcId: target.pcId,
-        });
-
-        loadProgressivePointCloud({
-            id: target.pcId,
-            startLod: 10,
-            endLod: 0,
-            filters: target.filters,
-            signal: abortController.signal,
-            onLodLoaded: (_lod: number, geometry: THREE.BufferGeometry) => {
-                if (!this.loadedPointClouds.has(target.key)) {
-                    geometry.dispose();
-                    return;
-                }
-                const oldGeom = pointsMesh.geometry;
-                pointsMesh.geometry = geometry;
-                if (oldGeom && oldGeom !== geometry) {
-                    oldGeom.dispose();
-                }
-                this.notifyPointCount();
-            },
-            onError: (lod: number, err: unknown) => {
-                console.warn(`[PointCloudSystem] Failed to load LOD ${lod} for ${target.key}:`, err);
-            },
-        });
-    }
-
-    private updatePointCloudTransform(key: string, pcId: string): void {
-        const loaded = this.loadedPointClouds.get(key);
-        if (loaded) {
-            this.updateGroupTransform(loaded.group, pcId);
-        }
-    }
-
-    private updateGroupTransform(group: THREE.Group, pcId: string): void {
-        const { matrixArr, center } = getPointCloudTransform(pcId, this.summaryMap, this.catalog);
-        if (matrixArr && matrixArr.length === 16) {
-            const matWorld = new THREE.Matrix4().fromArray(matrixArr);
-            group.matrixAutoUpdate = false;
-            group.matrix.copy(matWorld);
-        } else if (center) {
-            group.matrixAutoUpdate = true;
-            group.position.set(center[0], center[1], center[2]);
-        }
+    public update(camera: THREE.Camera): void {
+        this.dynamicLodController.update(camera);
     }
 
     public getTotalPointCount(): number {
-        let totalCount = 0;
-        for (const loaded of this.loadedPointClouds.values()) {
-            const posAttr = loaded.pointsMesh.geometry?.getAttribute("position");
-            if (posAttr) {
-                totalCount += posAttr.count;
-            }
-        }
-        return totalCount;
-    }
-
-    private notifyPointCount(): void {
-        const totalCount = this.getTotalPointCount();
-        this.callbacks.onPointCountChange?.(totalCount);
-    }
-
-    private removePointCloud(key: string): void {
-        const loaded = this.loadedPointClouds.get(key);
-        if (loaded) {
-            loaded.abortController.abort();
-            if (loaded.pointsMesh.geometry) {
-                loaded.pointsMesh.geometry.dispose();
-            }
-            if (loaded.pointsMesh.material) {
-                (loaded.pointsMesh.material as THREE.Material).dispose();
-            }
-            this.rootGroup.remove(loaded.group);
-            this.loadedPointClouds.delete(key);
-            this.notifyPointCount();
-        }
+        return this.dynamicLodController.getTotalPointCount();
     }
 
     public destroy(): void {
-        for (const key of Array.from(this.loadedPointClouds.keys())) {
-            this.removePointCloud(key);
-        }
+        this.dynamicLodController.destroy();
         this.scene.remove(this.rootGroup);
     }
 }

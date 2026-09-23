@@ -313,6 +313,7 @@ export class PointCloudOverviewEngine {
         }
 
         this.controls.update();
+        this.pointCloudSystem.update(this.camera);
         this.terrainSystem.update(this.camera, this.renderer);
         this.renderer.render(this.scene, this.camera);
         this.animationFrameId = requestAnimationFrame(this.tick);
