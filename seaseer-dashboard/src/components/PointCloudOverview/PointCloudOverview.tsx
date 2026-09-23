@@ -14,7 +14,7 @@ export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
     onUpdatePointcloudTransform, onCameraViewChange,
     onSetIsGizmoDragging, onPointCountChange,
     onPerfTestProgress, onPerfTestComplete, onPerfTestCancel,
-    perfTestTrigger, isPerfTestRunning,
+    perfTestTrigger, isPerfTestRunning, cameraTarget,
     defaultShowJobOverview = false, ...configProps
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -46,7 +46,7 @@ export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
         const proxyCallbacks: EngineCallbacks = {
             onSelectPointcloud: (id) => callbacksRef.current.onSelectPointcloud?.(id),
             onHoverPointcloud: (id) => callbacksRef.current.onHoverPointcloud?.(id),
-            onFocusCameraTarget: (c) => callbacksRef.current.onFocusCameraTarget?.(c),
+            onFocusCameraTarget: (c, o) => callbacksRef.current.onFocusCameraTarget?.(c, o),
             onUpdatePointcloudTransform: (id, m) => callbacksRef.current.onUpdatePointcloudTransform?.(id, m),
             onCameraViewChange: (v) => callbacksRef.current.onCameraViewChange?.(v),
             onSetIsGizmoDragging: (d) => callbacksRef.current.onSetIsGizmoDragging?.(d),
@@ -68,6 +68,14 @@ export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
             engineRef.current.updateConfig(configProps);
         }
     }, [configProps]);
+
+    useEffect(() => {
+        if (!engineRef.current || !cameraTarget) return;
+        const { x, y, z, offset } = cameraTarget;
+        if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
+            engineRef.current.focusCameraTarget([x, y, z], offset);
+        }
+    }, [cameraTarget]);
 
     useEffect(() => {
         if (!engineRef.current) return;

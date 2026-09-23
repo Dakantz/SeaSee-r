@@ -13,7 +13,9 @@ export const PointCloudOverviewContainer: React.FC = () => {
         catalog,
         editingPointcloudId,
         gizmoMode,
+        cameraTarget,
         cameraViewTarget,
+        isCameraUpFixed,
         selectPointcloud,
         hoverPointcloud,
         focusCameraTarget,
@@ -41,7 +43,9 @@ export const PointCloudOverviewContainer: React.FC = () => {
             catalog={catalog}
             editingPointcloudId={editingPointcloudId}
             gizmoMode={gizmoMode}
+            cameraTarget={cameraTarget}
             cameraViewTarget={cameraViewTarget}
+            isCameraUpFixed={isCameraUpFixed}
             onSelectPointcloud={selectPointcloud}
             onHoverPointcloud={hoverPointcloud}
             onFocusCameraTarget={focusCameraTarget}

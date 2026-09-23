@@ -1,10 +1,10 @@
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { CameraViewTarget, EngineCallbacks, EngineConfig, PerfTestMetric, PerfTestSummary } from "./types";
 import { patchGeoThreeHeight } from "./patches/patchGeoThreeHeight";
 import { PointCloudSystem } from "./systems/PointCloudSystem";
 import { TerrainSystem } from "./systems/TerrainSystem";
 import { TransformGizmoSystem } from "./systems/TransformGizmoSystem";
+import { CameraMovementSystem } from "./systems/CameraMovementSystem";
 
 export const TARGET_X = 0;
 export const TARGET_Y = 0;
@@ -21,7 +21,7 @@ export class PointCloudOverviewEngine {
     private scene: THREE.Scene;
     private camera: THREE.PerspectiveCamera;
     private renderer: THREE.WebGLRenderer;
-    private controls: OrbitControls;
+    private cameraMovementSystem: CameraMovementSystem;
 
     private ambientLight: THREE.AmbientLight;
     private dirLight: THREE.DirectionalLight;
@@ -42,7 +42,7 @@ export class PointCloudOverviewEngine {
     private perfSecTimer: number = 0;
     private perfSecondCount: number = 0;
     private perfMetrics: PerfTestMetric[] = [];
-    private prevControlsEnabled: boolean = true;
+    private lastCameraTargetTimestamp: number | null = null;
 
     constructor(container: HTMLElement, callbacks: EngineCallbacks = {}, initialConfig: Partial<EngineConfig> = {}) {
         this.container = container;
@@ -70,6 +70,7 @@ export class PointCloudOverviewEngine {
         this.camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 100000);
         this.camera.position.set(TARGET_X, TARGET_Y - 50, 100);
         this.camera.up.set(0, 0, 1);
+        this.camera.lookAt(TARGET_X, TARGET_Y, 0);
 
         // Initialize WebGLRenderer
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
@@ -79,12 +80,21 @@ export class PointCloudOverviewEngine {
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         container.appendChild(this.renderer.domElement);
 
-        // Initialize OrbitControls
-        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-        this.controls.target.set(TARGET_X, TARGET_Y, 0);
-        this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.05;
-        this.controls.update();
+        // Initialize CameraMovementSystem (WASDQE + In-Place Rotation + Pan/Zoom)
+        this.cameraMovementSystem = new CameraMovementSystem(this.camera, this.renderer.domElement);
+        if (initialConfig.isCameraUpFixed !== undefined) {
+            this.cameraMovementSystem.isFixedUp = initialConfig.isCameraUpFixed;
+        }
+        if (initialConfig.cameraViewTarget) {
+            this.applyCameraViewTarget(initialConfig.cameraViewTarget);
+        }
+        if (initialConfig.cameraTarget) {
+            const { x, y, z, offset, timestamp } = initialConfig.cameraTarget;
+            this.lastCameraTargetTimestamp = timestamp ?? Date.now();
+            if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
+                this.focusCameraTarget([x, y, z], offset);
+            }
+        }
 
         // Initialize Clock
         this.clock = new THREE.Clock();
@@ -92,7 +102,15 @@ export class PointCloudOverviewEngine {
         // Initialize Core Systems
         this.pointCloudSystem = new PointCloudSystem(this.scene, this.callbacks, initialConfig);
         this.terrainSystem = new TerrainSystem(this.scene, initialConfig);
-        this.transformGizmoSystem = new TransformGizmoSystem(this.scene, this.camera, this.renderer.domElement, this.callbacks, initialConfig);
+
+        const gizmoCallbacks: EngineCallbacks = {
+            ...this.callbacks,
+            onSetIsGizmoDragging: (dragging: boolean) => {
+                this.cameraMovementSystem.setIsGizmoDragging(dragging);
+                this.callbacks.onSetIsGizmoDragging?.(dragging);
+            },
+        };
+        this.transformGizmoSystem = new TransformGizmoSystem(this.scene, this.camera, this.renderer.domElement, gizmoCallbacks, initialConfig);
 
         // Bind Resize Observer
         this.initResizeObserver();
@@ -125,6 +143,20 @@ export class PointCloudOverviewEngine {
         if (newConfig.cameraViewTarget) {
             this.applyCameraViewTarget(newConfig.cameraViewTarget);
         }
+        if (newConfig.cameraTarget) {
+            const { x, y, z, offset, timestamp } = newConfig.cameraTarget;
+            if (timestamp === undefined || timestamp !== this.lastCameraTargetTimestamp) {
+                this.lastCameraTargetTimestamp = timestamp ?? Date.now();
+                if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
+                    this.focusCameraTarget([x, y, z], offset);
+                }
+            }
+        } else if (newConfig.cameraTarget === null) {
+            this.lastCameraTargetTimestamp = null;
+        }
+        if (newConfig.isCameraUpFixed !== undefined) {
+            this.cameraMovementSystem.isFixedUp = newConfig.isCameraUpFixed;
+        }
 
         this.pointCloudSystem.updateConfig(newConfig);
         this.terrainSystem.updateConfig(newConfig);
@@ -132,33 +164,19 @@ export class PointCloudOverviewEngine {
     }
 
     public applyCameraViewTarget(target: CameraViewTarget): void {
-        if (target.position) {
-            this.camera.position.set(...target.position);
-        }
-        if (target.quaternion && target.quaternion.length === 4) {
-            this.camera.quaternion.set(
-                target.quaternion[0],
-                target.quaternion[1],
-                target.quaternion[2],
-                target.quaternion[3]
-            );
-        }
-        if (target.fov !== undefined && target.fov > 0) {
-            this.camera.fov = target.fov;
-            this.camera.updateProjectionMatrix();
-        }
-        if (target.target) {
-            this.controls.target.set(...target.target);
-            this.controls.update();
-        }
+        this.cameraMovementSystem.setCameraViewTarget(target);
     }
 
-    public focusCameraTarget(center: [number, number, number]): void {
-        const [cx, cy, cz] = center;
-        this.controls.target.set(cx, cy, cz);
-        this.camera.position.set(cx, cy - 50, cz + 30);
-        this.camera.lookAt(cx, cy, cz);
-        this.controls.update();
+    public focusCameraTarget(center: [number, number, number], offset?: [number, number, number] | number): void {
+        this.cameraMovementSystem.focusOnTarget(new THREE.Vector3(...center), offset);
+    }
+
+    public setIsGizmoDragging(dragging: boolean): void {
+        this.cameraMovementSystem.setIsGizmoDragging(dragging);
+    }
+
+    public setIsCameraUpFixed(fixed: boolean): void {
+        this.cameraMovementSystem.isFixedUp = fixed;
     }
 
     public startPerformanceTest(): void {
@@ -169,8 +187,7 @@ export class PointCloudOverviewEngine {
         this.perfSecondCount = 0;
         this.perfMetrics = [];
 
-        this.prevControlsEnabled = this.controls.enabled;
-        this.controls.enabled = false;
+        this.cameraMovementSystem.setEnabled(false);
 
         this.camera.position.copy(PERF_TEST_START_POS);
         this.camera.up.set(0, 0, 1);
@@ -190,9 +207,7 @@ export class PointCloudOverviewEngine {
     public stopPerformanceTest(cancelled: boolean = true): void {
         if (!this.isPerfRunning) return;
         this.isPerfRunning = false;
-        this.controls.enabled = this.prevControlsEnabled;
-        this.controls.target.set(this.camera.position.x, this.camera.position.y + 1, this.camera.position.z);
-        this.controls.update();
+        this.cameraMovementSystem.setEnabled(true);
 
         if (cancelled) {
             console.log("[PointCloudOverviewEngine Performance Test Cancelled by User]");
@@ -312,7 +327,7 @@ export class PointCloudOverviewEngine {
             }
         }
 
-        this.controls.update();
+        this.cameraMovementSystem.update(delta);
         this.pointCloudSystem.update(this.camera);
         this.terrainSystem.update(this.camera, this.renderer);
         this.renderer.render(this.scene, this.camera);
@@ -335,6 +350,7 @@ export class PointCloudOverviewEngine {
         }
 
         // Destroy core systems
+        this.cameraMovementSystem.destroy();
         this.pointCloudSystem.destroy();
         this.terrainSystem.destroy();
         this.transformGizmoSystem.destroy();
@@ -344,9 +360,6 @@ export class PointCloudOverviewEngine {
         this.scene.remove(this.dirLight);
         this.ambientLight.dispose();
         this.dirLight.dispose();
-
-        // Dispose controls
-        this.controls.dispose();
 
         // Traverse scene and dispose remaining resources
         this.scene.traverse((child: any) => {

@@ -50,7 +50,9 @@ export interface EngineConfig {
     gizmoMode?: "translate" | "rotate" | "scale" | null;
 
     // Camera view targets
+    cameraTarget?: { x: number; y: number; z: number; offset?: [number, number, number] | number; timestamp?: number } | null;
     cameraViewTarget?: CameraViewTarget | null;
+    isCameraUpFixed?: boolean;
 
     // Performance Testing
     perfTestTrigger?: number;
@@ -60,7 +62,7 @@ export interface EngineConfig {
 export interface EngineCallbacks {
     onSelectPointcloud?: (id: string) => void;
     onHoverPointcloud?: (id: string | null) => void;
-    onFocusCameraTarget?: (center: [number, number, number]) => void;
+    onFocusCameraTarget?: (center: [number, number, number], offset?: [number, number, number] | number) => void;
     onUpdatePointcloudTransform?: (id: string, matrixArray: number[]) => void;
     onCameraViewChange?: (view: { position?: [number, number, number]; quaternion?: [number, number, number, number]; fov?: number; target?: [number, number, number] }) => void;
     onSetIsGizmoDragging?: (dragging: boolean) => void;

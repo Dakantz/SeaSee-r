@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import type { EngineCallbacks, EngineConfig } from "../types";
-import type { CustomQuery, QuerySummaryData } from "../../PointCloudPanel/CustomQueryManager";
-import type { PointCloudMetadataResponse } from "../../../client";
-import type { FilterRule } from "../../PointCloudPanel/utils/filterUtils";
+import type { CustomQuery, QuerySummaryData } from "../../../PointCloudPanel/CustomQueryManager";
+import type { PointCloudMetadataResponse } from "../../../../client";
+import type { FilterRule } from "../../../PointCloudPanel/utils/filterUtils";
 import { getPointCloudTransform } from "../../../PointCloudPanel/utils/pointCloudTransform";
 import {
     DynamicLODController,
