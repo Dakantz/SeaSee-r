@@ -46,7 +46,7 @@ The Docker setup orchestrates 7 main containerized services:
 | Container Name | Service | Image / Build Source | Ports | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `seasee-r-db` | Database | `pgpointcloud/pointcloud:latest` | `5433:5432` | PostgreSQL database with Spatial & PointCloud 3D capabilities. |
-| `seasee-r-redis` | Message Broker | `redis:7-alpine` | `6379:6379` | In-memory key-value store for background RQ job queues. |
+| `seasee-r-redis` | Message Broker | `redis:7-alpine` | `6381:6379` | In-memory key-value store for background RQ job queues. |
 | `seasee-r-backend` | FastAPI Server | `./backend/Dockerfile` | `8000:8000` | Core REST API backend handling jobs, point clouds, and spatial queries. |
 | `seasee-r-worker` | Task Worker | `./backend/Dockerfile` | N/A | Background task worker handling general processing queues (`pointcloud_tasks`, `job_tasks`, `default`). |
 | `seasee-r-opensfm` | OpenSfM Worker | `backend/Dockerfile.opensfm-worker` | N/A | Dedicated GPU-accelerated worker running OpenSfM photogrammetry & point cloud pipelines. |
@@ -65,7 +65,7 @@ Once the containers are running (`docker compose up -d --build`), the following 
 - **Backend Health Check**: [http://localhost:8000/health](http://localhost:8000/health)
 - **TUSD Upload Server**: [http://localhost:8080/files/](http://localhost:8080/files/)
 - **PostgreSQL Database**: `localhost:5433` (`seaseer` DB)
-- **Redis Queue**: `localhost:6379`
+- **Redis Queue**: `localhost:6381`
 
 ---
 

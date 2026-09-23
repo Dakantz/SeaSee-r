@@ -24,7 +24,7 @@ services:
     image: redis:7-alpine
     container_name: seasee-r-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_HOST_PORT:-6381}:6379" # Keeps host access available via localhost:6381 without conflicting with host redis (6379)
     volumes:
       - redisdata:/data
     healthcheck:
