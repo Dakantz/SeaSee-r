@@ -66,8 +66,6 @@ def get_workers_info_sync() -> tuple[str, str, List[WorkerInfo]]:
                 current_job_id=w.get_current_job_id(),
                 queues=q_names,
                 queued_jobs_count=queued_count,
-                successful_jobs=w.successful_job_count,
-                failed_jobs=w.failed_job_count,
                 total_working_time=round(w.total_working_time, 2),
                 last_heartbeat=heartbeat,
                 python_version=getattr(w, "python_version", None),

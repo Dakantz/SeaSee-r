@@ -26,8 +26,6 @@ def test_get_diagnostics(client):
             current_job_id=None,
             queues=["opensfm_tasks"],
             queued_jobs_count=2,
-            successful_jobs=10,
-            failed_jobs=1,
             total_working_time=123.45,
             last_heartbeat="2026-09-23T08:00:00Z",
             python_version="3.10.20",
@@ -40,8 +38,6 @@ def test_get_diagnostics(client):
             current_job_id=None,
             queues=["pointcloud_tasks", "job_tasks", "default"],
             queued_jobs_count=0,
-            successful_jobs=25,
-            failed_jobs=0,
             total_working_time=456.78,
             last_heartbeat="2026-09-23T08:00:00Z",
             python_version="3.14.6",
@@ -69,12 +65,40 @@ def test_get_diagnostics(client):
         assert sfm["status"] == "online"
         assert sfm["container_id"] == "ab1b0c7f462d"
         assert sfm["queued_jobs_count"] == 2
-        assert sfm["successful_jobs"] == 10
-        assert sfm["failed_jobs"] == 1
 
         gen = next(w for w in data["workers"] if "pointcloud_tasks" in w["queues"])
         assert gen["status"] == "online"
         assert gen["container_id"] == "c4d97e669b0d"
-        assert gen["successful_jobs"] == 25
+
+
+def test_get_workers_info_sync():
+    """
+    Test get_workers_info_sync accurately reports queue depth and worker telemetry.
+    """
+    from app.api.routes.health import get_workers_info_sync
+
+    mock_worker = MagicMock()
+    mock_worker.name = "worker-1"
+    mock_worker.last_heartbeat = None
+    mock_worker.queue_names.return_value = ["opensfm_tasks"]
+    mock_worker.hostname = "host-1"
+    mock_worker.get_state.return_value = "idle"
+    mock_worker.get_current_job_id.return_value = None
+    mock_worker.total_working_time = 50.0
+    mock_worker.python_version = "3.10.0"
+    mock_worker.ip_address = "127.0.0.1"
+
+    mock_queue = MagicMock()
+    mock_queue.__len__.return_value = 3
+
+    with patch("app.api.routes.health.Worker.all", return_value=[mock_worker]), \
+         patch("app.api.routes.health.Queue", return_value=mock_queue):
+        worker_status, opensfm_status, workers_info = get_workers_info_sync()
+        assert worker_status == "offline"
+        assert opensfm_status == "online"
+        assert len(workers_info) == 1
+        w = workers_info[0]
+        assert w.queued_jobs_count == 3
+
 
 

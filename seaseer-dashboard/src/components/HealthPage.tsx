@@ -8,9 +8,7 @@ import {
     FiBox, 
     FiLayers, 
     FiClock, 
-    FiActivity,
-    FiCheck,
-    FiX
+    FiActivity
 } from "react-icons/fi";
 import { getDiagnostics } from "../client";
 import type { SystemDiagnostics, WorkerInfo } from "../client";
@@ -556,30 +554,6 @@ export default function HealthPage() {
                                         </div>
                                     </div>
 
-                                    <div style={{
-                                        background: "rgba(0, 0, 0, 0.25)",
-                                        padding: "12px 14px",
-                                        borderRadius: "10px",
-                                        border: "1px solid rgba(255, 255, 255, 0.05)"
-                                    }}>
-                                        <div style={{ fontSize: "11px", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                                            Tasks Succeeded / Failed
-                                        </div>
-                                        <div style={{
-                                            marginTop: "6px",
-                                            fontSize: "13px",
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: "10px"
-                                        }}>
-                                            <span style={{ color: "#4ade80", display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                                                <FiCheck /> {worker.successful_jobs ?? 0}
-                                            </span>
-                                            <span style={{ color: "#f87171", display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                                                <FiX /> {worker.failed_jobs ?? 0}
-                                            </span>
-                                        </div>
-                                    </div>
 
                                     <div style={{
                                         background: "rgba(0, 0, 0, 0.25)",

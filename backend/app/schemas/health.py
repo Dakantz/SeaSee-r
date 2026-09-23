@@ -13,8 +13,6 @@ class WorkerInfo(BaseModel):
     current_job_id: Optional[str] = None
     queues: List[str] = []
     queued_jobs_count: int = 0
-    successful_jobs: int = 0
-    failed_jobs: int = 0
     total_working_time: float = 0.0
     last_heartbeat: Optional[str] = None
     python_version: Optional[str] = None
