@@ -9,12 +9,34 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db_session
 from app.models.video import Video, UploadMetadata
-from app.schemas.video import VideoResponse, UploadMetadataResponse
+from app.schemas.video import VideoResponse, UploadMetadataResponse, BatchIdResponse
 
 router = APIRouter(
     prefix="/videos",
     tags=["Videos"]
 )
+
+# ==========================================
+# BATCH ENDPOINTS
+# ==========================================
+
+@router.post("/batch-id", response_model=BatchIdResponse)
+async def generate_batch_id():
+    """
+    Generate a new batch UUID for grouping files during tusd upload.
+    """
+    new_id = uuid.uuid4()
+    return BatchIdResponse(batch_id=new_id, batchId=new_id)
+
+
+@router.get("/batch-id", response_model=BatchIdResponse)
+async def get_batch_id():
+    """
+    Get a newly generated batch UUID for grouping files during tusd upload.
+    """
+    new_id = uuid.uuid4()
+    return BatchIdResponse(batch_id=new_id, batchId=new_id)
+
 
 # ==========================================
 # GET ENDPOINTS

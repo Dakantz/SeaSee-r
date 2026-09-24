@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { BaseUploader } from '../common/BaseUploader';
 import { useTusUpload, formatUuid } from '../common/useTusUpload';
 import type { TusUploadConfig } from '../common/useTusUpload';
-import { createPipeline } from '../../client';
+import { createPipeline, generateBatchId } from '../../client';
 import { getTusEndpoint } from '../../utils/apiConfig';
 
 export interface VideoUploaderProps {
@@ -273,12 +273,29 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
     setBatchId('');
   };
 
-  const handleStartUpload = (isResume: boolean) => {
+  const handleStartUpload = async (isResume: boolean) => {
     if (videoFiles.length === 0 && metadataFiles.length === 0) return;
 
     let currentBatchId = batchIdRef.current || batchId;
     if (!isResume || !currentBatchId) {
-      currentBatchId = crypto.randomUUID();
+      try {
+        const res = await generateBatchId();
+        if (res.data?.batch_id || res.data?.batchId) {
+          currentBatchId = String(res.data.batch_id || res.data.batchId);
+        }
+      } catch (err) {
+        console.error('Failed to fetch batch_id from backend:', err);
+        onUploadError?.(err instanceof Error ? err : new Error('Failed to generate batch ID from backend'));
+        return;
+      }
+
+      if (!currentBatchId) {
+        const err = new Error('No batch ID returned from backend');
+        console.error(err.message);
+        onUploadError?.(err);
+        return;
+      }
+
       batchIdRef.current = currentBatchId;
       setBatchId(currentBatchId);
     }

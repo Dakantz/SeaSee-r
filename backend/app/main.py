@@ -6,7 +6,7 @@ from app.api.routes.health import router as health_router
 from app.api.routes.pointclouds import router as pointclouds_router
 from app.api.routes.jobs import router as jobs_router
 from app.api.routes.videos import router as videos_router
-from app.api.routes.tusd_webhooks import router as tusd_webhooks_router
+from app.api.routes.tusd_webhooks import router as tusd_webhooks_router, tusd_router
 from app.api.routes.bathymetry import router as bathymetry_router
 from app.api.routes.opensfm import router as opensfm_router
 
@@ -65,6 +65,7 @@ app.include_router(pointclouds_router)
 app.include_router(jobs_router)
 app.include_router(videos_router)
 app.include_router(tusd_webhooks_router)
+app.include_router(tusd_router)
 app.include_router(bathymetry_router)
 app.include_router(opensfm_router, prefix="/api")
 app.include_router(opensfm_router)

@@ -34,3 +34,10 @@ class VideoResponse(BaseModel):
     upload_metadata: Optional[UploadMetadataResponse] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BatchIdResponse(BaseModel):
+    batch_id: UUID
+    batchId: Optional[UUID] = None
+
+    model_config = ConfigDict(from_attributes=True)
