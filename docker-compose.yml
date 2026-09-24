@@ -149,12 +149,13 @@ services:
     build:
       context: ./seaseer-dashboard
       dockerfile: Dockerfile
-      args:
-        VITE_API_URL: ${VITE_API_URL:-}
-        VITE_TUS_URL: ${VITE_TUS_URL:-}
     container_name: seasee-r-frontend
     ports:
       - "3000:80"
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-}
+      - VITE_TUS_URL=${VITE_TUS_URL:-}
+      - OPENAPI_INPUT=http://backend:8000/openapi.json
     depends_on:
       backend:
         condition: service_healthy
