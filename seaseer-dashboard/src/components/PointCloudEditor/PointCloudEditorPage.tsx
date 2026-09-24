@@ -6,6 +6,7 @@ import type {PointCloudMetadataResponse} from "../../client";
 import PointCloudSidebar from './PointCloudSidebar';
 import { useTimelineStore } from '../../store/timelineStore';
 import { ViewerProvider } from './ViewerContext';
+import { getApiBaseUrl } from '../../utils/apiConfig';
 
 const PointCloudEditorPageContent: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -56,7 +57,7 @@ const PointCloudEditorPageContent: React.FC = () => {
     const handleDeletePointCloud = async (id: string) => {
         if (!window.confirm(`Delete point cloud ${id}? This cannot be undone.`)) return;
         try {
-            const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
+            const API_BASE_URL = getApiBaseUrl();
             const response = await fetch(`${API_BASE_URL}/pointclouds/${id}`, { method: 'DELETE' });
             if (response.ok) {
                 setSelectedIds(prev => prev.filter(sid => sid !== id));
@@ -74,7 +75,7 @@ const PointCloudEditorPageContent: React.FC = () => {
     const handleDeleteAllSelected = async (ids: string[]) => {
         if (!window.confirm(`Delete all ${ids.length} selected point clouds? This cannot be undone.`)) return;
         try {
-            const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
+            const API_BASE_URL = getApiBaseUrl();
             const promises = ids.map(id => fetch(`${API_BASE_URL}/pointclouds/${id}`, { method: 'DELETE' }));
             const responses = await Promise.all(promises);
             

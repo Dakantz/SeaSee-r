@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { buildFilterQueryParams, type FilterRule } from "./filterUtils.ts";
+import { getApiBaseUrl } from "../../../utils/apiConfig";
 
 /** Set tracking pointcloud IDs currently in the process of being loaded */
 const loadingPointClouds = new Set<string>();
@@ -56,7 +57,7 @@ export async function fetchBinaryGeometry(
     signal?: AbortSignal,
     filters?: FilterRule[]
 ): Promise<THREE.BufferGeometry> {
-    const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
+    const API_BASE_URL = getApiBaseUrl();
 
     // Convert structured filters into URL query parameters
     const searchParams = buildFilterQueryParams({ lod: lodToLoad, filters });

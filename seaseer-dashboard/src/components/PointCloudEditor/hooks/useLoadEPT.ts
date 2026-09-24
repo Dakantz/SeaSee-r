@@ -3,6 +3,7 @@ import { useViewerContext } from '../ViewerContext';
 import * as THREE from 'three';
 import { listPointclouds } from '../../../client/sdk.gen';
 import { routeParentMetadataCache } from '../PointCloudSidebar';
+import { getApiBaseUrl } from '../../../utils/apiConfig';
 
 export const useLoadEPT = (identifier: string, enabled: boolean) => {
     const { viewer, setPointCloud } = useViewerContext();
@@ -10,7 +11,7 @@ export const useLoadEPT = (identifier: string, enabled: boolean) => {
     useEffect(() => {
         if (!viewer || !identifier || !enabled) return;
 
-        const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
+        const API_BASE_URL = getApiBaseUrl();
         const url = `${API_BASE_URL}/ept/${identifier}/ept.json`;
 
         let isCancelled = false;

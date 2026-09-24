@@ -134,6 +134,7 @@ services:
       - TUSD_UPLOAD_DIR=/srv/tusd-data
     command: >
       -upload-dir /srv/tusd-data
+      -behind-proxy
       -hooks-http http://backend:8000/webhooks/tusd
       -hooks-http-forward-headers Cookie,Authorization
       -hooks-enabled-events post-create,post-finish,post-terminate
@@ -149,8 +150,8 @@ services:
       context: ./seaseer-dashboard
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-/api/}
-        VITE_TUS_URL: ${VITE_TUS_URL:-/files/}
+        VITE_API_URL: ${VITE_API_URL:-}
+        VITE_TUS_URL: ${VITE_TUS_URL:-}
     container_name: seasee-r-frontend
     ports:
       - "3000:80"

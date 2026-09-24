@@ -4,6 +4,7 @@ import { useTusUpload, formatUuid } from '../common/useTusUpload';
 import type { TusUploadConfig } from '../common/useTusUpload';
 import { JobProgress } from '../JobProgress';
 import { createJob } from '../../client';
+import { getTusEndpoint } from '../../utils/apiConfig';
 
 export interface PointCloudUploaderProps {
   onUploadSuccess?: (fileIds: string[]) => void;
@@ -25,7 +26,7 @@ export const PointCloudUploader: React.FC<PointCloudUploaderProps> = ({
   onJobCreated,
   jobId: initialJobId,
   chunkSize = DEFAULT_CHUNK_SIZE,
-  tusEndpoint = import.meta.env.VITE_TUS_URL || 'http://localhost:8080/files/'
+  tusEndpoint = getTusEndpoint()
 }) => {
   const [pointCloudFiles, setPointCloudFiles] = useState<File[]>([]);
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);

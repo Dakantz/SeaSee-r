@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { useViewerContext } from '../ViewerContext';
+import { getApiBaseUrl } from '../../../utils/apiConfig';
 
 export const useTransformControls = (gizmoMode: 'translate' | 'rotate' | 'scale' | null, editingPointcloudId: string | null) => {
     const { viewer, pointCloud } = useViewerContext();
@@ -129,7 +130,7 @@ export const useTransformControls = (gizmoMode: 'translate' | 'rotate' | 'scale'
                     }
 
                     if (currentEditingId) {
-                        const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
+                        const API_BASE_URL = getApiBaseUrl();
                         fetch(`${API_BASE_URL}/pointclouds/${currentEditingId}/transform`, {
                             method: 'PATCH',
                             headers: {

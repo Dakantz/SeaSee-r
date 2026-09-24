@@ -38,6 +38,16 @@ To get the frontend up and running locally, follow these steps:
 
 You can build and run the production dashboard using Docker:
 
+```bash
+cp .env.example .env
+sudo docker compose up -d --build backend
+cd seaseer-dashboard
+npm run generate-client
+cd ..
+git submodule update --init openSfM/openSfM_core seaseer-dashboard/public/geo-three
+sudo docker compose up -d --build
+```
+
 ### Standalone Docker Build:
 ```bash
 docker build -t seaseer-frontend .

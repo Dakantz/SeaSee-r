@@ -124,9 +124,13 @@ interface PointCloudViewerProps {
     initialIsPly?: boolean;
 }
 
+import { getApiBaseUrl } from '../../utils/apiConfig';
+
 const PointCloudViewer: React.FC<PointCloudViewerProps> = ({ initialUrl, initialIsPly = false }) => {
     const [selectedUrl, setSelectedUrl] = useState<string | undefined>(initialUrl);
     const [isPly, setIsPly] = useState<boolean>(initialIsPly);
+
+    const API_BASE_URL = getApiBaseUrl();
 
     const handleSelect = (item: PointCloudMetadataResponse) => {
         let newUrl = item.id;
@@ -140,8 +144,8 @@ const PointCloudViewer: React.FC<PointCloudViewerProps> = ({ initialUrl, initial
             const formattedUrl = newUrl.startsWith('http://') || newUrl.startsWith('https://')
                 ? newUrl
                 : newUrl.includes('/ept/') || newUrl.endsWith('.json') || newUrl.endsWith('.ply')
-                    ? `http://localhost:8000/${newUrl}`
-                    : `http://localhost:8000/ept/${newUrl}/ept.json`;
+                    ? `${API_BASE_URL}/${newUrl}`
+                    : `${API_BASE_URL}/ept/${newUrl}/ept.json`;
 
             setSelectedUrl(formattedUrl);
         }

@@ -9,6 +9,7 @@ export type MapProviderChoice = "OpenStreetMaps" | "Bathymetry" | "EmodnetWMS" |
 export type HeightProviderChoice = "Bathymetry" | "EmodnetWCSBilinear" | "EmodnetWCSNearestNeighbour" | "None" | "Debug" | "MapTiler" | "Bing";
 
 import { loadProgressivePointCloud, setPointCloudLoading } from "./utils/pointCloudLoader";
+import { getApiBaseUrl } from "../../utils/apiConfig";
 
 export interface AddCustomQueryPayload {
     name?: string;
@@ -237,7 +238,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
 
     const updatePointcloudTransform = useCallback(async (id: string, matrix: number[]) => {
         try {
-            const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
+            const API_BASE_URL = getApiBaseUrl();
             const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
             const targetUuids = new Set<string>();
@@ -465,7 +466,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const fetchCatalog = useCallback(async () => {
         setIsFetchingCatalog(true);
         try {
-            const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
+            const API_BASE_URL = getApiBaseUrl();
             const res = await fetch(`${API_BASE_URL}/pointclouds/`);
             if (res.ok) {
                 const data = await res.json();

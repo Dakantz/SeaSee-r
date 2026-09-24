@@ -67,6 +67,9 @@ Once the containers are running (`docker compose up -d --build`), the following 
 - **PostgreSQL Database**: `localhost:5433` (`seaseer` DB)
 - **Redis Queue**: `localhost:6381`
 
+> [!NOTE]
+> **Remote / Multi-Device Access**: When accessing the frontend from a separate PC on the network (e.g. `http://warhammer.ivc.tugraz.at:3000`), the frontend dynamically targets the matching host on port `8000` (FastAPI) and `8080` (TUSD). Both ports support CORS headers for cross-origin access from port `3000`.
+
 ---
 
 ## Environment Configuration & User Permissions

@@ -10,9 +10,9 @@ RUN npm ci
 # Copy full frontend source code
 COPY . .
 
-# Build arguments for API & TUSD endpoints (defaults to relative paths for Nginx reverse-proxy)
-ARG VITE_API_URL=/api/
-ARG VITE_TUS_URL=/files/
+# Build arguments for API & TUSD endpoints (defaults to empty for dynamic browser host resolution to :8000 and :8080)
+ARG VITE_API_URL=""
+ARG VITE_TUS_URL=""
 ENV VITE_API_URL=${VITE_API_URL}
 ENV VITE_TUS_URL=${VITE_TUS_URL}
 
@@ -31,6 +31,6 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 EXPOSE 80
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1/ || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]

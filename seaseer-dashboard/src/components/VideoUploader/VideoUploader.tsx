@@ -3,6 +3,7 @@ import { BaseUploader } from '../common/BaseUploader';
 import { useTusUpload, formatUuid } from '../common/useTusUpload';
 import type { TusUploadConfig } from '../common/useTusUpload';
 import { createPipeline } from '../../client';
+import { getTusEndpoint } from '../../utils/apiConfig';
 
 export interface VideoUploaderProps {
   onUploadSuccess?: (fileIds: string[]) => void;
@@ -32,7 +33,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
   onProgress,
   onJobCreated,
   chunkSize = DEFAULT_CHUNK_SIZE,
-  tusEndpoint = import.meta.env.VITE_TUS_URL || 'http://localhost:8080/files/',
+  tusEndpoint = getTusEndpoint(),
   defaultFrameCounts = [200],
   defaultBlurThresholds = [50]
 }) => {

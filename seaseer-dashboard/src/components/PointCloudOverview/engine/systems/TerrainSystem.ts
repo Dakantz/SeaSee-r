@@ -3,6 +3,7 @@ import type { EngineConfig } from "../types";
 
 // @ts-expect-error - geo-three submodule
 import { MapView, DebugProvider, HeightDebugProvider, OpenStreetMapsProvider, MapTilerProvider, BingMapsProvider, BathymetryProvider, EmodnetTileProvider, EmodnetWCSProvider, UnitsUtils, MapHeightNodeShader } from "../../../../../public/geo-three/build/geo-three.module.js";
+import { getApiBaseUrl } from "../../../../utils/apiConfig";
 
 export class TerrainSystem {
     private scene: THREE.Scene;
@@ -35,7 +36,7 @@ export class TerrainSystem {
         try {
             let provider: any;
             let heightProvider: any = null;
-            const apiBaseUrl = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
+            const apiBaseUrl = getApiBaseUrl();
 
             switch (mapChoice) {
                 case "Bathymetry":

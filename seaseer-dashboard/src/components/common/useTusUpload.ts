@@ -99,13 +99,15 @@ export const useTusUpload = ({
 
     const totalSize = filesConfig.reduce((acc, conf) => acc + conf.file.size, 0);
 
-    const createTusUpload = (config: TusUploadConfig) => {
+    const createTusUpload = (config: TusUploadConfig, isFallbackFreshUpload = false) => {
       const { file, metadata, fingerprintPrefix } = config;
       return new Promise<void>((resolve, reject) => {
         const prefix = fingerprintPrefix || 'file';
         const fingerprint = `${prefix}-${file.name}-${file.size}-${file.lastModified}`;
 
-        const upload = new tus.Upload(file, {
+        let currentUpload: tus.Upload;
+
+        currentUpload = new tus.Upload(file, {
           endpoint: tusEndpoint,
           retryDelays: [0, 1000, 3000, 5000, 10000, 20000, 60000],
           metadata: {
@@ -116,8 +118,21 @@ export const useTusUpload = ({
           chunkSize,
           addRequestId: true, // Only pointcloud had this before, but it's safe generally
           fingerprint: () => Promise.resolve(fingerprint),
-          onError: (error) => {
+          onError: async (error: any) => {
             console.error("Upload failed:", error);
+            // If resume failed (e.g. invalid cached URL, 404, or connection error to old URL),
+            // clean up the stale localStorage entry and attempt a fresh upload once.
+            if (!isFallbackFreshUpload) {
+              try {
+                const prevList = await currentUpload.findPreviousUploads();
+                for (const p of prevList) {
+                  if (p.urlStorageKey && typeof localStorage !== 'undefined') {
+                    localStorage.removeItem(p.urlStorageKey);
+                  }
+                }
+              } catch (_) {}
+              return createTusUpload(config, true).then(resolve).catch(reject);
+            }
             reject(error);
           },
           onProgress: (bytesUploaded, bytesTotal) => {
@@ -132,8 +147,8 @@ export const useTusUpload = ({
             bytesUploadedRef.current[file.name] = file.size;
             updateOverallProgress(totalSize);
             
-            if (upload.url) {
-              const parts = upload.url.split('/');
+            if (currentUpload.url) {
+              const parts = currentUpload.url.split('/');
               const id = parts[parts.length - 1];
               fileIdsRef.current[file.name] = formatUuid(id);
             }
@@ -141,21 +156,35 @@ export const useTusUpload = ({
           }
         });
 
-        uploadsRef.current[file.name] = upload;
+        uploadsRef.current[file.name] = currentUpload;
 
-        upload.findPreviousUploads().then((previousUploads) => {
-          if (previousUploads.length > 0) {
-            upload.resumeFromPreviousUpload(previousUploads[0]);
-          }
-          upload.start();
-        }).catch(() => {
-          upload.start();
-        });
+        if (!isFallbackFreshUpload) {
+          currentUpload.findPreviousUploads().then((previousUploads) => {
+            if (previousUploads.length > 0) {
+              const prev = previousUploads[0];
+              // Normalize previous upload URL to match current tusEndpoint (heals port or host mismatches)
+              if (prev.uploadUrl) {
+                const parts = prev.uploadUrl.split('/');
+                const id = parts[parts.length - 1];
+                if (id) {
+                  const base = tusEndpoint.endsWith('/') ? tusEndpoint : `${tusEndpoint}/`;
+                  prev.uploadUrl = `${base}${id}`;
+                }
+              }
+              currentUpload.resumeFromPreviousUpload(prev);
+            }
+            currentUpload.start();
+          }).catch(() => {
+            currentUpload.start();
+          });
+        } else {
+          currentUpload.start();
+        }
       });
     };
 
     try {
-      const uploadPromises = filesConfig.map(createTusUpload);
+      const uploadPromises = filesConfig.map(conf => createTusUpload(conf));
       await Promise.all(uploadPromises);
 
       setIsUploading(false);

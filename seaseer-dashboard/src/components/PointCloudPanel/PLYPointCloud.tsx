@@ -13,6 +13,7 @@ export type { CustomQuery, CustomQueryManagerProps, PointCloudItem, PointCloudLi
 import { CameraMovementSystem, TARGET_X, TARGET_Y } from "./utils/CameraMovementController";
 import { getPointCloudTransform } from "./utils/pointCloudTransform";
 import DynamicCubicLODController, { BoxOutline } from "./DynamicCubicLODController";
+import { getApiBaseUrl } from "../../utils/apiConfig";
 
 
 // @ts-expect-error - geo-three submodule
@@ -143,7 +144,7 @@ function GeoThreeHeightmap() {
         try {
             let provider: any;
             let heightProvider: any = null;
-            const apiBaseUrl = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
+            const apiBaseUrl = getApiBaseUrl();
 
             const mapChoice = heightmapMapProvider ?? "OpenStreetMaps";
             const heightChoice = heightmapHeightProvider ?? "Bathymetry";
@@ -548,7 +549,7 @@ function DBCameraTrajectoryDisplay() {
 
     if (!showCameraTrajectories || queries.length === 0) return null;
 
-    const apiBaseUrl = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
+    const apiBaseUrl = getApiBaseUrl();
 
     const routesToRender: Array<{
         key: string;

@@ -32,11 +32,11 @@ const DEFAULT_CONFIG: OpenSfMConfig = {
   submodel_size: 60,
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "";
+import { getApiBaseUrl } from "../../utils/apiConfig";
 
 const getApiUrl = (endpoint: string) => {
-  const base = API_BASE_URL.replace(/\/$/, "");
-  return base ? `${base}/api/opensfm/${endpoint}` : `/api/opensfm/${endpoint}`;
+  const base = getApiBaseUrl();
+  return `${base}/api/opensfm/${endpoint}`;
 };
 
 export interface OpenSfMConfigPanelProps {
