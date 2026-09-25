@@ -18,6 +18,17 @@ from app.services.worker.handlers.opensfm_health import check_opensfm_gpu_health
 logger = logging.getLogger(__name__)
 
 
+def get_reconstruction_views_count(rec: Any) -> int:
+    """Returns the number of views/shots in an OpenSfM reconstruction."""
+    if isinstance(rec, dict):
+        shots = rec.get("shots", {})
+    elif hasattr(rec, "shots"):
+        shots = rec.shots
+    else:
+        shots = {}
+    return len(shots) if shots else 0
+
+
 def resolve_opensfm_config_path(config_path: str) -> Optional[str]:
     if not config_path:
         return None
@@ -63,6 +74,8 @@ try:
     HAS_OPENSFM = True
 except ImportError:
     DataSet = None
+    actions = None
+    reconstruction = None
     HAS_OPENSFM = False
 
 
@@ -75,11 +88,19 @@ class OpenSfMSparseTaskHandler(BaseTaskHandler):
     """
     task_types = ["opensfm_sparse"]
 
-    def _run_opensfm_sparse_pipeline(self, dataset_dir: str, loop: asyncio.AbstractEventLoop, job_id: str) -> None:
+    def _run_opensfm_sparse_pipeline(
+        self,
+        dataset_dir: str,
+        loop: asyncio.AbstractEventLoop,
+        job_id: str,
+        compute_mesh: Optional[bool] = None,
+    ) -> None:
         """
-        Executes OpenSfM sparse pipeline steps (up to actions.mesh.run_dataset).
+        Executes OpenSfM sparse pipeline steps (extract_metadata, detect_features, match_features, create_tracks, reconstruct, and optionally mesh).
         Progress updates are dispatched back to the main event loop.
         """
+        if compute_mesh is None:
+            compute_mesh = settings.opensfm_compute_mesh
         dataset = DataSet(dataset_dir)
 
         def update_progress(pct: float, step_name: str) -> None:
@@ -115,28 +136,27 @@ class OpenSfMSparseTaskHandler(BaseTaskHandler):
         update_progress(85.0, "reconstruct")
         actions.reconstruct.run_dataset(dataset, algorithm=reconstruction.ReconstructionAlgorithm.INCREMENTAL)
 
-        update_progress(95.0, "mesh")
-        actions.mesh.run_dataset(dataset)
+        if compute_mesh:
+            update_progress(95.0, "mesh")
+            actions.mesh.run_dataset(dataset)
+        else:
+            logger.info(f"Skipping mesh computation (compute_mesh={compute_mesh}).")
 
     async def _create_dynamic_component_jobs(self, dataset_dir: str, job_id: str, payload: Dict[str, Any]) -> None:
         """
-        If OpenSfM generated multiple reconstruction components (components 1, 2, ...),
-        create dynamic OpenSfM Dense Reconstruction & OpenSfM Ingestion job pairs for each additional component.
+        Evaluates OpenSfM reconstruction components and determines whether dense reconstruction jobs should be started.
+        - If a reconstruction component has fewer views than settings.opensfm_min_views_for_dense, its dense reconstruction job is ignored.
+        - Component 0: Any pre-existing dependent dense job is cancelled if component 0 has fewer views than required.
+        - Components 1..N-1: Dense and ingest jobs are dynamically created only if the component meets the minimum views requirement.
         """
         if not HAS_OPENSFM or not dataset_dir:
             return
 
         try:
+            min_views = int(payload.get("min_views_for_dense", settings.opensfm_min_views_for_dense))
             dataset = DataSet(dataset_dir)
-            if not dataset.reconstruction_exists():
-                return
-
-            reconstructions = dataset.load_reconstruction()
+            reconstructions = dataset.load_reconstruction() if dataset.reconstruction_exists() else []
             num_recs = len(reconstructions)
-            if num_recs <= 1:
-                return
-
-            logger.info(f"OpenSfM produced {num_recs} reconstruction components. Creating dynamic dense & ingest jobs for components 1 to {num_recs - 1}.")
 
             job_uuid = uuid.UUID(job_id) if job_id else None
             async with async_session() as session:
@@ -145,66 +165,129 @@ class OpenSfMSparseTaskHandler(BaseTaskHandler):
                     res = await session.execute(select(Job.pipeline_id).where(Job.id == job_uuid))
                     pipeline_id = res.scalar_one_or_none()
 
-                dataset_name = payload.get("dataset_name") or os.path.basename(dataset_dir)
+                # Evaluate pre-existing dependent dense jobs (e.g. Component 0)
+                if job_id:
+                    dep_res = await session.execute(
+                        select(Job).where(Job.status.in_([JobStatus.BLOCKED, JobStatus.PENDING]))
+                    )
+                    candidate_jobs = []
+                    if hasattr(dep_res, "scalars"):
+                        scalars_obj = dep_res.scalars()
+                        if asyncio.iscoroutine(scalars_obj):
+                            scalars_obj = await scalars_obj
+                        if hasattr(scalars_obj, "all"):
+                            all_res = scalars_obj.all()
+                            if asyncio.iscoroutine(all_res):
+                                all_res = await all_res
+                            if isinstance(all_res, (list, tuple)):
+                                candidate_jobs = list(all_res)
+                            elif hasattr(all_res, "__iter__"):
+                                try:
+                                    candidate_jobs = list(all_res)
+                                except TypeError:
+                                    candidate_jobs = []
 
-                for i in range(1, num_recs):
-                    subfolder = f"undistorted_{i}"
-                    comp_file_id = str(uuid.uuid4())
-                    dense_job_id = uuid.uuid4()
-                    ingest_job_id = uuid.uuid4()
+                    for cand_job in candidate_jobs:
+                        deps = cand_job.depends_on or []
+                        if (job_id in deps or (job_uuid and str(job_uuid) in deps)) and cand_job.task_type in ("opensfm_dense", "opensfm_dense_reconstruct"):
+                            rec_idx = int(cand_job.payload.get("reconstruction_index", 0))
+                            views_count = get_reconstruction_views_count(reconstructions[rec_idx]) if (0 <= rec_idx < num_recs) else 0
+                            if views_count < min_views:
+                                logger.info(
+                                    f"Reconstruction component {rec_idx} has {views_count} views, "
+                                    f"which is less than the required minimum ({min_views} views). "
+                                    f"Dense reconstruction job {cand_job.id} will not be started (ignored)."
+                                )
+                                cand_job.status = JobStatus.CANCELLED
+                                cand_job.error_message = (
+                                    f"Reconstruction component {rec_idx} has {views_count} views, "
+                                    f"which is less than the required minimum ({min_views} views). "
+                                    f"Dense reconstruction job ignored."
+                                )
+                                # Also cancel child jobs depending on this dense job (e.g. opensfm_ingest)
+                                for child_job in candidate_jobs:
+                                    child_deps = child_job.depends_on or []
+                                    if str(cand_job.id) in child_deps:
+                                        child_job.status = JobStatus.CANCELLED
+                                        child_job.error_message = (
+                                            f"Dense reconstruction for component {rec_idx} was ignored due to insufficient views "
+                                            f"({views_count} < {min_views})."
+                                        )
 
-                    dense_job_name = f"OpenSfM Dense Reconstruction Component {i}"
-                    if dataset_name:
-                        dense_job_name = f"OpenSfM Dense Component {i}: {dataset_name}"
-
-                    ingest_job_name = f"OpenSfM Pointcloud Ingestion Component {i}"
-                    if dataset_name:
-                        ingest_job_name = f"OpenSfM Ingest Component {i}: {dataset_name}"
-
+                # Dynamically create dense & ingest jobs for additional components (components 1 to num_recs - 1)
+                if num_recs > 1:
+                    dataset_name = payload.get("dataset_name") or os.path.basename(dataset_dir)
                     batch_id_val = payload.get("batch_id")
+                    created_count = 0
 
-                    dense_job = Job(
-                        id=dense_job_id,
-                        name=dense_job_name,
-                        task_type="opensfm_dense",
-                        payload={
-                            "dataset_dir": dataset_dir,
-                            "dataset_name": dataset_name,
-                            "file_id": payload.get("file_id"),
-                            "batch_id": batch_id_val,
-                            "reconstruction_index": i,
-                            "subfolder": subfolder,
-                        },
-                        status=JobStatus.BLOCKED,
-                        progress=0.0,
-                        pipeline_id=pipeline_id,
-                        depends_on=[job_id] if job_id else []
-                    )
-                    session.add(dense_job)
+                    for i in range(1, num_recs):
+                        comp_views = get_reconstruction_views_count(reconstructions[i])
+                        if comp_views < min_views:
+                            logger.info(
+                                f"Reconstruction component {i} has {comp_views} views, "
+                                f"which is less than the required minimum ({min_views} views). "
+                                f"Dense reconstruction job for component {i} will not be started (ignored)."
+                            )
+                            continue
 
-                    ingest_job = Job(
-                        id=ingest_job_id,
-                        name=ingest_job_name,
-                        task_type="opensfm_ingest",
-                        payload={
-                            "dataset_name": dataset_name,
-                            "file_id": comp_file_id,
-                            "batch_id": batch_id_val,
-                            "folder_path": dataset_dir,
-                            "subfolder": subfolder,
-                            "reconstruction_index": i,
-                        },
-                        status=JobStatus.BLOCKED,
-                        progress=0.0,
-                        pipeline_id=pipeline_id,
-                        depends_on=[str(dense_job_id)]
-                    )
-                    session.add(ingest_job)
+                        subfolder = f"undistorted_{i}"
+                        comp_file_id = str(uuid.uuid4())
+                        dense_job_id = uuid.uuid4()
+                        ingest_job_id = uuid.uuid4()
+
+                        dense_job_name = f"OpenSfM Dense Reconstruction Component {i}"
+                        if dataset_name:
+                            dense_job_name = f"OpenSfM Dense Component {i}: {dataset_name}"
+
+                        ingest_job_name = f"OpenSfM Pointcloud Ingestion Component {i}"
+                        if dataset_name:
+                            ingest_job_name = f"OpenSfM Ingest Component {i}: {dataset_name}"
+
+                        dense_job = Job(
+                            id=dense_job_id,
+                            name=dense_job_name,
+                            task_type="opensfm_dense",
+                            payload={
+                                "dataset_dir": dataset_dir,
+                                "dataset_name": dataset_name,
+                                "file_id": payload.get("file_id"),
+                                "batch_id": batch_id_val,
+                                "reconstruction_index": i,
+                                "subfolder": subfolder,
+                            },
+                            status=JobStatus.BLOCKED,
+                            progress=0.0,
+                            pipeline_id=pipeline_id,
+                            depends_on=[job_id] if job_id else []
+                        )
+                        session.add(dense_job)
+
+                        ingest_job = Job(
+                            id=ingest_job_id,
+                            name=ingest_job_name,
+                            task_type="opensfm_ingest",
+                            payload={
+                                "dataset_name": dataset_name,
+                                "file_id": comp_file_id,
+                                "batch_id": batch_id_val,
+                                "folder_path": dataset_dir,
+                                "subfolder": subfolder,
+                                "reconstruction_index": i,
+                            },
+                            status=JobStatus.BLOCKED,
+                            progress=0.0,
+                            pipeline_id=pipeline_id,
+                            depends_on=[str(dense_job_id)]
+                        )
+                        session.add(ingest_job)
+                        created_count += 1
+
+                    if created_count > 0:
+                        logger.info(f"Successfully created dynamic dense & ingest jobs for {created_count} component(s).")
 
                 await session.commit()
-                logger.info(f"Successfully created dynamic dense & ingest jobs for components 1 to {num_recs - 1}.")
         except Exception as dyn_err:
-            logger.error(f"Failed to create dynamic dense/ingest jobs for additional components: {dyn_err}", exc_info=True)
+            logger.error(f"Failed to process dense reconstruction jobs for reconstruction components: {dyn_err}", exc_info=True)
 
     async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:
         is_active = await self.update_job_status(job_id, "RUNNING", 10.0)
@@ -289,9 +372,10 @@ class OpenSfMSparseTaskHandler(BaseTaskHandler):
 
         logger.info(f"Executing OpenSfM sparse reconstruction via Python API on dataset: {dataset_dir}")
         loop = asyncio.get_running_loop()
+        compute_mesh = payload.get("compute_mesh", settings.opensfm_compute_mesh)
 
         try:
-            await asyncio.to_thread(self._run_opensfm_sparse_pipeline, dataset_dir, loop, job_id)
+            await asyncio.to_thread(self._run_opensfm_sparse_pipeline, dataset_dir, loop, job_id, compute_mesh)
         except Exception as proc_err:
             if "cancelled" in str(proc_err).lower():
                 logger.info(f"OpenSfM sparse reconstruction execution stopped for cancelled job {job_id}.")

@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     emodnet_ingestion_dir: str = "./data/emodnet_ingestion"
     # default path for OpenSfM configuration file
     opensfm_config: str = "backend/app/core/openSfM/config.yaml"
+    # whether OpenSfM mesh computation is executed during sparse reconstruction
+    opensfm_compute_mesh: bool = False
+    # minimum views required for a reconstruction to trigger dense reconstruction
+    opensfm_min_views_for_dense: int = 10
     
     # Database and Redis connections (with localhost fallback for local runs)
     database_url: str = "postgresql+asyncpg://postgres:postgres_secure_password@localhost:5432/seaseer"

@@ -655,7 +655,8 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                     {!isPerfTestRunning && perfTestSummary && (
                         <div style={{ backgroundColor: "#0f172a", padding: "8px", borderRadius: "4px", marginBottom: "8px", border: "1px solid #1e293b" }}>
                             <div style={{ color: "#4ade80", fontWeight: "bold", fontSize: "12px", marginBottom: "4px" }}>
-                                Test Complete ✅
+                                Test Complete ✅ <br />
+                                (For details check console)
                             </div>
                             <div style={{ fontSize: "13px", color: "#60a5fa", fontFamily: "monospace" }}>
                                 Average FPS: <strong>{perfTestSummary.averageFps}</strong> ({perfTestSummary.averageFrameTimeMs} ms)
