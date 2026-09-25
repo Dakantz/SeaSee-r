@@ -149,25 +149,25 @@ class VideoTaskHandler(BaseTaskHandler):
                         if isinstance(item_payload, dict):
                             grouped[ts_val]["payload"].update(item_payload)
 
-                    for v_rec in video_recs:
-                        # Clear previous log data for idempotency
-                        await session.execute(delete(LogData).where(LogData.video_metadata_id == v_rec.id))
+                    if batch_uuid:
+                        # Clear previous log data for idempotency by batch_id
+                        await session.execute(delete(LogData).where(LogData.batch_id == batch_uuid))
 
-                        log_rows = [
-                            LogData(
-                                id=uuid.uuid4(),
-                                video_metadata_id=v_rec.id,
-                                timestamp=ts_val,
-                                time_recorded=info["time_recorded"],
-                                payload=info["payload"]
-                            )
-                            for ts_val, info in grouped.items()
-                        ]
-                        session.add_all(log_rows)
-                        inserted_count += len(log_rows)
+                    log_rows = [
+                        LogData(
+                            id=uuid.uuid4(),
+                            batch_id=batch_uuid,
+                            timestamp=ts_val,
+                            time_recorded=info["time_recorded"],
+                            payload=info["payload"]
+                        )
+                        for ts_val, info in grouped.items()
+                    ]
+                    session.add_all(log_rows)
+                    inserted_count = len(log_rows)
 
                     await session.commit()
-                    logger.info(f"Inserted total {inserted_count} log_data rows for {len(video_recs)} video metadata records.")
+                    logger.info(f"Inserted total {inserted_count} log_data rows for batch {batch_uuid}.")
             except Exception as e:
                 logger.error(f"Error parsing log file {log_file_path}: {e}")
                 raise e

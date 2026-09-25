@@ -23,7 +23,7 @@ The SeaSee-r backend relies on PostgreSQL extended with geospatial and point clo
 erDiagram
     upload_metadata {
         uuid id PK
-        uuid batch_id
+        uuid batch_id "Indexed"
         string orig_filename
         string safe_filename
         string content_type
@@ -43,7 +43,7 @@ erDiagram
 
     log_data {
         uuid id PK
-        uuid video_metadata_id FK
+        uuid batch_id "Indexed"
         bigint timestamp
         timestamp time_recorded
         jsonb payload "GIN Indexed"
@@ -76,7 +76,7 @@ erDiagram
     pointcloud_metadata {
         uuid id PK
         uuid job_id FK
-        uuid video_metadata_id FK
+        uuid batch_id "Indexed"
         string orig_filename
         string safe_filename
         int number_of_points
@@ -132,8 +132,8 @@ erDiagram
     }
 
     upload_metadata ||--|{ video_metadata : "1 to N (CASCADE)"
-    video_metadata ||--o{ log_data : "1 to N (CASCADE)"
-    video_metadata ||--o{ pointcloud_metadata : "1 to N (SET NULL)"
+    upload_metadata ||--o{ log_data : "1 to N (via batch_id)"
+    upload_metadata }o--o{ pointcloud_metadata : "N to N (via batch_id)"
     pipelines ||--o{ jobs : "1 to N (CASCADE)"
     jobs ||--o{ pointcloud_metadata : "1 to N (SET NULL)"
     pointcloud_metadata ||--o{ camera_headers : "1 to N (CASCADE)"
@@ -151,7 +151,7 @@ erDiagram
 #### `upload_metadata` ([models/video.py](file:///home/tastegger/Documents/SeaSee-r/backend/app/models/video.py))
 Tracks user uploads and video processing batches.
 - `id` (`UUID`, PK): Unique upload identifier.
-- `batch_id` (`UUID`, Nullable): Optional batch identifier grouping multiple uploads.
+- `batch_id` (`UUID`, Indexed, Nullable): Batch identifier grouping multiple uploads and linking them to reconstructions (`pointcloud_metadata`) and telemetry (`log_data`) in N-N / 1-N relationships.
 - `orig_filename` (`String(255)`): Original uploaded filename.
 - `safe_filename` (`String(255)`, Nullable): Sanitized filesystem filename.
 - `content_type` (`String(100)`, Nullable): MIME type (e.g. `video/mp4`).
@@ -167,9 +167,9 @@ Stores actual video clip interval boundaries and metadata linked to an upload ba
 - `video_start_at` / `video_stop_at` (`DateTime(timezone=True)`): Epoch timestamps bounding video recording time.
 
 #### `log_data` ([models/log_data.py](file:///home/tastegger/Documents/SeaSee-r/backend/app/models/log_data.py))
-Chronological sensor log telemetry synchronized with video metadata.
+Chronological sensor log telemetry associated with an upload batch.
 - `id` (`UUID`, PK): Primary identifier.
-- `video_metadata_id` (`UUID`, FK -> `video_metadata.id` ON DELETE CASCADE): Links telemetry to a video.
+- `batch_id` (`UUID`, Indexed, Nullable): Grouping identifier linking telemetry to upload batch.
 - `timestamp` (`BigInteger`, Indexed): Epoch millisecond timestamp.
 - `time_recorded` (`DateTime(timezone=True)`, Indexed): Formatted recorded timestamp.
 - `payload` (`JSONB`): Unstructured sensor payload. Indexed with GIN (`ix_log_data_payload`).
@@ -205,7 +205,7 @@ Individual processing tasks within a pipeline.
 Master index of processed 3D point clouds.
 - `id` (`UUID`, PK): Point cloud dataset ID.
 - `job_id` (`UUID`, FK -> `jobs.id` ON DELETE SET NULL, Nullable): Job that generated this point cloud.
-- `video_metadata_id` (`UUID`, FK -> `video_metadata.id` ON DELETE SET NULL, Nullable): Source video recording.
+- `batch_id` (`UUID`, Indexed, Nullable): Batch identifier linking point cloud datasets to upload metadata in an N-N relationship (supports 1 video split into multiple files and generating multiple reconstruction point clouds).
 - `orig_filename` / `safe_filename` (`String(255)`): Filename references.
 - `number_of_points` (`Integer`): Total 3D point count.
 - `min_x`, `min_y`, `min_z`, `max_x`, `max_y`, `max_z` (`Float`): Bounding box bounds.
@@ -258,11 +258,12 @@ Rasterized depth grid generated from point cloud surface models.
 | Parent Table | Child Table | Foreign Key Column | On Delete Action |
 | :--- | :--- | :--- | :--- |
 | `upload_metadata` | `video_metadata` | `upload_metadata_id` | `CASCADE` |
-| `video_metadata` | `log_data` | `video_metadata_id` | `CASCADE` |
-| `video_metadata` | `pointcloud_metadata` | `video_metadata_id` | `SET NULL` |
 | `pipelines` | `jobs` | `pipeline_id` | `CASCADE` |
 | `jobs` | `pointcloud_metadata` | `job_id` | `SET NULL` |
 | `pointcloud_metadata` | `camera_headers` | `pointcloud_id` | `CASCADE` |
 | `camera_headers` | `camera_frames` | `camera_header_id` | `CASCADE` |
 | `pointcloud_metadata` | `pointcloud_patches_lod{0..10}` | `pointcloud_id` | `CASCADE` |
 | `pointcloud_metadata` | `bathymetry_raster` | `pointcloud_id` | `CASCADE` |
+
+> Note: `upload_metadata`, `pointcloud_metadata`, and `log_data` are associated via the shared `batch_id` column rather than direct foreign keys, providing flexible N:N relations for multi-file video uploads and multiple reconstruction point clouds per batch.
+

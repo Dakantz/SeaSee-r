@@ -144,7 +144,7 @@ const ConnectedMetadataCard: React.FC<{
     "created_at",
     "pcid",
     "job_id",
-    "video_metadata_id",
+    "batch_id",
     "min_x",
     "min_y",
     "min_z",
@@ -228,8 +228,8 @@ const ConnectedMetadataCard: React.FC<{
             </div>
 
             <div className="query-summary__connected-field">
-              <span className="query-summary__connected-field-label">Video Metadata ID:</span>
-              <span className="query-summary__connected-field-value mono">{meta.video_metadata_id || "None"}</span>
+              <span className="query-summary__connected-field-label">Batch ID:</span>
+              <span className="query-summary__connected-field-value mono">{meta.batch_id || "None"}</span>
             </div>
 
             {/* OpenSfM Statistics */}

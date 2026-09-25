@@ -2,8 +2,8 @@ import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional
 
-from sqlalchemy import ForeignKey, BigInteger, DateTime, Index
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import BigInteger, DateTime, Index
+from sqlalchemy.orm import Mapped, mapped_column, relationship, foreign, remote
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.core.database import Base
@@ -15,8 +15,8 @@ class LogData(Base):
     # UUID Primary Key
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     
-    # UUID Foreign Key
-    video_metadata_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("video_metadata.id", ondelete="CASCADE"), nullable=False)
+    # UUID Batch ID grouping telemetry with uploads
+    batch_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), index=True, nullable=True)
     
     # Indexed BigInteger for fast chronological queries
     timestamp: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
@@ -28,7 +28,12 @@ class LogData(Base):
     payload: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
     # Relationships
-    video_metadata = relationship("Video", back_populates="log_data")
+    upload_metadata = relationship(
+        "UploadMetadata",
+        primaryjoin="foreign(LogData.batch_id) == remote(UploadMetadata.batch_id)",
+        uselist=True,
+        viewonly=True,
+    )
 
     # Add a GIN index for blazing fast JSONB queries
     __table_args__ = (

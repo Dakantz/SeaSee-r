@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, computed_field
 class PointCloudMetadataResponse(BaseModel):
     id: UUID
     job_id: Optional[UUID] = None
-    video_metadata_id: Optional[UUID] = None
+    batch_id: Optional[UUID] = None
     orig_filename: str
     safe_filename: Optional[str] = None
     number_of_points: int

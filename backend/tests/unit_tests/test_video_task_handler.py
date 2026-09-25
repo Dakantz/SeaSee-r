@@ -141,7 +141,7 @@ async def test_video_task_handler_processes_associated_log_file(tmp_path):
 
         # Verify LogData in DB
         async with async_session() as session:
-            stmt = select(LogData).where(LogData.video_metadata_id == video_rec_id).order_by(LogData.timestamp)
+            stmt = select(LogData).where(LogData.batch_id == batch_id).order_by(LogData.timestamp)
             res = await session.execute(stmt)
             log_rows = res.scalars().all()
 
@@ -352,13 +352,11 @@ async def test_video_task_handler_handles_multiple_videos_in_batch():
     try:
         result = await handler.execute(job_id=job_id, payload=payload)
         assert result["status"] == "success"
-        assert result["log_rows_inserted"] == 2
+        assert result["log_rows_inserted"] == 1
 
         async with async_session() as session:
-            res1 = await session.execute(select(LogData).where(LogData.video_metadata_id == v1_rec_id))
-            res2 = await session.execute(select(LogData).where(LogData.video_metadata_id == v2_rec_id))
-            assert len(res1.scalars().all()) == 1
-            assert len(res2.scalars().all()) == 1
+            res = await session.execute(select(LogData).where(LogData.batch_id == batch_id))
+            assert len(res.scalars().all()) == 1
     finally:
         if os.path.exists(log_file_path):
             os.remove(log_file_path)

@@ -69,7 +69,7 @@ export interface ConnectedPointCloudMetadata {
   created_at?: string;
   pcid?: number;
   job_id?: string | null;
-  video_metadata_id?: string | null;
+  batch_id?: string | null;
   min_x?: number | null;
   min_y?: number | null;
   min_z?: number | null;

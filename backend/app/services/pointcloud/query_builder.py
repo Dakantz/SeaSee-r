@@ -12,7 +12,7 @@ FILTER_FIELD_MAP = {
     "pointcloud_id": {"column": "pm.id", "type": "uuid"},
     "id": {"column": "pm.id", "type": "uuid"},
     "job_id": {"column": "pm.job_id", "type": "uuid"},
-    "video_metadata_id": {"column": "pm.video_metadata_id", "type": "uuid"},
+    "batch_id": {"column": "pm.batch_id", "type": "uuid"},
     "number_of_points": {"column": "pm.number_of_points", "type": "int"},
     "orig_filename": {"column": "pm.orig_filename", "type": "string"},
     "safe_filename": {"column": "pm.safe_filename", "type": "string"},
@@ -204,7 +204,7 @@ class PointCloudQueryBuilder:
             lod=lod
         )
 
-        video_join_clause = "LEFT JOIN video_metadata vm ON pm.video_metadata_id = vm.id" if requires_video_join else ""
+        video_join_clause = "LEFT JOIN upload_metadata um ON pm.batch_id = um.batch_id LEFT JOIN video_metadata vm ON vm.upload_metadata_id = um.id" if requires_video_join else ""
         point_where_clause = f"\nWHERE {point_where_sql}" if point_where_sql else ""
 
         sql = f"""
@@ -254,7 +254,7 @@ class PointCloudQueryBuilder:
             lod=lod
         )
 
-        video_join_clause = "LEFT JOIN video_metadata vm ON pm.video_metadata_id = vm.id" if requires_video_join else ""
+        video_join_clause = "LEFT JOIN upload_metadata um ON pm.batch_id = um.batch_id LEFT JOIN video_metadata vm ON vm.upload_metadata_id = um.id" if requires_video_join else ""
 
         if not cls.has_spatial_filters(filters):
             summary_sql = f"""

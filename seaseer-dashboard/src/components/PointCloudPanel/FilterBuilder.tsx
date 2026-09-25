@@ -4,7 +4,7 @@ import type { FilterRule, FilterOperator } from "./utils/filterUtils.ts";
 const AVAILABLE_FIELDS = [
   { label: "Point Cloud ID", value: "pointcloud_id", type: "string" },
   { label: "Job ID", value: "job_id", type: "string" },
-  { label: "Video Metadata ID", value: "video_metadata_id", type: "string" },
+  { label: "Batch ID", value: "batch_id", type: "string" },
   { label: "Original Filename", value: "orig_filename", type: "string" },
   { label: "Safe Filename", value: "safe_filename", type: "string" },
   { label: "Points Count", value: "number_of_points", type: "number" },

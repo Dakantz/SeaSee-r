@@ -74,7 +74,7 @@ async def upsert_pointcloud_metadata(
     number_of_points: int,
     pcid: int,
     job_id: Optional[str] = None,
-    video_metadata_id: Optional[str] = None,
+    batch_id: Optional[str] = None,
     is_append: bool = False,
     override_filename: Optional[str] = None,
     override_safe_filename: Optional[str] = None,
@@ -94,9 +94,9 @@ async def upsert_pointcloud_metadata(
     target_uuid = uuid.UUID(file_id)
     orig_filename = override_filename or os.path.basename(file_path)
     safe_filename = override_safe_filename or os.path.basename(file_path)
-    video_uuid = uuid.UUID(video_metadata_id) if video_metadata_id else None
+    batch_uuid = uuid.UUID(str(batch_id)) if batch_id else None
 
-    if job_id and (not override_filename or not override_safe_filename):
+    if job_id and (not override_filename or not override_safe_filename or not batch_uuid):
         try:
             stmt_job = select(Job).where(Job.id == job_id)
             res_job = await session.execute(stmt_job)
@@ -104,8 +104,8 @@ async def upsert_pointcloud_metadata(
             if job_record and isinstance(job_record.payload, dict):
                 orig_filename = override_filename or job_record.payload.get("filename", orig_filename)
                 safe_filename = override_safe_filename or job_record.payload.get("safe_filename", safe_filename)
-                if not video_uuid and job_record.payload.get("video_metadata_id"):
-                    video_uuid = uuid.UUID(str(job_record.payload.get("video_metadata_id")))
+                if not batch_uuid and job_record.payload.get("batch_id"):
+                    batch_uuid = uuid.UUID(str(job_record.payload.get("batch_id")))
         except Exception as e:
             print(f"Failed to fetch job payload for metadata filenames: {e}")
 
@@ -115,8 +115,8 @@ async def upsert_pointcloud_metadata(
 
     if is_append and existing_record:
         existing_record.number_of_points = (existing_record.number_of_points or 0) + number_of_points
-        if video_uuid:
-            existing_record.video_metadata_id = video_uuid
+        if batch_uuid:
+            existing_record.batch_id = batch_uuid
         if bbox.get("min_x") is not None:
             existing_record.min_x = min(existing_record.min_x, bbox["min_x"] + offset_x) if existing_record.min_x is not None else (bbox["min_x"] + offset_x)
         if bbox.get("max_x") is not None:
@@ -158,8 +158,8 @@ async def upsert_pointcloud_metadata(
 
     if existing_record:
         existing_record.job_id = uuid.UUID(job_id) if job_id else None
-        if video_uuid:
-            existing_record.video_metadata_id = video_uuid
+        if batch_uuid:
+            existing_record.batch_id = batch_uuid
         existing_record.orig_filename = orig_filename
         existing_record.safe_filename = safe_filename
         existing_record.number_of_points = number_of_points
@@ -187,7 +187,7 @@ async def upsert_pointcloud_metadata(
     metadata_record = PointCloudMetadata(
         id=target_uuid,
         job_id=uuid.UUID(job_id) if job_id else None,
-        video_metadata_id=video_uuid,
+        batch_id=batch_uuid,
         orig_filename=orig_filename,
         safe_filename=safe_filename,
         number_of_points=number_of_points,

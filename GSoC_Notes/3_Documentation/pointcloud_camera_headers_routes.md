@@ -91,21 +91,21 @@ Retrieves all camera frames for all camera headers linked to the specified point
 
 ## Database Architecture & PostGIS Integration
 
-The camera data model and point cloud metadata are linked to video recordings:
+The camera data model and point cloud metadata are linked to upload batches:
 
 ```
 ┌─────────────────────────┐
-│     video_metadata      │
+│     upload_metadata     │
 └────────────┬────────────┘
-             │ 1
+             │ N
              │
-             │ N (SET NULL Delete)
+             │ N (via batch_id)
              ▼
 ┌─────────────────────────┐
 │   pointcloud_metadata   │
 │ ─────────────────────── │
 │ • id (UUID)             │
-│ • video_metadata_id(UUID│ ◄── FK to video_metadata.id
+│ • batch_id (UUID)       │ ◄── N:N relation via batch_id
 │ • orig_filename (String)│
 └────────────┬────────────┘
              │ 1
