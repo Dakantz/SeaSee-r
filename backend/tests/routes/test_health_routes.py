@@ -103,4 +103,73 @@ def test_get_workers_info_sync():
         assert w.queued_jobs_count == 3
 
 
+def test_get_workers_info_sync_opensfm_unhealthy():
+    """
+    Test get_workers_info_sync reports opensfm as unhealthy when depthmap is unavailable.
+    """
+    from app.api.routes.health import get_workers_info_sync
+
+    mock_worker = MagicMock()
+    mock_worker.name = "opensfm-worker-gpu-fail"
+    mock_worker.last_heartbeat = None
+    mock_worker.queue_names.return_value = ["opensfm_tasks"]
+    mock_worker.hostname = "sfm-host"
+    mock_worker.get_state.return_value = "idle"
+    mock_worker.get_current_job_id.return_value = None
+    mock_worker.total_working_time = 10.0
+    mock_worker.python_version = "3.10.0"
+    mock_worker.ip_address = "172.21.0.6"
+
+    mock_queue = MagicMock()
+    mock_queue.__len__.return_value = 0
+
+    with patch("app.api.routes.health.Worker.all", return_value=[mock_worker]), \
+         patch("app.api.routes.health.Queue", return_value=mock_queue), \
+         patch("app.api.routes.health.check_opensfm_depthmap_health", return_value=(False, "DepthmapClusterEstimator unavailable")):
+        worker_status, opensfm_status, workers_info = get_workers_info_sync()
+        assert worker_status == "offline"
+        assert opensfm_status == "unhealthy"
+        assert len(workers_info) == 1
+        w = workers_info[0]
+        assert w.status == "unhealthy"
+        assert w.depthmap_available is False
+
+
+def test_get_diagnostics_opensfm_unhealthy(client):
+    """
+    Test that /health/diagnostics reflects unhealthy opensfm status and records recent_errors.
+    """
+    mock_workers = [
+        WorkerInfo(
+            name="sfm-worker-test",
+            status="unhealthy",
+            container_id="ab1b0c7f462d",
+            state="idle",
+            current_job_id=None,
+            queues=["opensfm_tasks"],
+            queued_jobs_count=0,
+            total_working_time=12.0,
+            last_heartbeat="2026-09-23T08:00:00Z",
+            python_version="3.10.20",
+            depthmap_available=False,
+        )
+    ]
+
+    with patch("app.api.routes.health.check_redis_online", return_value=True), \
+         patch("app.api.routes.health.get_workers_info_sync", return_value=("offline", "unhealthy", mock_workers)), \
+         patch("app.api.routes.health.check_tusd_online", return_value=True), \
+         patch("app.api.routes.health.check_frontend_online", return_value=True), \
+         patch("app.api.routes.health.sync_redis_client.get", return_value=b"pydense.DepthmapClusterEstimator.is_available() returned False (GPU/OpenCL unavailable)"):
+        
+        response = client.get("/health/diagnostics")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["services_status"]["opensfm"] == "unhealthy"
+        assert len(data["recent_errors"]) == 1
+        assert "DepthmapClusterEstimator" in data["recent_errors"][0]
+        assert data["workers"][0]["depthmap_available"] is False
+        assert data["workers"][0]["status"] == "unhealthy"
+
+
 

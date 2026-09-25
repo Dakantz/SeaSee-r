@@ -231,6 +231,32 @@ export default function HealthPage() {
                     </div>
                 )}
 
+                {data?.recent_errors && data.recent_errors.length > 0 && (
+                    <div style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "8px",
+                        width: "100%"
+                    }}>
+                        {data.recent_errors.map((err, idx) => (
+                            <div key={idx} style={{
+                                padding: "14px 18px",
+                                background: "rgba(239, 68, 68, 0.15)",
+                                border: "1px solid rgba(239, 68, 68, 0.3)",
+                                borderRadius: "10px",
+                                color: "#fca5a5",
+                                fontSize: "13px",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "10px"
+                            }}>
+                                <FiAlertCircle style={{ flexShrink: 0, fontSize: "18px" }} />
+                                <span>{err}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
                 {/* Host Metrics Grid */}
                 <div style={{
                     display: "grid",
@@ -486,8 +512,25 @@ export default function HealthPage() {
                                                 borderRadius: "50%",
                                                 backgroundColor: worker.status === "online" ? "#22c55e" : "#ef4444"
                                             }} />
-                                            {worker.status === "online" ? "Online" : "Offline"}
+                                            {worker.status === "online" ? "Online" : worker.status === "unhealthy" ? "Unhealthy" : "Offline"}
                                         </span>
+
+                                        {worker.depthmap_available !== undefined && worker.depthmap_available !== null && (
+                                            <span style={{
+                                                display: "inline-flex",
+                                                alignItems: "center",
+                                                gap: "6px",
+                                                padding: "4px 10px",
+                                                borderRadius: "20px",
+                                                fontSize: "12px",
+                                                fontWeight: 600,
+                                                background: worker.depthmap_available ? "rgba(34, 197, 94, 0.15)" : "rgba(239, 68, 68, 0.15)",
+                                                color: worker.depthmap_available ? "#4ade80" : "#f87171",
+                                                border: worker.depthmap_available ? "1px solid rgba(34, 197, 94, 0.3)" : "1px solid rgba(239, 68, 68, 0.3)"
+                                            }}>
+                                                GPU Depthmap: {worker.depthmap_available ? "Available" : "Unavailable"}
+                                            </span>
+                                        )}
 
                                         {worker.state && (
                                             <span style={{

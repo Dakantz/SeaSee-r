@@ -97,7 +97,7 @@ services:
     volumes:
       - ./backend:/app
       - ./openSfM/openSfM_core:/source/OpenSfM
-    command: ["conda", "run", "-n", "opensfm", "--no-capture-output", "bash", "-c", "cd /source/OpenSfM && pip install --no-cache-dir -e . && cd /app && rq worker opensfm_tasks --url $${REDIS_URL}"]
+    command: ["conda", "run", "-n", "opensfm", "--no-capture-output", "bash", "-c", "cd /source/OpenSfM && pip install --no-cache-dir -e . && cd /app && rq worker -w app.services.worker.opensfm_worker.OpenSfMWorker opensfm_tasks --url $${REDIS_URL}"]
     environment:
       - PYTHONPATH=/app
       - LD_PRELOAD=/opt/conda/envs/opensfm/lib/libtcmalloc.so
@@ -118,7 +118,7 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "rq info -u $${REDIS_URL} && python -c 'import opensfm, opensfm.pygeometry, opensfm.pymap, opensfm.pybundle; from opensfm import pydense; assert pydense.DepthmapClusterEstimator.is_available()' || exit 1"]
+      test: ["CMD-SHELL", "rq info -u $${REDIS_URL} && python -m app.services.worker.opensfm_worker || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3

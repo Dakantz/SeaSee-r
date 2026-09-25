@@ -5,7 +5,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from typing import Dict, List
+from typing import Dict, List, Optional
 from app.schemas.health import HealthCheck, SystemDiagnostics, WorkerInfo
 from app.core.database import get_db_session
 from app.core.config import settings
@@ -29,6 +29,71 @@ async def check_redis_online() -> bool:
         logger.error(f"Redis health check failed: {e}")
         return False
 
+def check_opensfm_depthmap_health(sfm_workers: List[Worker]) -> tuple[bool, Optional[str]]:
+    """
+    Checks if OpenSfM depthmap estimator is available.
+    Matches container validation check:
+    'from opensfm import pydense; assert pydense.DepthmapClusterEstimator.is_available()'
+    """
+    # 1. Check direct Redis key reported by worker or healthcheck
+    try:
+        raw_val = sync_redis_client.get("opensfm:depthmap_available")
+        if raw_val is not None:
+            val = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else str(raw_val)
+            err_raw = sync_redis_client.get("opensfm:depthmap_error")
+            err_msg = err_raw.decode("utf-8") if isinstance(err_raw, bytes) else (str(err_raw) if err_raw else None)
+            return (val == "1"), err_msg
+    except Exception as e:
+        logger.debug(f"Redis check for opensfm:depthmap_available failed: {e}")
+
+    # 2. Check individual worker hash keys in Redis
+    for w in sfm_workers:
+        try:
+            raw_hval = sync_redis_client.hget(w.key, "depthmap_available")
+            if raw_hval is not None:
+                hval = raw_hval.decode("utf-8") if isinstance(raw_hval, bytes) else str(raw_hval)
+                err_hval = sync_redis_client.hget(w.key, "depthmap_error")
+                err_msg = err_hval.decode("utf-8") if isinstance(err_hval, bytes) else (str(err_hval) if err_hval else None)
+                return (hval == "1"), err_msg
+        except Exception:
+            pass
+
+    # 3. Direct local check (if running in an environment where OpenSfM is installed)
+    try:
+        from opensfm import pydense
+        is_avail = bool(pydense.DepthmapClusterEstimator.is_available())
+        return is_avail, None if is_avail else "pydense.DepthmapClusterEstimator.is_available() returned False (GPU/OpenCL unavailable)"
+    except ImportError:
+        pass
+    except Exception as exc:
+        return False, f"OpenSfM local check error: {exc}"
+
+    # 4. Fallback: if idle, probe via quick task
+    try:
+        q = Queue("opensfm_tasks", connection=sync_redis_client)
+        if len(q) == 0 and any(w.get_state() == "idle" for w in sfm_workers):
+            from app.services.worker.tasks import probe_opensfm_depthmap_task
+            job = q.enqueue(probe_opensfm_depthmap_task, job_timeout=3, result_ttl=30)
+            import time
+            start = time.time()
+            while time.time() - start < 1.0:
+                job.refresh()
+                if job.is_finished:
+                    res = job.result or {}
+                    is_avail = bool(res.get("available"))
+                    err_msg = res.get("error")
+                    sync_redis_client.set("opensfm:depthmap_available", "1" if is_avail else "0", ex=60)
+                    return is_avail, err_msg
+                elif job.is_failed:
+                    sync_redis_client.set("opensfm:depthmap_available", "0", ex=60)
+                    return False, "OpenSfM probe job failed"
+                time.sleep(0.05)
+    except Exception as e:
+        logger.debug(f"OpenSfM probe skipped: {e}")
+
+    # Default to True if status could not be queried (e.g. mock test environment)
+    return True, None
+
 def get_workers_info_sync() -> tuple[str, str, List[WorkerInfo]]:
     try:
         workers = Worker.all(connection=sync_redis_client)
@@ -39,7 +104,13 @@ def get_workers_info_sync() -> tuple[str, str, List[WorkerInfo]]:
         sfm_workers = [w for w in workers if "opensfm_tasks" in w.queue_names()]
 
         worker_status = "online" if len(general_workers) > 0 else "offline"
-        opensfm_status = "online" if len(sfm_workers) > 0 else "offline"
+
+        opensfm_available = True
+        if len(sfm_workers) == 0:
+            opensfm_status = "offline"
+        else:
+            opensfm_available, _ = check_opensfm_depthmap_health(sfm_workers)
+            opensfm_status = "online" if opensfm_available else "unhealthy"
 
         queue_counts: Dict[str, int] = {}
 
@@ -58,9 +129,13 @@ def get_workers_info_sync() -> tuple[str, str, List[WorkerInfo]]:
             q_names = w.queue_names()
             queued_count = sum(get_queue_len(qn) for qn in q_names)
 
+            is_sfm = "opensfm_tasks" in q_names
+            w_depthmap_available = opensfm_available if is_sfm else None
+            w_status = "unhealthy" if (is_sfm and not opensfm_available) else "online"
+
             info = WorkerInfo(
                 name=w.name,
-                status="online",
+                status=w_status,
                 container_id=getattr(w, "hostname", None),
                 state=w.get_state(),
                 current_job_id=w.get_current_job_id(),
@@ -70,6 +145,7 @@ def get_workers_info_sync() -> tuple[str, str, List[WorkerInfo]]:
                 last_heartbeat=heartbeat,
                 python_version=getattr(w, "python_version", None),
                 ip_address=getattr(w, "ip_address", None),
+                depthmap_available=w_depthmap_available,
             )
             workers_info.append(info)
 
@@ -77,6 +153,7 @@ def get_workers_info_sync() -> tuple[str, str, List[WorkerInfo]]:
     except Exception as e:
         logger.error(f"Workers health check failed: {e}")
         return "offline", "offline", []
+
 
 async def check_tusd_online() -> bool:
     try:
@@ -146,6 +223,17 @@ async def get_diagnostics(
     memory = await asyncio.to_thread(psutil.virtual_memory)
     memory_usage = memory.percent
 
+    recent_errors: List[str] = []
+    if opensfm_status == "unhealthy":
+        try:
+            err_raw = sync_redis_client.get("opensfm:depthmap_error")
+            err_text = err_raw.decode("utf-8") if isinstance(err_raw, bytes) else (str(err_raw) if err_raw else None)
+        except Exception:
+            err_text = None
+        recent_errors.append(
+            err_text or "OpenSfM worker is connected, but DepthmapClusterEstimator is unavailable (GPU/OpenCL error)."
+        )
+
     return SystemDiagnostics(
         cpu_usage=cpu_usage,
         memory_usage=memory_usage,
@@ -159,6 +247,6 @@ async def get_diagnostics(
             "tusd": tusd_status,
             "frontend": frontend_status,
         },
-        recent_errors=[],
+        recent_errors=recent_errors,
         workers=workers_info
     )

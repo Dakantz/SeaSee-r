@@ -17,6 +17,7 @@ class WorkerInfo(BaseModel):
     last_heartbeat: Optional[str] = None
     python_version: Optional[str] = None
     ip_address: Optional[str] = None
+    depthmap_available: Optional[bool] = None
 
 class SystemDiagnostics(BaseModel):
     cpu_usage: float | None

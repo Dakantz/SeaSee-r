@@ -303,4 +303,14 @@ async def _run_background_job_async(job_id_str: str) -> Dict[str, Any]:
             logger.error(f"Failed to update job status for {job_id_str}: {update_err}")
         raise
 
+def probe_opensfm_depthmap_task() -> dict:
+    """
+    Lightweight probe task executed on the opensfm_tasks queue
+    to verify OpenSfM depthmap / GPU availability on demand.
+    """
+    from app.services.worker.opensfm_worker import check_opensfm_depthmap_available
+    available, error = check_opensfm_depthmap_available()
+    return {"available": available, "error": error}
+
+
 
