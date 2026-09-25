@@ -47,3 +47,27 @@ def test_get_tusd_batch_id(client):
     assert "batch_id" in data
     batch_uuid = uuid.UUID(data["batch_id"])
     assert batch_uuid.version == 4
+
+
+def test_get_batches_overview(client):
+    """
+    Test GET /videos/batches and GET /videos/batches/overview return list of batch overviews.
+    """
+    res1 = client.get("/videos/batches?processed_only=false")
+    assert res1.status_code == 200
+    data1 = res1.json()
+    assert isinstance(data1, list)
+
+    res2 = client.get("/videos/batches/overview?processed_only=true")
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert isinstance(data2, list)
+
+    if len(data2) > 0:
+        first = data2[0]
+        assert "batch_id" in first
+        assert "video_count" in first
+        assert "total_video_length" in first
+        assert "pointcloud_count" in first
+        assert "total_points" in first
+        assert first["pointcloud_count"] > 0

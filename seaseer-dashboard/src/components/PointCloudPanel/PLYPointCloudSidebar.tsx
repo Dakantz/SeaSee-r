@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { PointCloudMetadataResponse } from "../../client";
+import type { PointCloudMetadataResponse, BatchOverviewResponse } from "../../client";
 import { usePLYPointCloudContext, type MapProviderChoice, type HeightProviderChoice } from "./PLYPointCloudContext";
 import OpenSfMConfigModal from "../OpenSfMConfigModal/OpenSfMConfigModal";
 
@@ -89,23 +89,58 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const [datasets, setDatasets] = useState<PointCloudMetadataResponse[]>([]);
     const [searchQuery, setSearchQuery] = useState<string>("");
 
+    const [batches, setBatches] = useState<BatchOverviewResponse[]>([]);
+    const [batchSearchQuery, setBatchSearchQuery] = useState<string>("");
+    const [isLoadingBatches, setIsLoadingBatches] = useState<boolean>(false);
+
     const catalog = contextState?.catalog ?? datasets;
 
-    useEffect(() => {
-        const fetchDatasets = async () => {
-            try {
-                const res = await fetch(`${API_BASE_URL}/pointclouds/`);
-                if (res.ok) {
-                    const data = await res.json();
-                    setDatasets(data);
-                }
-            } catch (err) {
-                console.error("Failed to fetch available datasets for PLY sidebar:", err);
+    const fetchDatasets = async () => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/pointclouds/`);
+            if (res.ok) {
+                const data = await res.json();
+                setDatasets(data);
             }
-        };
+        } catch (err) {
+            console.error("Failed to fetch available datasets for PLY sidebar:", err);
+        }
+    };
 
+    const fetchBatches = async () => {
+        setIsLoadingBatches(true);
+        try {
+            const res = await fetch(`${API_BASE_URL}/videos/batches?processed_only=true`);
+            if (res.ok) {
+                const data = await res.json();
+                setBatches(data);
+            }
+        } catch (err) {
+            console.error("Failed to fetch processed batches for PLY sidebar:", err);
+        } finally {
+            setIsLoadingBatches(false);
+        }
+    };
+
+    useEffect(() => {
         fetchDatasets();
+        fetchBatches();
     }, []);
+
+    const formatVideoLength = (seconds: number): string => {
+        if (!seconds || seconds <= 0) return "0s";
+        const totalSecs = Math.round(seconds);
+        const hrs = Math.floor(totalSecs / 3600);
+        const mins = Math.floor((totalSecs % 3600) / 60);
+        const secs = totalSecs % 60;
+        if (hrs > 0) {
+            return `${hrs}h ${mins}m ${secs}s`;
+        }
+        if (mins > 0) {
+            return `${mins}m ${secs}s`;
+        }
+        return `${secs}s`;
+    };
 
     return (
         <div className="pointcloud-sidebar">
@@ -134,6 +169,129 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                 onClose={() => setIsOpenSfMModalOpen(false)}
             />
 
+            {/* Processed Batches Catalog */}
+            <div className="pointcloud-sidebar__section">
+                <div className="pointcloud-sidebar__section-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <label className="pointcloud-sidebar__section-label">
+                        Batch Catalog ({batches.length})
+                    </label>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        {isLoadingBatches && (
+                            <span style={{ fontSize: "10px", color: "var(--color-text-muted, #94a3b8)" }}>
+                                Loading...
+                            </span>
+                        )}
+                        <button
+                            type="button"
+                            onClick={() => fetchBatches()}
+                            title="Refresh processed batches"
+                            style={{
+                                background: "transparent",
+                                border: "none",
+                                color: "var(--color-text-muted, #94a3b8)",
+                                cursor: "pointer",
+                                fontSize: "11px",
+                                padding: "0 2px"
+                            }}
+                        >
+                            🔄
+                        </button>
+                    </div>
+                </div>
+
+                <input
+                    type="text"
+                    value={batchSearchQuery}
+                    onChange={(e) => setBatchSearchQuery(e.target.value)}
+                    placeholder="Search batches by video or ID..."
+                    className="pointcloud-sidebar__search-input"
+                />
+
+                <div className="pointcloud-sidebar__catalog-list">
+                    {batches.length === 0 ? (
+                        <div className="pointcloud-sidebar__empty">
+                            {isLoadingBatches ? "Loading batches..." : "No processed batches available."}
+                        </div>
+                    ) : (
+                        batches
+                            .filter((item) => {
+                                if (!batchSearchQuery.trim()) return true;
+                                const q = batchSearchQuery.toLowerCase();
+                                const name = item.first_video_filename || "";
+                                const bid = item.batch_id || "";
+                                return name.toLowerCase().includes(q) || bid.toLowerCase().includes(q);
+                            })
+                            .map((item) => {
+                                const displayName = item.first_video_filename || `Batch ${item.batch_id.slice(0, 8)}`;
+                                const isQueryActive = contextState?.queries?.some((q) =>
+                                    q.filters?.some((f) => f.field === "batch_id" && String(f.value) === String(item.batch_id))
+                                );
+
+                                return (
+                                    <div
+                                        key={item.batch_id}
+                                        onClick={() => {
+                                            const queryName = item.first_video_filename
+                                                ? `Batch: ${item.first_video_filename}`
+                                                : `Batch ${item.batch_id.slice(0, 8)}`;
+                                            if (contextState?.addCustomQuery) {
+                                                contextState.addCustomQuery({
+                                                    name: queryName,
+                                                    filters: [
+                                                        {
+                                                            id: `rule-${Date.now()}`,
+                                                            field: "batch_id",
+                                                            operator: "eq",
+                                                            value: item.batch_id,
+                                                        },
+                                                    ],
+                                                });
+                                            }
+                                        }}
+                                        className={`pointcloud-sidebar__item ${isQueryActive ? "pointcloud-sidebar__item--selected" : ""}`}
+                                        title={`Batch ID: ${item.batch_id}\nClick to create custom query filtering for this batch`}
+                                    >
+                                        <div className="pointcloud-sidebar__item-info">
+                                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "6px" }}>
+                                                <span className="pointcloud-sidebar__item-title" title={displayName}>
+                                                    {displayName}
+                                                </span>
+                                                <span
+                                                    className={`pointcloud-sidebar__item-badge ${isQueryActive ? "pointcloud-sidebar__item-badge--active" : "pointcloud-sidebar__item-badge--cyan"}`}
+                                                >
+                                                    {item.batch_id.slice(0, 8)}
+                                                </span>
+                                            </div>
+
+                                            <div className="pointcloud-sidebar__item-subinfo">
+                                                <span title="Number of videos in this batch">
+                                                    📹 {item.video_count ?? 0} {(item.video_count ?? 0) === 1 ? "video" : "videos"}
+                                                </span>
+                                                <span>•</span>
+                                                <span title="Total video length">
+                                                    ⏱️ {formatVideoLength(item.total_video_length ?? 0)}
+                                                </span>
+                                                <span>•</span>
+                                                <span title="Number of reconstructed point clouds" style={{ color: "#38bdf8", fontWeight: 500 }}>
+                                                    ☁️ {item.pointcloud_count ?? 0} {(item.pointcloud_count ?? 0) === 1 ? "cloud" : "clouds"}
+                                                </span>
+                                                {(item.total_points ?? 0) > 0 && (
+                                                    <span style={{ fontSize: "9px", color: "#94a3b8" }}>
+                                                        ({(item.total_points ?? 0) >= 1_000_000
+                                                            ? `${((item.total_points ?? 0) / 1_000_000).toFixed(1)}M`
+                                                            : (item.total_points ?? 0) >= 1_000
+                                                            ? `${((item.total_points ?? 0) / 1_000).toFixed(0)}k`
+                                                            : item.total_points} pts)
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                    )}
+                </div>
+            </div>
 
             {/* Multi-PointCloud Catalog List */}
             <div className="pointcloud-sidebar__section">

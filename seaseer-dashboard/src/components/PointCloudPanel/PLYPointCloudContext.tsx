@@ -425,9 +425,15 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         const pcIdRule = filters?.find((f) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator))?.value;
         const targetId = pcIdRule ? String(pcIdRule) : null;
 
+        const batchIdRule = filters?.find((f) => f.field === "batch_id" && (f.operator === "eq" || !f.operator))?.value;
+        const targetBatchId = batchIdRule ? String(batchIdRule) : null;
+
         setQueries((prevQueries) => {
             const existing = prevQueries.find((q) => {
                 if (targetId && q.filters?.some((f) => f.field === "pointcloud_id" && f.value === targetId)) {
+                    return true;
+                }
+                if (targetBatchId && q.filters?.some((f) => f.field === "batch_id" && f.value === targetBatchId)) {
                     return true;
                 }
                 return false;
@@ -439,7 +445,9 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 ? sanitizeNonSpatialFilters(filters)
                 : targetId
                     ? [{ id: `rule-${Date.now()}`, field: "pointcloud_id", operator: "eq", value: targetId }]
-                    : [];
+                    : targetBatchId
+                        ? [{ id: `rule-${Date.now()}`, field: "batch_id", operator: "eq", value: targetBatchId }]
+                        : [];
 
             const newQuery: CustomQuery = {
                 id: `query-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,

@@ -11,6 +11,7 @@ This folder contains technical documentation for features, services, setup proce
 - [job_system_overview_ui.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/job_system_overview_ui.md): Job System Overview UI Component (`JobSystemOverview.tsx`), visual DAG graph, matrix view, polling, and action controls.
 - [Docker_Setup.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/Docker_Setup.md): Docker deployment guide.
 - [database_relations.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/database_relations.md): Database Schema & Relations ERD diagram, PostgreSQL PostGIS/pgPointcloud/PostGIS-Raster extensions, table definitions, and cascading foreign key rules.
+- [batch_catalog_and_overview.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/batch_catalog_and_overview.md): Processed Batch Catalog & Overview specification, API endpoints (`/videos/batches`), and DebugControls UI integration.
 
 ### Helper Scripts
 - [convert_logdata.md](file:///home/tastegger/Documents/SeaSee-r/GSoC_Notes/3_Documentation/helper_scripts/convert_logdata.md): `convert_logdata.py` usage and video/log sync pipeline.

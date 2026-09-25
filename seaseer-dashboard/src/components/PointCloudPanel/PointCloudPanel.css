@@ -245,6 +245,37 @@
     color: var(--color-text-muted, #94a3b8);
 }
 
+.pointcloud-sidebar__item-subinfo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px 6px;
+    margin-top: 3px;
+    font-size: 10px;
+    color: var(--color-text-muted, #94a3b8);
+}
+
+.pointcloud-sidebar__item-badge {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: monospace;
+    flex-shrink: 0;
+    line-height: 1.2;
+}
+
+.pointcloud-sidebar__item-badge--cyan {
+    background-color: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.pointcloud-sidebar__item-badge--active {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
 .pointcloud-sidebar__item-actions {
     display: flex;
     gap: var(--spacing-3xs, 2px);

@@ -41,3 +41,15 @@ class BatchIdResponse(BaseModel):
     batchId: Optional[UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BatchOverviewResponse(BaseModel):
+    batch_id: UUID
+    first_video_filename: Optional[str] = None
+    video_count: int = 0
+    total_video_length: float = 0.0
+    pointcloud_count: int = 0
+    total_points: int = 0
+    created_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
