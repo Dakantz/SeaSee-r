@@ -287,6 +287,7 @@ class OpenSfMDenseTaskHandler(BaseTaskHandler):
             "status": "success",
             "job_id": job_id,
             "dataset_dir": dataset_dir,
+            "batch_id": payload.get("batch_id"),
             "reconstruction_index": rec_idx,
             "subfolder": subfolder,
             "views": views_count,

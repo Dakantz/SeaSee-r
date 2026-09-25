@@ -50,6 +50,7 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
         file_path: str,
         file_id: str,
         job_id: Optional[str] = None,
+        batch_id: Optional[str] = None,
         folder_path: Optional[str] = None,
         subfolder: str = "undistorted",
         reconstruction_index: int = 0,
@@ -111,6 +112,7 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
                     file_path=dense_path,
                     file_id=file_id,
                     job_id=job_id,
+                    batch_id=batch_id,
                     mark_completed=False,
                     is_append=is_append,
                     offset_x=offset_x,
@@ -129,6 +131,7 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
                 result_data = {
                     "status": "success",
                     "file_id": file_id,
+                    "batch_id": batch_id,
                     "reconstruction_index": reconstruction_index,
                     "subfolder": sub_folder_name,
                     "reconstructions": [
@@ -255,6 +258,7 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
             result_data = {
                 "status": "success",
                 "file_id": file_id,
+                "batch_id": batch_id,
                 "reconstruction_index": reconstruction_index,
                 "subfolder": sub_folder_name,
                 "reconstructions": [
@@ -284,28 +288,41 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
         reconstruction_index = int(payload.get("reconstruction_index", 0))
         is_append = payload.get("is_append", False) or (task_type == "opensfm_append")
         file_id = (payload.get("existing_id") or payload.get("file_id")) if is_append else (payload.get("file_id") or job_id)
+        batch_id = payload.get("batch_id")
 
         file_path = payload.get("file_path")
 
-        # If file_path and folder_path are missing, look up parent job results in DB
-        if not file_path and not folder_path and job_id:
+        # If file_path or folder_path or batch_id are missing, look up parent job results in DB
+        if (not file_path or not folder_path or not batch_id) and job_id:
             try:
                 from sqlalchemy import select
                 from app.models.job import Job
                 async with async_session() as session:
                     j_res = await session.execute(select(Job).where(Job.id == uuid.UUID(job_id)))
                     job_rec = j_res.scalar_one_or_none()
-                    if job_rec and job_rec.depends_on:
-                        parent_uuids = [uuid.UUID(d) for d in job_rec.depends_on if isinstance(d, str)]
-                        if parent_uuids:
-                            p_res = await session.execute(select(Job).where(Job.id.in_(parent_uuids)))
-                            parents = p_res.scalars().all()
-                            for p in parents:
-                                if p.result and isinstance(p.result, dict):
-                                    folder_path = p.result.get("dataset_dir") or p.result.get("folder_path")
-                                    if folder_path:
-                                        logger.info(f"Retrieved folder_path '{folder_path}' from parent job {p.id}")
-                                        break
+                    if job_rec:
+                        if not batch_id and job_rec.pipeline_id:
+                            p_res = await session.execute(select(Job).where(Job.pipeline_id == job_rec.pipeline_id))
+                            for pj in p_res.scalars().all():
+                                if pj.payload and isinstance(pj.payload, dict) and pj.payload.get("batch_id"):
+                                    batch_id = pj.payload.get("batch_id")
+                                    break
+
+                        if job_rec.depends_on:
+                            parent_uuids = [uuid.UUID(d) for d in job_rec.depends_on if isinstance(d, str)]
+                            if parent_uuids:
+                                p_res = await session.execute(select(Job).where(Job.id.in_(parent_uuids)))
+                                parents = p_res.scalars().all()
+                                for p in parents:
+                                    if not batch_id:
+                                        if p.payload and isinstance(p.payload, dict) and p.payload.get("batch_id"):
+                                            batch_id = p.payload.get("batch_id")
+                                        elif p.result and isinstance(p.result, dict) and p.result.get("batch_id"):
+                                            batch_id = p.result.get("batch_id")
+                                    if p.result and isinstance(p.result, dict) and not folder_path:
+                                        folder_path = p.result.get("dataset_dir") or p.result.get("folder_path")
+                                        if folder_path:
+                                            logger.info(f"Retrieved folder_path '{folder_path}' from parent job {p.id}")
             except Exception as lookup_err:
                 logger.warning(f"Could not look up parent job result for job {job_id}: {lookup_err}")
 
@@ -351,6 +368,7 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
             file_path=file_path,
             file_id=file_id,
             job_id=job_id,
+            batch_id=batch_id,
             folder_path=folder_path,
             subfolder=subfolder,
             reconstruction_index=reconstruction_index,

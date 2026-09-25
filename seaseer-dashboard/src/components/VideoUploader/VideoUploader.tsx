@@ -118,7 +118,19 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
         const truncateStr = (str: string, maxLen = 220) =>
           str.length > maxLen ? `${str.slice(0, maxLen - 3)}...` : str;
 
-        const activeBatchId = batchIdRef.current || batchId;
+        let activeBatchId = batchIdRef.current || batchId;
+        if (!activeBatchId) {
+          try {
+            const bRes = await generateBatchId();
+            if (bRes.data?.batch_id || bRes.data?.batchId) {
+              activeBatchId = String(bRes.data.batch_id || bRes.data.batchId);
+              batchIdRef.current = activeBatchId;
+              setBatchId(activeBatchId);
+            }
+          } catch (bErr) {
+            console.warn('Could not generate fallback batch_id before pipeline creation:', bErr);
+          }
+        }
 
         for (const numFrames of frameCounts) {
           for (const blurThreshold of blurThresholds) {
@@ -247,6 +259,19 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
         return [...prev, ...filtered];
       });
     }
+
+    if ((newVideoFiles.length > 0 || newMetadataFiles.length > 0) && !batchIdRef.current) {
+      generateBatchId().then(res => {
+        const id = res.data?.batch_id || res.data?.batchId;
+        if (id) {
+          const idStr = String(id);
+          batchIdRef.current = idStr;
+          setBatchId(idStr);
+        }
+      }).catch(err => {
+        console.warn('Eager batchId generation failed, will retry on upload start:', err);
+      });
+    }
   };
 
   const handleRemoveVideo = (index: number) => {
@@ -348,9 +373,24 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
               Pipeline Parameters
             </span>
           </div>
-          <span style={{ fontSize: '11px', color: '#94a3b8', backgroundColor: 'rgba(255, 255, 255, 0.05)', padding: '2px 8px', borderRadius: '4px' }}>
-            Parameter Grid Sweep
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {batchId && (
+              <span style={{
+                fontSize: '11px',
+                color: '#38bdf8',
+                backgroundColor: 'rgba(56, 189, 248, 0.12)',
+                border: '1px solid rgba(56, 189, 248, 0.25)',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                fontFamily: 'monospace'
+              }} title={`Active Batch ID: ${batchId}`}>
+                Batch: {batchId.slice(0, 8)}...
+              </span>
+            )}
+            <span style={{ fontSize: '11px', color: '#94a3b8', backgroundColor: 'rgba(255, 255, 255, 0.05)', padding: '2px 8px', borderRadius: '4px' }}>
+              Parameter Grid Sweep
+            </span>
+          </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>

@@ -146,9 +146,23 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
                                                 <span style={{ display: 'block', fontSize: '14px', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: isSelected ? '#fff' : '#e2e8f0' }}>
                                                     {itemName}
                                                 </span>
-                                                <span style={{ display: 'block', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '2px' }}>
-                                                    {item.number_of_points?.toLocaleString()} points
-                                                </span>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                                                    <span style={{ fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        {item.number_of_points?.toLocaleString()} points
+                                                    </span>
+                                                    {item.batch_id && (
+                                                        <span style={{
+                                                            fontSize: '10px',
+                                                            padding: '1px 5px',
+                                                            borderRadius: '4px',
+                                                            backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                                                            color: '#38bdf8',
+                                                            fontFamily: 'monospace'
+                                                        }} title={`Batch ID: ${item.batch_id}`}>
+                                                            batch:{item.batch_id.slice(0, 8)}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                         {isSelected && idStr && (

@@ -98,7 +98,8 @@ async def upsert_pointcloud_metadata(
 
     if job_id and (not override_filename or not override_safe_filename or not batch_uuid):
         try:
-            stmt_job = select(Job).where(Job.id == job_id)
+            job_uuid = uuid.UUID(str(job_id))
+            stmt_job = select(Job).where(Job.id == job_uuid)
             res_job = await session.execute(stmt_job)
             job_record = res_job.scalar_one_or_none()
             if job_record and isinstance(job_record.payload, dict):
@@ -106,8 +107,30 @@ async def upsert_pointcloud_metadata(
                 safe_filename = override_safe_filename or job_record.payload.get("safe_filename", safe_filename)
                 if not batch_uuid and job_record.payload.get("batch_id"):
                     batch_uuid = uuid.UUID(str(job_record.payload.get("batch_id")))
+
+            if not batch_uuid and job_record:
+                if job_record.pipeline_id:
+                    stmt_pipeline_jobs = select(Job).where(Job.pipeline_id == job_record.pipeline_id)
+                    res_pj = await session.execute(stmt_pipeline_jobs)
+                    for pj in res_pj.scalars().all():
+                        if pj.payload and isinstance(pj.payload, dict) and pj.payload.get("batch_id"):
+                            batch_uuid = uuid.UUID(str(pj.payload.get("batch_id")))
+                            break
+
+                if not batch_uuid and job_record.depends_on:
+                    parent_uuids = [uuid.UUID(str(d)) for d in job_record.depends_on if d]
+                    if parent_uuids:
+                        stmt_parents = select(Job).where(Job.id.in_(parent_uuids))
+                        res_parents = await session.execute(stmt_parents)
+                        for pj in res_parents.scalars().all():
+                            if pj.payload and isinstance(pj.payload, dict) and pj.payload.get("batch_id"):
+                                batch_uuid = uuid.UUID(str(pj.payload.get("batch_id")))
+                                break
+                            if pj.result and isinstance(pj.result, dict) and pj.result.get("batch_id"):
+                                batch_uuid = uuid.UUID(str(pj.result.get("batch_id")))
+                                break
         except Exception as e:
-            print(f"Failed to fetch job payload for metadata filenames: {e}")
+            print(f"Failed to fetch job payload or batch_id for metadata: {e}")
 
     stmt_existing = select(PointCloudMetadata).where(PointCloudMetadata.id == target_uuid)
     res_existing = await session.execute(stmt_existing)

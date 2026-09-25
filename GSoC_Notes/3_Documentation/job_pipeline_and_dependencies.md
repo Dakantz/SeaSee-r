@@ -38,9 +38,12 @@ The Job Pipeline and Dependency system allows batch creation of tasks, defining 
 
 ## Standard Video to OpenSfM Pipeline Workflow
 
-The 3D point cloud reconstruction workflow is decoupled into a 3-stage job pipeline:
+The 3D point cloud reconstruction workflow is decoupled into a multi-stage job pipeline with `batch_id` propagation:
 
-1. **`frame_extraction`** (Queue: `pointcloud_tasks`): Extracts image frames from input video files into `settings.opensfm_ingestion_dir/<dataset_name>/images` via `ffmpeg`.
-2. **`opensfm_sparse`** (Queue: `opensfm_tasks`, legacy alias: `opensfm_reconstruct`): Executes OpenSfM sparse reconstruction and mesh generation (`extract_metadata`, `detect_features`, `match_features`, `create_tracks`, `reconstruct`, `mesh`) inside the dedicated `seasee-r-opensfm` Docker container worker.
-3. **`opensfm_ingest`** (Queue: `pointcloud_tasks`): Parses the generated `fused.laz` and camera metadata (`shots.geojson` / `reconstruction.json`) and ingests them into the PostGIS database.
+1. **`video_upload`** (Queue: `pointcloud_tasks`): Ingests video metadata, subtitles, and telemetry/sensor logs associated with the upload's `batch_id`.
+2. **`frame_extraction`** (Queue: `pointcloud_tasks`): Extracts image frames from input video files into `settings.opensfm_ingestion_dir/<dataset_name>/images` via `ffmpeg`, tagged with `batch_id`.
+3. **`opensfm_sparse`** (Queue: `opensfm_tasks`): Executes OpenSfM sparse feature matching and track reconstruction inside the dedicated `seasee-r-opensfm` container worker. If multiple reconstruction components are found, it dynamically spawns dense and ingest jobs for each component, forwarding `batch_id`.
+4. **`opensfm_dense`** (Queue: `opensfm_tasks`): Computes depth maps and dense point clouds (`fused.laz`) for a reconstruction component, preserving `batch_id`.
+5. **`opensfm_ingest`** (Queue: `pointcloud_tasks`): Converts point clouds to EPT, ingests point cloud patches into PostgreSQL/PostGIS/pgPointcloud, and inserts `PointCloudMetadata` recording the reconstruction statistics and the associated `batch_id`. In `PointCloudMetadataResponse`, the `batch_id` is exposed to the frontend and rendered across point cloud sidebar listings and query summaries.
+
 

@@ -28,6 +28,7 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         file_path: str,
         file_id: str,
         job_id: Optional[str] = None,
+        batch_id: Optional[str] = None,
         is_append: bool = False,
         offset_x: float = 0.0,
         offset_y: float = 0.0,
@@ -104,6 +105,7 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
                 number_of_points=number_of_points,
                 pcid=pcid,
                 job_id=job_id,
+                batch_id=batch_id,
                 is_append=is_append,
                 offset_x=offset_x,
                 offset_y=offset_y,
@@ -122,6 +124,7 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         file_path: str,
         file_id: str,
         job_id: Optional[str] = None,
+        batch_id: Optional[str] = None,
         mark_completed: bool = True,
         is_append: bool = False,
         offset_x: float = 0.0,
@@ -168,6 +171,7 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
                 file_path=file_path,
                 file_id=file_id,
                 job_id=job_id,
+                batch_id=batch_id,
                 is_append=is_append,
                 offset_x=offset_x,
                 offset_y=offset_y,
@@ -179,11 +183,10 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
                 dense_points=dense_points
             )
 
-
             if job_id and mark_completed:
                 await self.update_job_status(job_id, "COMPLETED", 100.0)
 
-            return {"status": "success", "file_id": file_id, "ept_dir": output_dir}
+            return {"status": "success", "file_id": file_id, "ept_dir": output_dir, "batch_id": batch_id}
 
         except Exception as e:
             error_msg = str(e)
@@ -196,6 +199,7 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         file_id = payload.get("file_id")
         safe_filename = payload.get("safe_filename")
         file_path = payload.get("file_path")
+        batch_id = payload.get("batch_id")
 
         # Locate file on disk if full path is omitted
         if not file_path and safe_filename:
@@ -212,4 +216,9 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
             await self.update_job_status(job_id, "FAILED", 0.0, error_msg)
             return {"status": "error", "message": error_msg}
 
-        return await self.ingest_pointcloud_pipeline(file_path, file_id or job_id, job_id)
+        return await self.ingest_pointcloud_pipeline(
+            file_path=file_path,
+            file_id=file_id or job_id,
+            job_id=job_id,
+            batch_id=batch_id
+        )

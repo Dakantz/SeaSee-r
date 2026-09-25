@@ -161,6 +161,8 @@ class OpenSfMSparseTaskHandler(BaseTaskHandler):
                     if dataset_name:
                         ingest_job_name = f"OpenSfM Ingest Component {i}: {dataset_name}"
 
+                    batch_id_val = payload.get("batch_id")
+
                     dense_job = Job(
                         id=dense_job_id,
                         name=dense_job_name,
@@ -169,6 +171,7 @@ class OpenSfMSparseTaskHandler(BaseTaskHandler):
                             "dataset_dir": dataset_dir,
                             "dataset_name": dataset_name,
                             "file_id": payload.get("file_id"),
+                            "batch_id": batch_id_val,
                             "reconstruction_index": i,
                             "subfolder": subfolder,
                         },
@@ -186,6 +189,7 @@ class OpenSfMSparseTaskHandler(BaseTaskHandler):
                         payload={
                             "dataset_name": dataset_name,
                             "file_id": comp_file_id,
+                            "batch_id": batch_id_val,
                             "folder_path": dataset_dir,
                             "subfolder": subfolder,
                             "reconstruction_index": i,
@@ -324,6 +328,7 @@ class OpenSfMSparseTaskHandler(BaseTaskHandler):
             "status": "success",
             "job_id": job_id,
             "dataset_dir": dataset_dir,
+            "batch_id": payload.get("batch_id"),
             "message": "OpenSfM sparse reconstruction completed successfully."
         }
 

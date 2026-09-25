@@ -191,9 +191,23 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                             <span className="pointcloud-sidebar__item-title">
                                                 {name}
                                             </span>
-                                            <span className="pointcloud-sidebar__item-count">
-                                                {item.number_of_points?.toLocaleString() ?? 0} pts
-                                            </span>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                                                <span className="pointcloud-sidebar__item-count">
+                                                    {item.number_of_points?.toLocaleString() ?? 0} pts
+                                                </span>
+                                                {item.batch_id && (
+                                                    <span style={{
+                                                        fontSize: '10px',
+                                                        padding: '1px 5px',
+                                                        borderRadius: '4px',
+                                                        backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                                                        color: '#38bdf8',
+                                                        fontFamily: 'monospace'
+                                                    }} title={`Batch ID: ${item.batch_id}`}>
+                                                        batch:{item.batch_id.slice(0, 8)}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 );
