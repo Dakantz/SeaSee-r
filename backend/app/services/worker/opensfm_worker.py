@@ -4,16 +4,16 @@ import logging
 from typing import Tuple, Optional
 from rq import Worker
 
+import subprocess
+
 logger = logging.getLogger(__name__)
 
-def check_opensfm_depthmap_available() -> Tuple[bool, Optional[str]]:
+
+def _check_opensfm_depthmap_available_in_process() -> Tuple[bool, Optional[str]]:
     """
-    Verifies OpenSfM core bindings and GPU/OpenCL depthmap estimator availability.
-    Matches the container validation check:
-    'from opensfm import pydense; assert pydense.DepthmapClusterEstimator.is_available()'
-    
-    Returns:
-        (is_available: bool, error_message: Optional[str])
+    Direct in-process check for OpenSfM core bindings and GPU/OpenCL depthmap estimator availability.
+    Only executed inside the isolated CLI subprocess (`python -m app.services.worker.opensfm_worker`),
+    preventing OpenCL context initialization inside the parent RQ worker process before fork.
     """
     try:
         import opensfm
@@ -21,7 +21,7 @@ def check_opensfm_depthmap_available() -> Tuple[bool, Optional[str]]:
         import opensfm.pymap
         import opensfm.pybundle
         from opensfm import pydense
-        
+
         is_available = bool(pydense.DepthmapClusterEstimator.is_available())
         if not is_available:
             return False, "pydense.DepthmapClusterEstimator.is_available() returned False (GPU/OpenCL unavailable)"
@@ -30,6 +30,35 @@ def check_opensfm_depthmap_available() -> Tuple[bool, Optional[str]]:
         return False, f"OpenSfM modules not importable: {e}"
     except Exception as e:
         return False, f"OpenSfM depthmap check error: {e}"
+
+
+def check_opensfm_depthmap_available() -> Tuple[bool, Optional[str]]:
+    """
+    Verifies OpenSfM core bindings and GPU/OpenCL depthmap estimator availability
+    by running `python -m app.services.worker.opensfm_worker` in an isolated subprocess.
+
+    This ensures that the main RQ worker process never loads OpenCL or initializes the GPU driver
+    before forking child worker processes, preventing fork-related OpenCL driver corruption.
+
+    Returns:
+        (is_available: bool, error_message: Optional[str])
+    """
+    try:
+        res = subprocess.run(
+            [sys.executable, "-m", "app.services.worker.opensfm_worker"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if res.returncode == 0:
+            return True, None
+
+        err_msg = res.stderr.strip() or res.stdout.strip() or f"Subprocess exited with code {res.returncode}"
+        return False, err_msg
+    except subprocess.TimeoutExpired:
+        return False, "OpenSfM healthcheck subprocess timed out after 15s"
+    except Exception as e:
+        return False, f"Failed to execute OpenSfM healthcheck subprocess: {e}"
 
 class OpenSfMWorker(Worker):
     """
@@ -70,7 +99,7 @@ if __name__ == "__main__":
     except Exception as exc:
         sys.stderr.write(f"Warning: Could not connect to Redis at {redis_url}: {exc}\n")
 
-    available, error = check_opensfm_depthmap_available()
+    available, error = _check_opensfm_depthmap_available_in_process()
     
     if redis_conn:
         try:
