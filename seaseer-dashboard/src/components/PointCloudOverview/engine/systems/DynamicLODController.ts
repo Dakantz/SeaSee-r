@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import type { EngineCallbacks } from "../types";
-import { fetchBinaryGeometry } from "../../../PointCloudPanel/utils/pointCloudLoader";
+import {
+    fetchBinaryGeometry,
+    EmptyPointCloudBufferError,
+} from "../../../PointCloudPanel/utils/pointCloudLoader";
 import type { FilterRule } from "../../../PointCloudPanel/utils/filterUtils";
 
 export interface Bounds3D {
@@ -978,8 +981,15 @@ export class DynamicLODController {
                     }
                 })
                 .catch((err) => {
-                    if (abortController.signal.aborted) return;
-                    console.warn(`[DynamicLODController] Failed to fetch chunk ${task.key} at LOD ${task.lod}:`, err);
+                    if (abortController.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
+
+                    const isEmptyBuffer =
+                        err instanceof EmptyPointCloudBufferError ||
+                        (err instanceof Error && err.message.includes("Received empty point cloud data buffer"));
+
+                    if (!isEmptyBuffer) {
+                        console.warn(`[DynamicLODController] Failed to fetch chunk ${task.key} at LOD ${task.lod}:`, err);
+                    }
                     const currentManager = this.targetManagers.get(task.targetKey);
                     if (currentManager) {
                         currentManager.onChunkEmpty(task.key);

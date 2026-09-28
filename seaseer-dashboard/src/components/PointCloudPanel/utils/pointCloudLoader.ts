@@ -48,6 +48,17 @@ export interface ProgressiveLoadOptions {
 }
 
 /**
+ * Error thrown when a point cloud stream returns an empty buffer (0 points) for an LOD.
+ * In dynamic LOD systems, this is a normal occurrence for decimation levels or regions with no points.
+ */
+export class EmptyPointCloudBufferError extends Error {
+    constructor(lod: number) {
+        super(`Received empty point cloud data buffer for LOD ${lod}`);
+        this.name = "EmptyPointCloudBufferError";
+    }
+}
+
+/**
  * Low-level helper to fetch and parse binary pointcloud buffer for a specific LOD.
  * Uses 16-byte packed vertex layout: [X:f32, Y:f32, Z:f32, R:u8, G:u8, B:u8, Pad:u8]
  */
@@ -75,7 +86,7 @@ export async function fetchBinaryGeometry(
     const count = Math.floor(buffer.byteLength / pointSizeInBytes);
 
     if (count === 0) {
-        throw new Error(`Received empty point cloud data buffer for LOD ${lodToLoad}`);
+        throw new EmptyPointCloudBufferError(lodToLoad);
     }
 
     const positions = new Float32Array(count * 3);
