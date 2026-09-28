@@ -1,10 +1,11 @@
-import React, { useEffect, useCallback } from "react";
-import { FiAlertCircle } from "react-icons/fi";
+import React, { useState, useEffect, useCallback } from "react";
+import { FiAlertCircle, FiFilm, FiChevronLeft, FiChevronRight } from "react-icons/fi";
 import { VideoPlayer } from "./VideoPlayer";
 import { LogsSummaryCards } from "./LogsSummaryCards";
 import { LogsCharts } from "./LogsCharts";
 import { usePLYPointCloudContext } from "../PointCloudPanel/PLYPointCloudContext";
 import { useLogsData, useTrajectoryLogSync, useRoverFocus } from "./hooks";
+import type { VideoItem } from "./types";
 
 import "./LogsPage.css";
 import "./VideoLogsPanel.css";
@@ -32,6 +33,67 @@ export const VideoLogsPanel: React.FC = () => {
     const activeSyncPoint = useTrajectoryLogSync((state) => state.activePoint);
     const syncSource = useTrajectoryLogSync((state) => state.syncSource);
     const focusedTrajectoryId = useTrajectoryLogSync((state) => state.focusedTrajectoryId);
+
+    // Sequential Video Playlist State
+    const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+    const [videos, setVideos] = useState<VideoItem[]>([]);
+    const [currentVideoIndex, setCurrentVideoIndex] = useState<number>(0);
+    const [loadingVideos, setLoadingVideos] = useState<boolean>(false);
+    const [autoPlayNext, setAutoPlayNext] = useState<boolean>(false);
+
+    // Fetch video playlist for the focused dataset
+    const fetchVideos = useCallback(async () => {
+        if (!selectedMapId) {
+            setVideos([]);
+            setCurrentVideoIndex(0);
+            setAutoPlayNext(false);
+            return;
+        }
+
+        setLoadingVideos(true);
+        try {
+            const res = await fetch(`${apiBaseUrl}/videos/by-pointcloud/${selectedMapId}`);
+            if (res.ok) {
+                const data = await res.json();
+                const list: VideoItem[] = Array.isArray(data) ? data : data ? [data] : [];
+                setVideos(list);
+                setCurrentVideoIndex(0);
+                setAutoPlayNext(false);
+            } else {
+                setVideos([]);
+                setCurrentVideoIndex(0);
+            }
+        } catch (err) {
+            console.warn("Could not load video playlist for point cloud:", err);
+            setVideos([]);
+            setCurrentVideoIndex(0);
+        } finally {
+            setLoadingVideos(false);
+        }
+    }, [selectedMapId, apiBaseUrl]);
+
+    useEffect(() => {
+        fetchVideos();
+    }, [fetchVideos]);
+
+    // Advance to next video when current video completes
+    const handleVideoEnded = useCallback(() => {
+        setCurrentVideoIndex((prevIndex) => {
+            if (prevIndex < videos.length - 1) {
+                setAutoPlayNext(true);
+                return prevIndex + 1;
+            }
+            setAutoPlayNext(false);
+            return prevIndex;
+        });
+    }, [videos.length]);
+
+    const handleSelectVideoIndex = useCallback((index: number) => {
+        if (index >= 0 && index < videos.length) {
+            setCurrentVideoIndex(index);
+            setAutoPlayNext(true);
+        }
+    }, [videos.length]);
 
     // Sync active point index when updated externally (from 3D map click or video playback)
     useEffect(() => {
@@ -146,8 +208,11 @@ export const VideoLogsPanel: React.FC = () => {
                     <button
                         type="button"
                         className="video-logs-refresh-btn"
-                        onClick={refetch}
-                        disabled={loadingMaps || loadingFrames}
+                        onClick={() => {
+                            refetch();
+                            fetchVideos();
+                        }}
+                        disabled={loadingMaps || loadingFrames || loadingVideos}
                         title="Reload Telemetry & Video"
                     >
                         ↻
@@ -162,11 +227,65 @@ export const VideoLogsPanel: React.FC = () => {
                 </div>
             )}
 
+            {/* Sequential Video Playlist Bar when multiple videos exist */}
+            {videos.length > 1 && (
+                <div className="video-logs-playlist-bar">
+                    <div className="video-playlist-info">
+                        <FiFilm size={12} className="video-playlist-icon" />
+                        <span className="video-playlist-label">Sequence</span>
+                        <span className="video-playlist-counter">
+                            Part {currentVideoIndex + 1} of {videos.length}
+                        </span>
+                    </div>
+
+                    <div className="video-playlist-pills">
+                        {videos.map((vid, idx) => (
+                            <button
+                                key={vid.id}
+                                type="button"
+                                className={`video-playlist-pill ${idx === currentVideoIndex ? "active" : ""}`}
+                                onClick={() => handleSelectVideoIndex(idx)}
+                                title={`Play part ${idx + 1}: ${vid.upload_metadata?.orig_filename || vid.id}`}
+                            >
+                                {idx + 1}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="video-playlist-nav">
+                        <button
+                            type="button"
+                            className="video-playlist-nav-btn"
+                            onClick={() => handleSelectVideoIndex(currentVideoIndex - 1)}
+                            disabled={currentVideoIndex === 0}
+                            title="Previous Video Part"
+                        >
+                            <FiChevronLeft size={13} />
+                        </button>
+                        <button
+                            type="button"
+                            className="video-playlist-nav-btn"
+                            onClick={() => handleSelectVideoIndex(currentVideoIndex + 1)}
+                            disabled={currentVideoIndex >= videos.length - 1}
+                            title="Next Video Part"
+                        >
+                            <FiChevronRight size={13} />
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Top: Video Player */}
             <VideoPlayer
                 pointCloudId={selectedMapId}
                 telemetryPoints={telemetryPoints}
                 onPointSelect={setActiveIndex}
+                videos={videos}
+                currentVideoIndex={currentVideoIndex}
+                onVideoEnded={handleVideoEnded}
+                onSelectVideoIndex={handleSelectVideoIndex}
+                autoPlayNext={autoPlayNext}
+                loadingVideos={loadingVideos}
             />
 
             {/* Summary KPI Cards */}

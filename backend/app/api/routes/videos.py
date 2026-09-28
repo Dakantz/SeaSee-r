@@ -185,13 +185,14 @@ async def get_videos(
     return [_enrich_video_response(v) for v in videos]
 
 
-@router.get("/by-pointcloud/{identifier}", response_model=VideoResponse)
+@router.get("/by-pointcloud/{identifier}", response_model=List[VideoResponse])
 async def get_video_by_pointcloud(
     identifier: str,
     db: AsyncSession = Depends(get_db_session)
 ):
     """
-    Get the associated video record for a given point cloud dataset.
+    Get the associated video records for a given point cloud dataset via batch_id.
+    Returns a list of videos ordered sequentially by start time and filename.
     """
     pc_uuid = None
     try:
@@ -199,7 +200,7 @@ async def get_video_by_pointcloud(
     except ValueError:
         pass
 
-    stmt = select(PointCloudMetadata).options(selectinload(PointCloudMetadata.video_metadata).selectinload(Video.upload_metadata))
+    stmt = select(PointCloudMetadata)
     if pc_uuid:
         stmt = stmt.where(PointCloudMetadata.id == pc_uuid)
     else:
@@ -210,15 +211,49 @@ async def get_video_by_pointcloud(
 
     result = await db.execute(stmt)
     pc = result.scalar_one_or_none()
-    if not pc or not pc.video_metadata:
+    if not pc:
+        raise HTTPException(status_code=404, detail="Point cloud not found")
+
+    videos: List[Video] = []
+    if pc.batch_id:
+        video_stmt = (
+            select(Video)
+            .join(UploadMetadata, Video.upload_metadata_id == UploadMetadata.id)
+            .options(selectinload(Video.upload_metadata))
+            .where(UploadMetadata.batch_id == pc.batch_id)
+            .order_by(Video.video_start_at.asc(), UploadMetadata.orig_filename.asc())
+        )
+        vid_res = await db.execute(video_stmt)
+        videos = list(vid_res.scalars().all())
+
+    if not videos:
+        # Check by filename match if batch_id didn't link
+        video_stmt = (
+            select(Video)
+            .join(UploadMetadata, Video.upload_metadata_id == UploadMetadata.id)
+            .options(selectinload(Video.upload_metadata))
+            .where(
+                (UploadMetadata.orig_filename == pc.orig_filename) |
+                (UploadMetadata.safe_filename == pc.safe_filename)
+            )
+            .order_by(Video.video_start_at.asc(), UploadMetadata.orig_filename.asc())
+        )
+        vid_res = await db.execute(video_stmt)
+        videos = list(vid_res.scalars().all())
+
+    if not videos:
         # Fallback: check if single video exists
-        fallback = await db.execute(select(Video).options(selectinload(Video.upload_metadata)).limit(1))
+        fallback = await db.execute(
+            select(Video)
+            .options(selectinload(Video.upload_metadata))
+            .order_by(Video.video_start_at.asc())
+            .limit(1)
+        )
         vid = fallback.scalar_one_or_none()
         if vid:
-            return _enrich_video_response(vid)
-        raise HTTPException(status_code=404, detail="No video found for this point cloud")
+            videos = [vid]
 
-    return _enrich_video_response(pc.video_metadata)
+    return [_enrich_video_response(v) for v in videos]
 
 
 @router.get("/{video_id}", response_model=VideoResponse)

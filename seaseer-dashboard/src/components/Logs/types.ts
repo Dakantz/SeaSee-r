@@ -57,3 +57,24 @@ export interface MissionSummary {
     boundingVolumeM3: number;
     netDisplacementMeters: number;
 }
+
+export interface VideoItem {
+    id: string;
+    upload_metadata_id: string;
+    content_type?: string | null;
+    total_bytes?: number | null;
+    video_start_at: string;
+    video_stop_at: string;
+    stream_url?: string | null;
+    download_url?: string | null;
+    upload_metadata?: {
+        id: string;
+        batch_id?: string | null;
+        orig_filename: string;
+        safe_filename?: string | null;
+        content_type?: string | null;
+        status: string;
+        created_at: string;
+        completed_at?: string | null;
+    } | null;
+}

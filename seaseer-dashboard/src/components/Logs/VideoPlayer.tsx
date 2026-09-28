@@ -9,14 +9,22 @@ import {
     FiVideo,
     FiVideoOff,
     FiCheckCircle,
+    FiSkipBack,
+    FiSkipForward,
 } from "react-icons/fi";
 import { useTrajectoryLogSync } from "./hooks";
-import type { ComputedTelemetryPoint } from "./types";
+import type { ComputedTelemetryPoint, VideoItem } from "./types";
 
-interface VideoPlayerProps {
+export interface VideoPlayerProps {
     pointCloudId?: string | null;
     telemetryPoints?: ComputedTelemetryPoint[];
     onPointSelect?: (index: number) => void;
+    videos?: VideoItem[];
+    currentVideoIndex?: number;
+    onVideoEnded?: () => void;
+    onSelectVideoIndex?: (index: number) => void;
+    autoPlayNext?: boolean;
+    loadingVideos?: boolean;
 }
 
 function findClosestPointIndex(points: ComputedTelemetryPoint[], t: number): number {
@@ -58,9 +66,27 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     pointCloudId,
     telemetryPoints = [],
     onPointSelect,
+    videos: propVideos,
+    currentVideoIndex: propVideoIndex = 0,
+    onVideoEnded,
+    onSelectVideoIndex,
+    autoPlayNext = false,
+    loadingVideos: propLoadingVideos,
 }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+    // Internal state if videos are not passed as props
+    const [internalVideos, setInternalVideos] = useState<VideoItem[]>([]);
+    const [internalIndex, setInternalIndex] = useState<number>(0);
+    const [internalLoading, setInternalLoading] = useState<boolean>(false);
+    const [internalAutoPlay, setInternalAutoPlay] = useState<boolean>(false);
+
+    const isControlled = propVideos !== undefined;
+    const resolvedVideos = isControlled ? propVideos : internalVideos;
+    const resolvedIndex = isControlled ? propVideoIndex : internalIndex;
+    const resolvedLoading = isControlled ? (propLoadingVideos ?? false) : internalLoading;
+    const resolvedAutoPlay = isControlled ? autoPlayNext : internalAutoPlay;
 
     const [videoSrc, setVideoSrc] = useState<string | null>(null);
     const [videoTitle, setVideoTitle] = useState<string>("Underwater Recording");
@@ -69,69 +95,105 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const [duration, setDuration] = useState<number>(0);
     const [isMuted, setIsMuted] = useState<boolean>(true);
     const [playbackRate, setPlaybackRate] = useState<number>(1.0);
-    const [loadingVideo, setLoadingVideo] = useState<boolean>(false);
     const [videoError, setVideoError] = useState<string | null>(null);
 
     const seekTimestamp = useTrajectoryLogSync((state) => state.seekTimestamp);
     const syncSource = useTrajectoryLogSync((state) => state.syncSource);
     const selectPoint = useTrajectoryLogSync((state) => state.selectPoint);
 
-    // Fetch video info for the active point cloud or display clean standby state if none
+    // Fallback: Fetch video info internally if videos prop is not controlled
     useEffect(() => {
+        if (isControlled) return;
+
         let isCancelled = false;
+        setVideoError(null);
+
+        if (!pointCloudId) {
+            setInternalVideos([]);
+            setInternalIndex(0);
+            setInternalAutoPlay(false);
+            setInternalLoading(false);
+            return;
+        }
+
+        setInternalLoading(true);
+
+        async function fetchVideos() {
+            try {
+                const res = await fetch(`${apiBaseUrl}/videos/by-pointcloud/${pointCloudId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    const list: VideoItem[] = Array.isArray(data) ? data : data ? [data] : [];
+                    if (!isCancelled) {
+                        setInternalVideos(list);
+                        setInternalIndex(0);
+                        setInternalAutoPlay(false);
+                    }
+                } else if (!isCancelled) {
+                    setInternalVideos([]);
+                    setInternalIndex(0);
+                }
+            } catch (err) {
+                console.warn("Could not load video metadata for point cloud:", err);
+                if (!isCancelled) {
+                    setInternalVideos([]);
+                    setInternalIndex(0);
+                }
+            } finally {
+                if (!isCancelled) setInternalLoading(false);
+            }
+        }
+
+        fetchVideos();
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [apiBaseUrl, pointCloudId, isControlled]);
+
+    // Update active video URL and title whenever the resolved video changes
+    useEffect(() => {
         setVideoError(null);
 
         if (!pointCloudId) {
             setVideoSrc(null);
             setVideoTitle("No Video Focused");
-            setLoadingVideo(false);
             setCurrentTime(0);
             setDuration(0);
             setIsPlaying(false);
             return;
         }
 
-        setLoadingVideo(true);
+        const activeVideo = resolvedVideos[resolvedIndex];
+        if (activeVideo) {
+            const targetUrl = `${apiBaseUrl}${activeVideo.stream_url || `/videos/${activeVideo.id}/stream`}`;
+            const title = activeVideo.upload_metadata?.orig_filename || `Video ${activeVideo.id.substring(0, 8)}`;
+            setVideoSrc(targetUrl);
+            setVideoTitle(title);
+            setCurrentTime(0);
+        } else if (!resolvedLoading) {
+            setVideoSrc(null);
+            setVideoTitle("No Video Recording Linked");
+            setCurrentTime(0);
+            setDuration(0);
+            setIsPlaying(false);
+        }
+    }, [resolvedVideos, resolvedIndex, resolvedLoading, pointCloudId, apiBaseUrl]);
 
-        async function fetchVideo() {
-            try {
-                let targetUrl = "";
-                let title = "Underwater Recording";
-
-                const res = await fetch(`${apiBaseUrl}/videos/by-pointcloud/${pointCloudId}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    targetUrl = `${apiBaseUrl}${data.stream_url || `/videos/${data.id}/stream`}`;
-                    title = data.upload_metadata?.orig_filename || `Video ${data.id.substring(0, 8)}`;
-                }
-
-                if (!isCancelled) {
-                    if (targetUrl) {
-                        setVideoSrc(targetUrl);
-                        setVideoTitle(title);
-                    } else {
-                        // Point cloud has no associated video recording
-                        setVideoSrc(null);
-                        setVideoTitle("No Video Recording Linked");
-                    }
-                }
-            } catch (err) {
-                console.warn("Could not load video metadata for point cloud:", err);
-                if (!isCancelled) {
-                    setVideoSrc(null);
-                    setVideoTitle("No Video Recording Linked");
-                }
-            } finally {
-                if (!isCancelled) setLoadingVideo(false);
+    // Handle auto-play when sequential playback switches to the next video
+    useEffect(() => {
+        if (resolvedAutoPlay && videoRef.current && videoSrc) {
+            const playPromise = videoRef.current.play();
+            if (playPromise !== undefined) {
+                playPromise
+                    .then(() => setIsPlaying(true))
+                    .catch((err) => {
+                        console.warn("Autoplay next video interrupted:", err);
+                        setIsPlaying(false);
+                    });
             }
         }
-
-        fetchVideo();
-
-        return () => {
-            isCancelled = true;
-        };
-    }, [apiBaseUrl, pointCloudId]);
+    }, [videoSrc, resolvedAutoPlay]);
 
     // Synchronize video seeking when triggered from 3D or Chart
     useEffect(() => {
@@ -274,6 +336,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     const currentFrame = Math.floor(currentTime * 25);
 
+    const handleEnded = () => {
+        setIsPlaying(false);
+        if (onVideoEnded) {
+            onVideoEnded();
+        } else if (resolvedVideos.length > 1 && resolvedIndex < resolvedVideos.length - 1) {
+            setInternalIndex((prev) => prev + 1);
+            setInternalAutoPlay(true);
+        }
+    };
+
     return (
         <div className="logs-video-player-container">
             {/* Header Badge */}
@@ -284,16 +356,23 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                         {videoTitle}
                     </span>
                 </div>
-                {videoSrc ? (
-                    <div className="logs-video-badge">
-                        <FiCheckCircle size={11} style={{ color: "#34d399", marginRight: 4 }} />
-                        <span>HTTP 206 Stream</span>
-                    </div>
-                ) : (
-                    <div className="logs-video-badge logs-badge-standby">
-                        <span>{pointCloudId ? "No Stream" : "Standby"}</span>
-                    </div>
-                )}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {resolvedVideos.length > 1 && (
+                        <div className="logs-video-seq-badge" title="Sequential Playback">
+                            <span>Part {resolvedIndex + 1}/{resolvedVideos.length}</span>
+                        </div>
+                    )}
+                    {videoSrc ? (
+                        <div className="logs-video-badge">
+                            <FiCheckCircle size={11} style={{ color: "#34d399", marginRight: 4 }} />
+                            <span>HTTP 206 Stream</span>
+                        </div>
+                    ) : (
+                        <div className="logs-video-badge logs-badge-standby">
+                            <span>{pointCloudId ? "No Stream" : "Standby"}</span>
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Video Canvas Container */}
@@ -310,11 +389,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                         onLoadedMetadata={handleLoadedMetadata}
                         onPlay={() => setIsPlaying(true)}
                         onPause={() => setIsPlaying(false)}
+                        onEnded={handleEnded}
                         onError={() => setVideoError("Stream loading failed")}
                     />
                 )}
 
-                {!videoSrc && !loadingVideo && (
+                {!videoSrc && !resolvedLoading && (
                     <div className="logs-video-standby">
                         <FiVideoOff className="logs-video-standby-icon" size={32} />
                         <span className="logs-video-standby-title">
@@ -328,7 +408,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     </div>
                 )}
 
-                {loadingVideo && (
+                {resolvedLoading && (
                     <div className="logs-video-overlay">
                         <div className="logs-spinner" />
                         <span>Loading Stream...</span>
@@ -342,7 +422,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 )}
 
                 {/* Big Center Play Overlay when paused and videoSrc exists */}
-                {videoSrc && !isPlaying && !loadingVideo && !videoError && (
+                {videoSrc && !isPlaying && !resolvedLoading && !videoError && (
                     <div className="logs-video-play-overlay">
                         <div className="logs-video-play-button">
                             <FiPlay size={22} style={{ marginLeft: 3 }} />
@@ -368,6 +448,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             {/* Controls Bar */}
             <div className="logs-video-controls">
                 <div className="logs-video-controls-left">
+                    {resolvedVideos.length > 1 && (
+                        <button
+                            type="button"
+                            className="logs-video-btn"
+                            onClick={() => {
+                                if (currentTime > 3 && videoRef.current) {
+                                    videoRef.current.currentTime = 0;
+                                    setCurrentTime(0);
+                                    syncPointAtTime(0);
+                                } else if (onSelectVideoIndex && resolvedIndex > 0) {
+                                    onSelectVideoIndex(resolvedIndex - 1);
+                                } else if (!isControlled && resolvedIndex > 0) {
+                                    setInternalIndex(resolvedIndex - 1);
+                                    setInternalAutoPlay(true);
+                                }
+                            }}
+                            disabled={resolvedIndex === 0 && currentTime <= 3}
+                            title="Previous Video in Sequence"
+                        >
+                            <FiSkipBack size={13} />
+                        </button>
+                    )}
+
                     <button
                         type="button"
                         className="logs-video-btn"
@@ -377,6 +480,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     >
                         {isPlaying ? <FiPause size={15} /> : <FiPlay size={15} />}
                     </button>
+
+                    {resolvedVideos.length > 1 && (
+                        <button
+                            type="button"
+                            className="logs-video-btn"
+                            onClick={() => {
+                                if (onSelectVideoIndex && resolvedIndex < resolvedVideos.length - 1) {
+                                    onSelectVideoIndex(resolvedIndex + 1);
+                                } else if (!isControlled && resolvedIndex < resolvedVideos.length - 1) {
+                                    setInternalIndex(resolvedIndex + 1);
+                                    setInternalAutoPlay(true);
+                                }
+                            }}
+                            disabled={resolvedIndex >= resolvedVideos.length - 1}
+                            title="Next Video in Sequence"
+                        >
+                            <FiSkipForward size={13} />
+                        </button>
+                    )}
 
                     <button
                         type="button"
