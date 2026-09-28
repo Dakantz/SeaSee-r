@@ -3,6 +3,7 @@ services:
   db:
     image: pgpointcloud/pointcloud:latest
     container_name: seasee-r-db
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -23,6 +24,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: seasee-r-redis
+    restart: unless-stopped
     ports:
       - "${REDIS_HOST_PORT:-6381}:6379" # Keeps host access available via localhost:6381 without conflicting with host redis (6379)
     volumes:
@@ -42,6 +44,7 @@ services:
         USER_ID: ${UID:-1000}
         GROUP_ID: ${GID:-1000}
     container_name: seasee-r-backend
+    restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
@@ -69,6 +72,7 @@ services:
         USER_ID: ${UID:-1000}
         GROUP_ID: ${GID:-1000}
     container_name: seasee-r-worker
+    restart: unless-stopped
     volumes:
       - ./backend:/app
     # Instead of hardcoding the URL in command, reference the env variable
@@ -94,6 +98,7 @@ services:
         USER_ID: ${UID:-1000}
         GROUP_ID: ${GID:-1000}
     container_name: seasee-r-opensfm
+    restart: unless-stopped
     volumes:
       - ./backend:/app
       - ./openSfM/openSfM_core:/source/OpenSfM
@@ -128,6 +133,7 @@ services:
     image: tusproject/tusd:latest
     user: "${UID:-1000}:${GID:-1000}"
     container_name: seasee-r-tusd
+    restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
@@ -150,6 +156,7 @@ services:
       context: ./seaseer-dashboard
       dockerfile: Dockerfile
     container_name: seasee-r-frontend
+    restart: unless-stopped
     ports:
       - "3000:80"
     environment:
