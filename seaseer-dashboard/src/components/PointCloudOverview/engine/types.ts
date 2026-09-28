@@ -36,6 +36,7 @@ export interface CameraViewTarget {
 export interface EngineConfig {
     // Heightmap / Terrain
     showHeightmap?: boolean;
+    experimentalBathymetry?: boolean;
     heightmapMode?: string;
     heightmapMapProvider?: MapProviderChoice;
     heightmapHeightProvider?: HeightProviderChoice;

@@ -1,9 +1,23 @@
 import * as THREE from "three";
-import type { EngineConfig } from "../types";
+import type { EngineConfig, MapProviderChoice, HeightProviderChoice } from "../types";
 
 // @ts-expect-error - geo-three submodule
 import { MapView, DebugProvider, HeightDebugProvider, OpenStreetMapsProvider, MapTilerProvider, BingMapsProvider, BathymetryProvider, EmodnetTileProvider, EmodnetWCSProvider, UnitsUtils, MapHeightNodeShader } from "../../../../../public/geo-three/build/geo-three.module.js";
 import { getApiBaseUrl } from "../../../../utils/apiConfig";
+
+export const EXPERIMENTAL_MAP_PROVIDERS: MapProviderChoice[] = [
+    "Bathymetry",
+    "MapTilerBasic",
+    "MapTilerOutdoor",
+    "MapTilerSatellite",
+    "Bing",
+];
+
+export const EXPERIMENTAL_HEIGHT_PROVIDERS: HeightProviderChoice[] = [
+    "Bathymetry",
+    "Debug",
+    "MapTiler",
+];
 
 export class TerrainSystem {
     private scene: THREE.Scene;
@@ -17,11 +31,21 @@ export class TerrainSystem {
 
     public updateConfig(config: Partial<EngineConfig>): void {
         const showHeightmap = config.showHeightmap ?? true;
+        const experimentalBathymetry = config.experimentalBathymetry;
         const heightmapMode = config.heightmapMode ?? "HEIGHT";
-        const mapChoice = config.heightmapMapProvider ?? "OpenStreetMaps";
-        const heightChoice = config.heightmapHeightProvider ?? "Bathymetry";
+        let mapChoice = config.heightmapMapProvider ?? "OpenStreetMaps";
+        let heightChoice = config.heightmapHeightProvider ?? (experimentalBathymetry ? "Bathymetry" : "EmodnetWCSBilinear");
 
-        const configKey = `${showHeightmap}_${heightmapMode}_${mapChoice}_${heightChoice}`;
+        if (!experimentalBathymetry) {
+            if (EXPERIMENTAL_MAP_PROVIDERS.includes(mapChoice)) {
+                mapChoice = "OpenStreetMaps";
+            }
+            if (EXPERIMENTAL_HEIGHT_PROVIDERS.includes(heightChoice)) {
+                heightChoice = "EmodnetWCSBilinear";
+            }
+        }
+
+        const configKey = `${showHeightmap}_${experimentalBathymetry}_${heightmapMode}_${mapChoice}_${heightChoice}`;
         if (configKey === this.currentConfigKey) {
             return;
         }
@@ -40,7 +64,11 @@ export class TerrainSystem {
 
             switch (mapChoice) {
                 case "Bathymetry":
-                    provider = new BathymetryProvider(`${apiBaseUrl}/bathymetry`);
+                    if (experimentalBathymetry) {
+                        provider = new BathymetryProvider(`${apiBaseUrl}/bathymetry`);
+                    } else {
+                        provider = new OpenStreetMapsProvider();
+                    }
                     break;
                 case "EmodnetWMS":
                     provider = new EmodnetTileProvider();
@@ -55,16 +83,32 @@ export class TerrainSystem {
                     provider = new DebugProvider();
                     break;
                 case "MapTilerBasic":
-                    provider = new MapTilerProvider("6XkbBH0nwlhrFrcr1xa3", "maps", "basic", "png");
+                    if (experimentalBathymetry) {
+                        provider = new MapTilerProvider("6XkbBH0nwlhrFrcr1xa3", "maps", "basic", "png");
+                    } else {
+                        provider = new OpenStreetMapsProvider();
+                    }
                     break;
                 case "MapTilerOutdoor":
-                    provider = new MapTilerProvider("6XkbBH0nwlhrFrcr1xa3", "maps", "outdoor", "png");
+                    if (experimentalBathymetry) {
+                        provider = new MapTilerProvider("6XkbBH0nwlhrFrcr1xa3", "maps", "outdoor", "png");
+                    } else {
+                        provider = new OpenStreetMapsProvider();
+                    }
                     break;
                 case "MapTilerSatellite":
-                    provider = new MapTilerProvider("6XkbBH0nwlhrFrcr1xa3", "maps", "hybrid", "jpg");
+                    if (experimentalBathymetry) {
+                        provider = new MapTilerProvider("6XkbBH0nwlhrFrcr1xa3", "maps", "hybrid", "jpg");
+                    } else {
+                        provider = new OpenStreetMapsProvider();
+                    }
                     break;
                 case "Bing":
-                    provider = new BingMapsProvider();
+                    if (experimentalBathymetry) {
+                        provider = new BingMapsProvider();
+                    } else {
+                        provider = new OpenStreetMapsProvider();
+                    }
                     break;
                 case "OpenStreetMaps":
                 default:
@@ -74,7 +118,11 @@ export class TerrainSystem {
 
             switch (heightChoice) {
                 case "Bathymetry":
-                    heightProvider = new BathymetryProvider(`${apiBaseUrl}/bathymetry`);
+                    if (experimentalBathymetry) {
+                        heightProvider = new BathymetryProvider(`${apiBaseUrl}/bathymetry`);
+                    } else {
+                        heightProvider = new EmodnetWCSProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", 1.0, true);
+                    }
                     break;
                 case "EmodnetWCSBilinear":
                     heightProvider = new EmodnetWCSProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", 1.0, true);
@@ -83,10 +131,18 @@ export class TerrainSystem {
                     heightProvider = new EmodnetWCSProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", 1.0, false);
                     break;
                 case "Debug":
-                    heightProvider = new HeightDebugProvider(new DebugProvider());
+                    if (experimentalBathymetry) {
+                        heightProvider = new HeightDebugProvider(new DebugProvider());
+                    } else {
+                        heightProvider = new EmodnetWCSProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", 1.0, true);
+                    }
                     break;
                 case "MapTiler":
-                    heightProvider = new MapTilerProvider("6XkbBH0nwlhrFrcr1xa3", "tiles", "terrain-rgb", "png");
+                    if (experimentalBathymetry) {
+                        heightProvider = new MapTilerProvider("6XkbBH0nwlhrFrcr1xa3", "tiles", "terrain-rgb", "png");
+                    } else {
+                        heightProvider = new EmodnetWCSProvider("https://ows.emodnet-bathymetry.eu/ows", "emodnet:mean", 1.0, true);
+                    }
                     break;
                 case "None":
                 default:

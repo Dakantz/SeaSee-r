@@ -5,6 +5,7 @@ import { PointCloudOverview } from "./PointCloudOverview";
 export const PointCloudOverviewContainer: React.FC = () => {
     const {
         showHeightmap,
+        experimentalBathymetry,
         heightmapMode,
         heightmapMapProvider,
         heightmapHeightProvider,
@@ -38,6 +39,7 @@ export const PointCloudOverviewContainer: React.FC = () => {
     return (
         <PointCloudOverview
             showHeightmap={showHeightmap}
+            experimentalBathymetry={experimentalBathymetry}
             heightmapMode={heightmapMode}
             heightmapMapProvider={heightmapMapProvider}
             heightmapHeightProvider={heightmapHeightProvider}

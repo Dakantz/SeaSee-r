@@ -19,12 +19,20 @@ export class PointCloudOverviewEngine {
     private callbacks: EngineCallbacks;
 
     private scene: THREE.Scene;
-    private camera: THREE.PerspectiveCamera;
+    private terrainScene: THREE.Scene;
+    private pointCloudCamera: THREE.PerspectiveCamera;
+    private terrainCamera: THREE.PerspectiveCamera;
     private renderer: THREE.WebGLRenderer;
     private cameraMovementSystem: CameraMovementSystem;
 
+    private get camera(): THREE.PerspectiveCamera {
+        return this.pointCloudCamera;
+    }
+
     private ambientLight: THREE.AmbientLight;
     private dirLight: THREE.DirectionalLight;
+    private terrainAmbientLight: THREE.AmbientLight;
+    private terrainDirLight: THREE.DirectionalLight;
 
     private pointCloudSystem: PointCloudSystem;
     private terrainSystem: TerrainSystem;
@@ -51,12 +59,16 @@ export class PointCloudOverviewEngine {
         // Apply Geo-Three patch
         patchGeoThreeHeight();
 
-        // Initialize Scene
+        // Initialize Scenes
+        this.terrainScene = new THREE.Scene();
+        this.terrainScene.name = "TerrainScene";
+        this.terrainScene.background = new THREE.Color(0x050811);
+
         this.scene = new THREE.Scene();
         this.scene.name = "PointCloudOverviewScene";
-        this.scene.background = new THREE.Color(0x050811);
+        this.scene.background = null;
 
-        // Initialize Scene Lighting
+        // Initialize Point Cloud Scene Lighting
         this.ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
         this.scene.add(this.ambientLight);
 
@@ -64,13 +76,29 @@ export class PointCloudOverviewEngine {
         this.dirLight.position.set(-5000, 5000, 8000);
         this.scene.add(this.dirLight);
 
-        // Initialize Camera
+        // Initialize Terrain Scene Lighting (required for MeshPhongMaterial used in Height modes)
+        this.terrainAmbientLight = new THREE.AmbientLight(0xffffff, 1.2);
+        this.terrainScene.add(this.terrainAmbientLight);
+
+        this.terrainDirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        this.terrainDirLight.position.set(-5000, 5000, 8000);
+        this.terrainScene.add(this.terrainDirLight);
+
+        // Initialize Cameras
         const width = container.clientWidth || window.innerWidth;
         const height = container.clientHeight || window.innerHeight;
-        this.camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 100000);
-        this.camera.position.set(TARGET_X, TARGET_Y - 50, 100);
-        this.camera.up.set(0, 0, 1);
-        this.camera.lookAt(TARGET_X, TARGET_Y, 0);
+
+        // Point cloud camera: fine near-plane for local precision, far = 100,000
+        this.pointCloudCamera = new THREE.PerspectiveCamera(60, width / height, 0.1, 100000);
+        this.pointCloudCamera.position.set(TARGET_X, TARGET_Y - 50, 100);
+        this.pointCloudCamera.up.set(0, 0, 1);
+        this.pointCloudCamera.lookAt(TARGET_X, TARGET_Y, 0);
+
+        // Terrain camera: far = 1e8 for global terrain
+        this.terrainCamera = new THREE.PerspectiveCamera(60, width / height, 1, 1e8);
+        this.terrainCamera.position.copy(this.pointCloudCamera.position);
+        this.terrainCamera.up.copy(this.pointCloudCamera.up);
+        this.terrainCamera.quaternion.copy(this.pointCloudCamera.quaternion);
 
         // Initialize WebGLRenderer
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
@@ -101,7 +129,7 @@ export class PointCloudOverviewEngine {
 
         // Initialize Core Systems
         this.pointCloudSystem = new PointCloudSystem(this.scene, this.callbacks, initialConfig);
-        this.terrainSystem = new TerrainSystem(this.scene, initialConfig);
+        this.terrainSystem = new TerrainSystem(this.terrainScene, initialConfig);
 
         const gizmoCallbacks: EngineCallbacks = {
             ...this.callbacks,
@@ -151,8 +179,13 @@ export class PointCloudOverviewEngine {
     }
 
     public handleResize(width: number, height: number): void {
-        this.camera.aspect = width / height;
-        this.camera.updateProjectionMatrix();
+        const aspect = width / height;
+        this.pointCloudCamera.aspect = aspect;
+        this.pointCloudCamera.updateProjectionMatrix();
+
+        this.terrainCamera.aspect = aspect;
+        this.terrainCamera.updateProjectionMatrix();
+
         this.renderer.setSize(width, height);
     }
 
@@ -349,9 +382,29 @@ export class PointCloudOverviewEngine {
         }
 
         this.cameraMovementSystem.update(delta);
-        this.pointCloudSystem.update(this.camera);
-        this.terrainSystem.update(this.camera, this.renderer);
-        this.renderer.render(this.scene, this.camera);
+
+        // Synchronize terrainCamera with pointCloudCamera transform & fov
+        this.terrainCamera.position.copy(this.pointCloudCamera.position);
+        this.terrainCamera.quaternion.copy(this.pointCloudCamera.quaternion);
+        this.terrainCamera.up.copy(this.pointCloudCamera.up);
+        if (this.terrainCamera.fov !== this.pointCloudCamera.fov) {
+            this.terrainCamera.fov = this.pointCloudCamera.fov;
+            this.terrainCamera.updateProjectionMatrix();
+        }
+
+        this.pointCloudSystem.update(this.pointCloudCamera);
+        this.terrainSystem.update(this.terrainCamera, this.renderer);
+
+        // Pass 1: Render Terrain with far = 1e9, near = 100
+        this.renderer.autoClear = true;
+        this.renderer.render(this.terrainScene, this.terrainCamera);
+
+        // Pass 2: Render Point Clouds & Scene with far = 100000, near = 0.1
+        this.renderer.autoClear = false;
+        this.renderer.clearDepth();
+        this.renderer.render(this.scene, this.pointCloudCamera);
+
+        // Pass 3: Render Transform Gizmo
         this.transformGizmoSystem.render();
         this.animationFrameId = requestAnimationFrame(this.tick);
     }
@@ -383,6 +436,11 @@ export class PointCloudOverviewEngine {
         this.ambientLight.dispose();
         this.dirLight.dispose();
 
+        this.terrainScene.remove(this.terrainAmbientLight);
+        this.terrainScene.remove(this.terrainDirLight);
+        this.terrainAmbientLight.dispose();
+        this.terrainDirLight.dispose();
+
         // Traverse scene and dispose remaining resources
         this.scene.traverse((child: any) => {
             if (child.geometry) {
@@ -404,5 +462,6 @@ export class PointCloudOverviewEngine {
         }
 
         this.scene.clear();
+        this.terrainScene.clear();
     }
 }

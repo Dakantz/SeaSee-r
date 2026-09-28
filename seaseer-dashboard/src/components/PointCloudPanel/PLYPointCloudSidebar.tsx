@@ -12,6 +12,8 @@ export interface PLYPointCloudSidebarProps {
     setPointSize?: (size: number) => void;
     showHeightmap?: boolean;
     setShowHeightmap?: (show: boolean) => void;
+    experimentalBathymetry?: boolean;
+    setExperimentalBathymetry?: (val: boolean) => void;
     heightmapMode?: "HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR";
     setHeightmapMode?: (mode: "HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR") => void;
     heightmapMapProvider?: MapProviderChoice;
@@ -57,11 +59,12 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const setPointSize = props.setPointSize ?? contextState?.setPointSize ?? (() => {});
     const showHeightmap = props.showHeightmap ?? contextState?.showHeightmap ?? false;
     const setShowHeightmap = props.setShowHeightmap ?? contextState?.setShowHeightmap ?? (() => {});
+    const experimentalBathymetry = props.experimentalBathymetry ?? contextState?.experimentalBathymetry;
     const heightmapMode = props.heightmapMode ?? contextState?.heightmapMode ?? "HEIGHT";
     const setHeightmapMode = props.setHeightmapMode ?? contextState?.setHeightmapMode ?? (() => {});
     const heightmapMapProvider = props.heightmapMapProvider ?? contextState?.heightmapMapProvider ?? "OpenStreetMaps";
     const setHeightmapMapProvider = props.setHeightmapMapProvider ?? contextState?.setHeightmapMapProvider ?? (() => {});
-    const heightmapHeightProvider = props.heightmapHeightProvider ?? contextState?.heightmapHeightProvider ?? "Bathymetry";
+    const heightmapHeightProvider = props.heightmapHeightProvider ?? contextState?.heightmapHeightProvider ?? (experimentalBathymetry ? "Bathymetry" : "EmodnetWCSBilinear");
     const setHeightmapHeightProvider = props.setHeightmapHeightProvider ?? contextState?.setHeightmapHeightProvider ?? (() => {});
     const isLoading = props.isLoading ?? contextState?.isLoading ?? false;
     const error = props.error ?? contextState?.error ?? null;
@@ -473,15 +476,19 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                     className="pointcloud-sidebar__select"
                                 >
                                     <option value="OpenStreetMaps" className="pointcloud-sidebar__select-option">OpenStreetMap</option>
-                                    <option value="Bathymetry" className="pointcloud-sidebar__select-option">SeaSee Bathymetry</option>
                                     <option value="EmodnetWMS" className="pointcloud-sidebar__select-option">EMODnet WMS</option>
                                     <option value="EmodnetWCSBilinear" className="pointcloud-sidebar__select-option">EMODnet WCS Bilinear</option>
                                     <option value="EmodnetWCSNearestNeighbour" className="pointcloud-sidebar__select-option">EMODnet WCS Nearest Neighbour</option>
                                     <option value="Debug" className="pointcloud-sidebar__select-option">Debug Grid</option>
-                                    <option value="MapTilerBasic" className="pointcloud-sidebar__select-option">Vector Map Tiler Basic</option>
-                                    <option value="MapTilerOutdoor" className="pointcloud-sidebar__select-option">Vector Map Tiler Outdoor</option>
-                                    <option value="MapTilerSatellite" className="pointcloud-sidebar__select-option">Satellite Maps Tiler</option>
-                                    <option value="Bing" className="pointcloud-sidebar__select-option">Bing Maps</option>
+                                    {experimentalBathymetry && (
+                                        <>
+                                            <option value="Bathymetry" className="pointcloud-sidebar__select-option">SeaSee Bathymetry</option>
+                                            <option value="MapTilerBasic" className="pointcloud-sidebar__select-option">Vector Map Tiler Basic</option>
+                                            <option value="MapTilerOutdoor" className="pointcloud-sidebar__select-option">Vector Map Tiler Outdoor</option>
+                                            <option value="MapTilerSatellite" className="pointcloud-sidebar__select-option">Satellite Maps Tiler</option>
+                                            <option value="Bing" className="pointcloud-sidebar__select-option">Bing Maps</option>
+                                        </>
+                                    )}
                                 </select>
                             </div>
 
@@ -493,12 +500,16 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                     onChange={(e) => setHeightmapHeightProvider(e.target.value as any)}
                                     className="pointcloud-sidebar__select"
                                 >
-                                    <option value="Bathymetry" className="pointcloud-sidebar__select-option">SeaSeer Bathymetry</option>
                                     <option value="EmodnetWCSBilinear" className="pointcloud-sidebar__select-option">EMODnet WCS Bilinear</option>
                                     <option value="EmodnetWCSNearestNeighbour" className="pointcloud-sidebar__select-option">EMODnet WCS Nearest Neighbour</option>
                                     <option value="None" className="pointcloud-sidebar__select-option">None (Flat Surface)</option>
-                                    <option value="Debug" className="pointcloud-sidebar__select-option">Height Debug Grid</option>
-                                    <option value="MapTiler" className="pointcloud-sidebar__select-option">Height Map Tiler</option>
+                                    {experimentalBathymetry && (
+                                        <>
+                                            <option value="Bathymetry" className="pointcloud-sidebar__select-option">SeaSeer Bathymetry</option>
+                                            <option value="Debug" className="pointcloud-sidebar__select-option">Height Debug Grid</option>
+                                            <option value="MapTiler" className="pointcloud-sidebar__select-option">Height Map Tiler</option>
+                                        </>
+                                    )}
                                 </select>
                             </div>
 

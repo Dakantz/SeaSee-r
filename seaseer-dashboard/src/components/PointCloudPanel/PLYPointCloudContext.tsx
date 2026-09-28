@@ -48,6 +48,8 @@ export interface PLYPointCloudContextType {
     setPointSize: (size: number) => void;
     showHeightmap: boolean;
     setShowHeightmap: (show: boolean) => void;
+    experimentalBathymetry: boolean;
+    setExperimentalBathymetry: (val: boolean | ((prev: boolean) => boolean)) => void;
     heightmapMode: "HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR";
     setHeightmapMode: (mode: "HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR") => void;
     heightmapMapProvider: MapProviderChoice;
@@ -146,7 +148,8 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [renderMode, setRenderMode] = useState<"points" | "mesh">("points");
     const [wireframe, setWireframe] = useState<boolean>(true);
     const [pointSize, setPointSize] = useState<number>(0.1);
-    const [showHeightmap, setShowHeightmap] = useState<boolean>(false);
+    const [showHeightmap, setShowHeightmap] = useState<boolean>(true);
+    const [experimentalBathymetry, setExperimentalBathymetry] = useState<boolean>(false);
     const [heightmapMode, setHeightmapMode] = useState<"HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR">("HEIGHT");
     const [heightmapMapProvider, setHeightmapMapProvider] = useState<MapProviderChoice>("OpenStreetMaps");
     const [heightmapHeightProvider, setHeightmapHeightProvider] = useState<HeightProviderChoice>("EmodnetWCSBilinear");
@@ -534,6 +537,8 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 setPointSize,
                 showHeightmap,
                 setShowHeightmap,
+                experimentalBathymetry,
+                setExperimentalBathymetry,
                 heightmapMode,
                 setHeightmapMode,
                 heightmapMapProvider,

@@ -136,7 +136,7 @@ function SceneLighting() {
 }
 
 function GeoThreeHeightmap() {
-    const { showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider } = usePLYPointCloudContext();
+    const { showHeightmap, experimentalBathymetry, heightmapMode, heightmapMapProvider, heightmapHeightProvider } = usePLYPointCloudContext();
     const mapViewRef = useRef<any>(null);
 
     const mapView = useMemo(() => {
@@ -146,8 +146,19 @@ function GeoThreeHeightmap() {
             let heightProvider: any = null;
             const apiBaseUrl = getApiBaseUrl();
 
-            const mapChoice = heightmapMapProvider ?? "OpenStreetMaps";
-            const heightChoice = heightmapHeightProvider ?? "Bathymetry";
+            let mapChoice = heightmapMapProvider ?? "OpenStreetMaps";
+            let heightChoice = heightmapHeightProvider ?? (experimentalBathymetry ? "Bathymetry" : "EmodnetWCSBilinear");
+
+            if (!experimentalBathymetry) {
+                const expMap = ["Bathymetry", "MapTilerBasic", "MapTilerOutdoor", "MapTilerSatellite", "Bing"];
+                if (expMap.includes(mapChoice)) {
+                    mapChoice = "OpenStreetMaps";
+                }
+                const expHeight = ["Bathymetry", "Debug", "MapTiler"];
+                if (expHeight.includes(heightChoice)) {
+                    heightChoice = "EmodnetWCSBilinear";
+                }
+            }
 
             // 1. Map Imagery Provider
             switch (mapChoice) {
@@ -223,7 +234,7 @@ function GeoThreeHeightmap() {
             console.error("Failed to initialize GeoThree MapView:", err);
             return null;
         }
-    }, [showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider]);
+    }, [showHeightmap, experimentalBathymetry, heightmapMode, heightmapMapProvider, heightmapHeightProvider]);
 
     useEffect(() => {
         mapViewRef.current = mapView;
