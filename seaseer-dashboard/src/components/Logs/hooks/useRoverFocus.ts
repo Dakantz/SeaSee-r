@@ -1,18 +1,16 @@
 import { useCallback } from "react";
 import * as THREE from "three";
 import { usePLYPointCloudContext } from "../../PointCloudPanel/PLYPointCloudContext";
+import { getPointCloudTransform } from "../../PointCloudPanel/utils/pointCloudTransform";
 import type { ComputedTelemetryPoint } from "../types";
-
-const TARGET_X = 50.0;
-const TARGET_Y = 50.0;
 
 /**
  * Custom hook to focus the 3D scene camera directly on the ROV position & viewpoint.
  * Hooks into the existing setCameraView inside PLYPointCloudContext and CameraFocusController
- * in PLYPointCloud.tsx from the outside, without requiring any edits to PLYPointCloudContext or PLYPointCloud.
+ * in PLYPointCloud.tsx from the outside, matching trajectory point focusing.
  */
 export function useRoverFocus() {
-    const { setCameraView, summaryMap, mode } = usePLYPointCloudContext();
+    const { setCameraView, setIsCameraUpFixed, summaryMap, catalog } = usePLYPointCloudContext();
 
     const focusOnRover = useCallback(
         (
@@ -25,6 +23,7 @@ export function useRoverFocus() {
                       rotation?: [number, number, number, number];
                       direction?: [number, number, number];
                       cameraHeaderId?: string;
+                      pointCloudId?: string;
                   }
         ) => {
             if (
@@ -36,16 +35,10 @@ export function useRoverFocus() {
                 return;
             }
 
-            // Route offset matching DBCameraTrajectoryDisplay
-            const routeOffset = new THREE.Vector3(
-                mode === "plyUrl" ? TARGET_X : 0,
-                mode === "plyUrl" ? TARGET_Y : 0,
-                0
-            );
+            setIsCameraUpFixed?.(false);
 
             // 1. Compute 3D camera position in world coordinates
-            const localPos = new THREE.Vector3(point.x, point.y, point.z);
-            const worldPos = localPos.clone().add(routeOffset);
+            const worldPos = new THREE.Vector3(point.x, point.y, point.z);
 
             // 2. Compute 3D camera orientation quaternion in world coordinates
             let worldQuat: THREE.Quaternion;
@@ -72,38 +65,63 @@ export function useRoverFocus() {
                 worldQuat = new THREE.Quaternion();
             }
 
-            // 3. Compute camera vertical FOV (in degrees) from camera header focal length
+            // 3. Compute camera vertical FOV (in degrees) from camera header focal length & find associated pointcloud
             let fovDeg: number | undefined = undefined;
+            let matchedHeaderPcId: string | undefined = undefined;
+
             if (point.cameraHeaderId && summaryMap) {
                 for (const summary of Object.values(summaryMap)) {
                     const header = summary?.connected_camera_headers?.find(
                         (h) => h.id === point.cameraHeaderId
                     );
-                    if (
-                        header &&
-                        typeof header.focal === "number" &&
-                        header.width &&
-                        header.height
-                    ) {
-                        const maxDim = Math.max(header.width, header.height);
-                        const focalPixels = header.focal * maxDim;
-                        if (focalPixels > 0) {
-                            const fovRad = 2 * Math.atan(header.height / 2 / focalPixels);
-                            fovDeg = fovRad * (180 / Math.PI);
-                            break;
+                    if (header) {
+                        if (header.pointcloud_id) {
+                            matchedHeaderPcId = header.pointcloud_id;
                         }
+                        if (
+                            typeof header.focal === "number" &&
+                            header.width &&
+                            header.height
+                        ) {
+                            const maxDim = Math.max(header.width, header.height);
+                            const focalPixels = header.focal * maxDim;
+                            if (focalPixels > 0) {
+                                const fovRad = 2 * Math.atan(header.height / 2 / focalPixels);
+                                fovDeg = fovRad * (180 / Math.PI);
+                            }
+                        }
+                        break;
                     }
                 }
             }
 
-            // Call the built-in focus hook that already exists inside PLYPointCloudContext!
+            // 4. Retrieve point cloud transformation matrix (full world matrix M_world) if applicable
+            const targetId =
+                ("pointCloudId" in point && typeof (point as { pointCloudId?: string }).pointCloudId === "string" && (point as { pointCloudId?: string }).pointCloudId) ||
+                matchedHeaderPcId ||
+                "";
+            const { matrixArr } = getPointCloudTransform(targetId, summaryMap, catalog);
+
+            if (matrixArr && matrixArr.length === 16) {
+                const matWorld = new THREE.Matrix4().fromArray(matrixArr);
+                worldPos.applyMatrix4(matWorld);
+
+                const transformPos = new THREE.Vector3();
+                const transformQuat = new THREE.Quaternion();
+                const transformScale = new THREE.Vector3();
+                matWorld.decompose(transformPos, transformQuat, transformScale);
+
+                worldQuat.premultiply(transformQuat);
+            }
+
+            // Call the built-in focus hook in PLYPointCloudContext
             setCameraView({
                 position: [worldPos.x, worldPos.y, worldPos.z],
                 quaternion: [worldQuat.x, worldQuat.y, worldQuat.z, worldQuat.w],
                 fov: fovDeg,
             });
         },
-        [setCameraView, summaryMap, mode]
+        [setCameraView, setIsCameraUpFixed, summaryMap, catalog]
     );
 
     return { focusOnRover };
