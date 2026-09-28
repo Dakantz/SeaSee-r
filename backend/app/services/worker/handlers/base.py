@@ -1,3 +1,4 @@
+import uuid
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -20,7 +21,9 @@ class BaseTaskHandler(ABC):
         error_message: Optional[str] = None,
         result: Optional[dict] = None
     ) -> bool:
-        """Updates job status, progress percentage, error message, and results in PostgreSQL. Returns False if job is CANCELLED."""
+        """Updates job status, progress percentage, error message, and results in PostgreSQL."""
+        job_uuid = uuid.UUID(str(job_id_str)) if isinstance(job_id_str, (str, uuid.UUID)) else job_id_str
+
         return await _update_job_status(
             job_id_str=job_id_str,
             status=status,
@@ -28,7 +31,6 @@ class BaseTaskHandler(ABC):
             error_message=error_message,
             result=result
         )
-
 
     @abstractmethod
     async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:

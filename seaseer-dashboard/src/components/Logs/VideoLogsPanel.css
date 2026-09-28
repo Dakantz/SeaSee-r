@@ -1,0 +1,370 @@
+/* VideoLogsPanel.css - Sidebar Styles for Video & Telemetry Log Panel in Workspace */
+
+.video-logs-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: var(--spacing-lg);
+}
+
+/* Header & Map Selector */
+.video-logs-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+.video-logs-select-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.video-logs-select {
+    flex: 1;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-default);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-xs);
+    padding: 5px 8px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.video-logs-refresh-btn {
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-default);
+    color: var(--color-text-muted);
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition-fast);
+}
+
+.video-logs-refresh-btn:hover {
+    color: var(--color-text-primary);
+    border-color: var(--color-primary-border);
+}
+
+/* Video Player in Sidebar */
+.logs-video-player-container {
+    display: flex;
+    flex-direction: column;
+    background: #090d16;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.logs-video-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: #0f172a;
+    border-bottom: 1px solid var(--color-border-subtle);
+    font-size: 11px;
+}
+
+.logs-video-title-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #e2e8f0;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 65%;
+}
+
+.logs-video-icon {
+    color: #38bdf8;
+    flex-shrink: 0;
+}
+
+.logs-video-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.logs-video-badge {
+    display: flex;
+    align-items: center;
+    font-size: 10px;
+    color: #94a3b8;
+    background: rgba(30, 41, 59, 0.8);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.logs-video-viewport {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    overflow: hidden;
+}
+
+.logs-video-element {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.logs-video-standby {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 20px 16px;
+    text-align: center;
+    color: #64748b;
+    user-select: none;
+}
+
+.logs-video-standby-icon {
+    color: #475569;
+    margin-bottom: 2px;
+}
+
+.logs-video-standby-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #94a3b8;
+    letter-spacing: 0.02em;
+}
+
+.logs-video-standby-desc {
+    font-size: 10px;
+    color: #64748b;
+    max-width: 210px;
+    line-height: 1.4;
+}
+
+.logs-badge-standby {
+    color: #94a3b8 !important;
+    background: rgba(51, 65, 85, 0.4) !important;
+    border-color: rgba(148, 163, 184, 0.2) !important;
+}
+
+.logs-video-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: #cbd5e1;
+    font-size: 12px;
+}
+
+.logs-video-overlay.error {
+    color: #f87171;
+}
+
+.logs-video-play-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.logs-video-play-button {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(2, 132, 199, 0.9);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Scrub Bar */
+.logs-video-scrub-bar {
+    width: 100%;
+    padding: 2px 8px;
+    background: #0f172a;
+    display: flex;
+    align-items: center;
+}
+
+.logs-video-slider {
+    width: 100%;
+    height: 4px;
+    accent-color: #0284c7;
+    cursor: pointer;
+    margin: 0;
+}
+
+/* Controls */
+.logs-video-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: #0f172a;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.logs-video-controls-left,
+.logs-video-controls-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.logs-video-btn {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 3px 5px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.logs-video-btn:hover {
+    color: #f1f5f9;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.logs-video-time {
+    font-size: 11px;
+    font-family: monospace;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    color: #cbd5e1;
+    margin-left: 4px;
+}
+
+.logs-video-time-div {
+    color: #64748b;
+}
+
+.logs-video-frame-badge {
+    font-size: 10px;
+    color: #38bdf8;
+    background: rgba(2, 132, 199, 0.15);
+    border: 1px solid rgba(2, 132, 199, 0.3);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: monospace;
+}
+
+.logs-video-rate-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #cbd5e1;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.logs-video-rate-btn:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.logs-video-btn:disabled,
+.logs-video-rate-btn:disabled,
+.logs-video-slider:disabled {
+    opacity: 0.3 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
+}
+
+/* Sidebar Adaptations for Embedded Logs Components */
+.video-logs-summary-wrapper .logs-summary-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)) !important;
+    gap: 6px !important;
+    margin-bottom: 0 !important;
+    flex-shrink: 0 !important;
+}
+
+.video-logs-summary-wrapper .logs-kpi-card {
+    padding: 6px 8px !important;
+}
+
+.video-logs-summary-wrapper .logs-kpi-value-group {
+    font-size: 14px !important;
+}
+
+.video-logs-summary-wrapper .logs-kpi-title {
+    font-size: 9px !important;
+}
+
+.video-logs-summary-wrapper .logs-kpi-subtext {
+    font-size: 9px !important;
+}
+
+.video-logs-charts-wrapper .logs-chart-panel {
+    width: 100% !important;
+    height: 290px !important;
+    min-height: 290px !important;
+    max-height: 290px !important;
+    flex-shrink: 0 !important;
+}
+
+.video-logs-charts-wrapper .logs-chart-header {
+    padding: 3px 6px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    display: flex !important;
+    align-items: center !important;
+}
+
+.video-logs-charts-wrapper .logs-chart-tabs {
+    width: 100% !important;
+    display: flex !important;
+    gap: 3px !important;
+    background: rgba(15, 23, 42, 0.6) !important;
+    padding: 2px !important;
+    border-radius: var(--radius-sm) !important;
+    border: 1px solid var(--color-border-subtle) !important;
+}
+
+.video-logs-charts-wrapper .logs-chart-tab {
+    flex: 1 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 10.5px !important;
+    padding: 3px 2px !important;
+    border-radius: var(--radius-xs) !important;
+    white-space: nowrap !important;
+}
+
+
