@@ -1,5 +1,6 @@
 import os
 import uuid
+import struct
 import logging
 from typing import Dict, Any, Optional
 from app.core.config import settings
@@ -13,6 +14,39 @@ from app.services.opensfm.ingest import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _read_las_laz_point_count(file_path: str) -> Optional[int]:
+    """
+    Extract point count directly from standard uncompressed LAS/LAZ header.
+    Both LAS and LAZ (LASzip) share the standard uncompressed ASPRS public header block (starting with b'LASF').
+    """
+    try:
+        with open(file_path, "rb") as f:
+            sig = f.read(4)
+            if sig != b"LASF":
+                return None
+            f.seek(24)
+            ver_bytes = f.read(2)
+            if len(ver_bytes) < 2:
+                return None
+            ver_major, ver_minor = struct.unpack("BB", ver_bytes)
+            f.seek(107)
+            legacy_bytes = f.read(4)
+            if len(legacy_bytes) < 4:
+                return None
+            legacy_count = struct.unpack("<I", legacy_bytes)[0]
+            # For LAS 1.4+, if legacy_count is 0 or 2^32-1, use 64-bit Extended Number of point records at offset 247
+            if (ver_major > 1 or (ver_major == 1 and ver_minor >= 4)) and legacy_count == 0:
+                f.seek(247)
+                ext_bytes = f.read(8)
+                if len(ext_bytes) == 8:
+                    return struct.unpack("<Q", ext_bytes)[0]
+            return legacy_count
+    except Exception as e:
+        logger.debug(f"Failed to parse LAS/LAZ binary header for {file_path}: {e}")
+        return None
+
 
 async def _get_dense_point_count(file_path: Optional[str]) -> int:
     """Helper to extract dense point count from a PLY or LAS/LAZ point cloud file."""
@@ -32,6 +66,11 @@ async def _get_dense_point_count(file_path: Optional[str]) -> int:
                         break
         except Exception as e:
             logger.debug(f"Failed to parse PLY header for {file_path}: {e}")
+
+    elif ext in (".las", ".laz"):
+        count = _read_las_laz_point_count(file_path)
+        if count is not None and count > 0:
+            return count
 
     try:
         from app.services.pointcloud.pdal import get_pointcloud_stats

@@ -27,6 +27,69 @@ async def test_get_dense_point_count_ply():
             os.remove(f_name)
 
 @pytest.mark.anyio
+async def test_get_dense_point_count_las_standard():
+    import struct
+    # Create valid LAS 1.2 binary header
+    header = bytearray(375)
+    header[0:4] = b"LASF"
+    header[24:26] = struct.pack("BB", 1, 2) # version 1.2
+    header[107:111] = struct.pack("<I", 54321) # legacy count
+
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".las", delete=False) as f:
+        f.write(header)
+        f_name = f.name
+
+    try:
+        count = await _get_dense_point_count(f_name)
+        assert count == 54321
+    finally:
+        if os.path.exists(f_name):
+            os.remove(f_name)
+
+@pytest.mark.anyio
+async def test_get_dense_point_count_laz_extended_1_4():
+    import struct
+    # Create valid LAS 1.4 binary header with 64-bit extended count
+    header = bytearray(375)
+    header[0:4] = b"LASF"
+    header[24:26] = struct.pack("BB", 1, 4) # version 1.4
+    header[107:111] = struct.pack("<I", 0) # legacy count = 0
+    header[247:255] = struct.pack("<Q", 5000000000) # extended count
+
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".laz", delete=False) as f:
+        f.write(header)
+        f_name = f.name
+
+    try:
+        count = await _get_dense_point_count(f_name)
+        assert count == 5000000000
+    finally:
+        if os.path.exists(f_name):
+            os.remove(f_name)
+
+@pytest.mark.anyio
+async def test_get_dense_point_count_laz_fallback_pdal():
+    # File without LASF header should fall back to get_pointcloud_stats
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".laz", delete=False) as f:
+        f.write(b"not a valid lasf header")
+        f_name = f.name
+
+    try:
+        with patch("app.services.pointcloud.pdal.get_pointcloud_stats", new_callable=AsyncMock) as mock_stats:
+            mock_stats.return_value = ({}, 8888)
+            count = await _get_dense_point_count(f_name)
+            assert count == 8888
+            mock_stats.assert_called_once_with(f_name)
+    finally:
+        if os.path.exists(f_name):
+            os.remove(f_name)
+
+@pytest.mark.anyio
+async def test_get_dense_point_count_nonexistent():
+    assert await _get_dense_point_count(None) == 0
+    assert await _get_dense_point_count("/nonexistent/file.laz") == 0
+
+@pytest.mark.anyio
 async def test_opensfm_ingest_result_with_reconstruction_json():
     handler = OpenSfMIngestTaskHandler()
 
