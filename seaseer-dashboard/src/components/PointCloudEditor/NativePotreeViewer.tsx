@@ -3,7 +3,6 @@ import { usePotreeViewer } from './hooks/usePotreeViewer';
 import { useLoadPLY } from './hooks/useLoadPLY';
 import { useLoadEPT } from './hooks/useLoadEPT';
 import { useTransformControls } from './hooks/useTransformControls';
-import { usePotreeRovRenderer } from './hooks/usePotreeRovRenderer';
 
 interface NativePotreeViewerProps {
     pointCloudIds: string[];
@@ -28,8 +27,6 @@ const NativePotreeViewer: React.FC<NativePotreeViewerProps> = ({ pointCloudIds, 
     // Initialize TransformControls (Gizmo)
     useTransformControls(gizmoMode, editingPointcloudId);
 
-    // Add ROV 3D model & Trajectory Path into Potree scene
-    usePotreeRovRenderer();
 
     return (
         <div ref={containerRef} className="potree_container" style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 0 }}>
