@@ -39,9 +39,11 @@ Integrated with the custom [`useJobSystemStatus`](file:///home/tastegger/Documen
 - **Slow/Idle Polling** (default: `30000ms`): Switched to automatically when all recent jobs are idle or finished, reducing server load.
 - **Visual Badge**: Live indicator in the header showing `LIVE` (fast polling) or `IDLE` (slow polling) with pulse animations.
 
-### 3. Real-Time Live Runtime Timer
+### 3. Real-Time Live Runtime Timer & Centralized Date Formatting
 
-- Implements a 1-second `setInterval` state tick (`now`) active whenever running/pending pipelines or jobs are present.
+- Implements a centralized 1-second `setInterval` state tick (`now`) in `JobSystemOverview.tsx` active whenever running/pending pipelines or jobs are present.
+- Passes `now` down through `PipelineGraph`, `StageColumn`, `JobNode`, and `JobDetailsDrawer` to eliminate multiple desynchronized interval timers.
+- Centralizes date and time formatting in [`dateUtils.ts`](file:///home/tastegger/Documents/SeaSee-r/seaseer-dashboard/src/utils/dateUtils.ts), enforcing a 24-hour model (`YYYY-MM-DD HH:mm:ss` and `HH:mm:ss`) without AM/PM across drawer metadata and tooltips.
 - Computes dynamic live durations (`calculateDuration`) for active jobs/pipelines before server completion timestamps are populated.
 
 ### 4. Optimistic UI Updates & Actions
@@ -54,6 +56,7 @@ Integrated with the custom [`useJobSystemStatus`](file:///home/tastegger/Documen
 ### 5. URL Deep-Linking & Filtering
 
 - **URL Query Sync**: Checks `?jobId=<id>` search parameter on load/change to automatically open the target job in the [`JobDetailsDrawer`](file:///home/tastegger/Documents/SeaSee-r/seaseer-dashboard/src/components/JobSystemOverview/JobDetailsDrawer.tsx).
+- **Click-Outside & Escape Dismissal**: The drawer automatically dismisses when clicking anywhere outside the drawer panel or when pressing the `Escape` key, while seamlessly allowing clicks on other job nodes to switch selection.
 - **Search Box**: Client-side text filter matching job names, pipeline names, job UUIDs, or task types in real time.
 
 ---

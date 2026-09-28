@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { JobResponse, JobStatus } from '../../client';
 import { TerminalConsole } from './TerminalConsole';
 import { calculateDuration } from '../../utils/durationUtils';
+import { formatDateTime } from '../../utils/dateUtils';
 
 export interface JobDetailsDrawerProps {
   job: JobResponse | null;
@@ -12,6 +13,7 @@ export interface JobDetailsDrawerProps {
   onCancelJob?: (jobId: string, e?: React.MouseEvent) => void;
   retryingJobId?: string | null;
   cancellingJobId?: string | null;
+  now?: number;
   style?: React.CSSProperties;
 }
 
@@ -34,13 +36,6 @@ const getJobStatusClass = (status: JobStatus): string => {
   }
 };
 
-const formatTime = (dateStr?: string | null): string => {
-  if (!dateStr) return '-';
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return '-';
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-};
-
 export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
   job,
   isOpen,
@@ -49,22 +44,23 @@ export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
   onCancelJob,
   retryingJobId,
   cancellingJobId,
+  now: propNow,
   style,
 }) => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [now, setNow] = useState<number>(Date.now());
+  const [internalNow, setInternalNow] = useState<number>(() => Date.now());
+  const now = propNow ?? internalNow;
   const [copiedUuid, setCopiedUuid] = useState<boolean>(false);
 
   const isRunning = job?.status === 'RUNNING';
 
   useEffect(() => {
-    if (!isOpen || !isRunning) return;
-    setNow(Date.now());
+    if (propNow !== undefined || !isOpen || !isRunning) return;
     const interval = setInterval(() => {
-      setNow(Date.now());
+      setInternalNow(Date.now());
     }, 1000);
     return () => clearInterval(interval);
-  }, [isOpen, isRunning, job?.id]);
+  }, [isOpen, isRunning, job?.id, propNow]);
 
   // Sync state to URL search params when drawer opens or closes
   useEffect(() => {
@@ -83,7 +79,48 @@ export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
         setSearchParams(current, { replace: true });
       }
     }
-  }, [isOpen, job, setSearchParams]);
+  }, [isOpen, job, searchParams, setSearchParams]);
+
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Close drawer when clicking outside of the drawer panel or pressing Escape
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+
+      // If clicked inside the drawer panel, do nothing
+      if (panelRef.current && panelRef.current.contains(target)) {
+        return;
+      }
+
+      // If clicked on an interactive job selection element (a job card in DAG or matrix row),
+      // allow its own click handler to select/switch jobs smoothly without closing first
+      if (target instanceof Element && (target.closest('.jso-job-node') || target.closest('.jso-matrix-row'))) {
+        return;
+      }
+
+      onClose();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
 
   if (!isOpen || !job) return null;
 
@@ -105,6 +142,7 @@ export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
   return (
     <div className="jso-drawer-backdrop" style={style} onClick={onClose}>
       <div
+        ref={panelRef}
         className="jso-drawer-panel"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -205,19 +243,25 @@ export const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({
             <div className="jso-meta-item">
               <dt className="jso-meta-lbl">Created</dt>
               <dd className="jso-meta-val">
-                <time dateTime={job.created_at || undefined}>{formatTime(job.created_at)}</time>
+                <time dateTime={job.created_at || undefined} title={formatDateTime(job.created_at)}>
+                  {formatDateTime(job.created_at)}
+                </time>
               </dd>
             </div>
             <div className="jso-meta-item">
               <dt className="jso-meta-lbl">Started</dt>
               <dd className="jso-meta-val">
-                <time dateTime={job.started_at || undefined}>{formatTime(job.started_at)}</time>
+                <time dateTime={job.started_at || undefined} title={formatDateTime(job.started_at)}>
+                  {formatDateTime(job.started_at)}
+                </time>
               </dd>
             </div>
             <div className="jso-meta-item">
               <dt className="jso-meta-lbl">Completed</dt>
               <dd className="jso-meta-val">
-                <time dateTime={job.completed_at || undefined}>{formatTime(job.completed_at)}</time>
+                <time dateTime={job.completed_at || undefined} title={formatDateTime(job.completed_at)}>
+                  {formatDateTime(job.completed_at)}
+                </time>
               </dd>
             </div>
             <div className="jso-meta-item">

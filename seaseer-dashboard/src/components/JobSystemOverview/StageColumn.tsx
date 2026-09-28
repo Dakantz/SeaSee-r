@@ -14,6 +14,7 @@ export interface StageColumnProps {
   onCancelJob?: (jobId: string, e: React.MouseEvent) => void;
   retryingJobId?: string | null;
   cancellingJobId?: string | null;
+  now?: number;
 }
 
 export const StageColumn: React.FC<StageColumnProps> = ({
@@ -21,6 +22,7 @@ export const StageColumn: React.FC<StageColumnProps> = ({
   selectedJobId,
   searchQuery = '',
   optimisticJobStatuses = {},
+  now,
   onSelectJob,
   onRetryJob,
   onCancelJob,
@@ -77,6 +79,7 @@ export const StageColumn: React.FC<StageColumnProps> = ({
                 isSelected={selectedJobId === job.id}
                 isSearchMatch={isSearchMatch}
                 isOptimistic={!!optStatus}
+                now={now}
                 onSelect={onSelectJob}
                 onRetry={onRetryJob}
                 onCancel={onCancelJob}

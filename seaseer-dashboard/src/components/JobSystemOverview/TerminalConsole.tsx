@@ -147,12 +147,12 @@ export const TerminalConsole: React.FC<TerminalConsoleProps> = ({
 
             {/* Init & Status Line */}
             <div className="tc-log-line info">
-              <time className="tc-timestamp">[{new Date(job.created_at).toLocaleTimeString()}]</time> [INFO] Initialized worker process context. Task status: <strong className={`tc-status-tag status-${job.status.toLowerCase()}`}>{job.status}</strong>
+              [INFO] Initialized worker process context. Task status: <strong className={`tc-status-tag status-${job.status.toLowerCase()}`}>{job.status}</strong>
             </div>
 
             {/* Progress Output */}
             <div className="tc-log-line info">
-              <time className="tc-timestamp">[{new Date().toLocaleTimeString()}]</time> [PROGRESS] Active execution progress: {(job.progress || 0).toFixed(1)}%
+              [PROGRESS] Active execution progress: {(job.progress || 0).toFixed(1)}%
             </div>
 
             {/* Collapsible Payload Group */}

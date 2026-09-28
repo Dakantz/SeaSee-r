@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import type { JobResponse, JobStatus } from '../../client';
 import { calculateDuration } from '../../utils/durationUtils';
+import { formatDateTime } from '../../utils/dateUtils';
 
 export interface JobNodeProps {
   job: JobResponse;
   isSelected?: boolean;
   isSearchMatch?: boolean;
   isOptimistic?: boolean;
+  now?: number;
   onSelect: (job: JobResponse) => void;
   onRetry?: (jobId: string, e: React.MouseEvent) => void;
   onCancel?: (jobId: string, e: React.MouseEvent) => void;
@@ -57,6 +59,7 @@ export const JobNode: React.FC<JobNodeProps> = ({
   isSelected = false,
   isSearchMatch = false,
   isOptimistic = false,
+  now: propNow,
   onSelect,
   onRetry,
   onCancel,
@@ -70,21 +73,37 @@ export const JobNode: React.FC<JobNodeProps> = ({
   const isCancelled = job.status === 'CANCELLED';
   const isCompleted = job.status === 'COMPLETED';
 
-  const [now, setNow] = useState<number>(Date.now());
+  const [internalNow, setInternalNow] = useState<number>(Date.now());
+  const now = propNow ?? internalNow;
 
   useEffect(() => {
-    if (!isRunning) return;
-    setNow(Date.now());
+    if (propNow !== undefined || !isRunning) return;
+    setInternalNow(Date.now());
     const interval = setInterval(() => {
-      setNow(Date.now());
+      setInternalNow(Date.now());
     }, 1000);
     return () => clearInterval(interval);
-  }, [isRunning]);
+  }, [isRunning, propNow]);
 
   const progressValue = isCompleted
     ? 100
     : Math.min(100, Math.max(0, job.progress || 0));
   const durationStr = calculateDuration(job.started_at, job.completed_at, now);
+
+  const tooltipParts = [
+    `Job: ${job.name}`,
+    `ID: ${job.id}`,
+    `Status: ${job.status}`,
+    `Progress: ${progressValue.toFixed(0)}%`,
+    `Created: ${formatDateTime(job.created_at)}`,
+  ];
+  if (job.started_at) {
+    tooltipParts.push(`Started: ${formatDateTime(job.started_at)}`);
+  }
+  if (job.completed_at) {
+    tooltipParts.push(`Completed: ${formatDateTime(job.completed_at)}`);
+  }
+  tooltipParts.push('Click to view drawer details');
 
   return (
     <div
@@ -92,7 +111,7 @@ export const JobNode: React.FC<JobNodeProps> = ({
       data-job-id={job.id}
       className={`jso-job-node ${getJobStatusClass(job.status)} ${isSelected ? 'selected' : ''} ${isSearchMatch ? 'search-match' : ''} ${isOptimistic ? 'optimistic' : ''}`}
       onClick={() => onSelect(job)}
-      title={`Job: ${job.name}\nID: ${job.id}\nStatus: ${job.status}\nProgress: ${progressValue.toFixed(0)}%\nClick to view drawer details`}
+      title={tooltipParts.join('\n')}
     >
       <div className="jso-node-header">
         <span className={`jso-node-icon status-${job.status.toLowerCase()}`}>

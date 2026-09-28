@@ -14,6 +14,7 @@ export interface PipelineGraphProps {
   onCancelJob?: (jobId: string, e: React.MouseEvent) => void;
   retryingJobId?: string | null;
   cancellingJobId?: string | null;
+  now?: number;
 }
 
 interface ConnectorPath {
@@ -73,6 +74,7 @@ export const PipelineGraph: React.FC<PipelineGraphProps> = ({
   selectedJobId,
   searchQuery = '',
   optimisticJobStatuses = {},
+  now,
   onSelectJob,
   onRetryJob,
   onCancelJob,
@@ -338,6 +340,7 @@ export const PipelineGraph: React.FC<PipelineGraphProps> = ({
             selectedJobId={selectedJobId}
             searchQuery={searchQuery}
             optimisticJobStatuses={optimisticJobStatuses}
+            now={now}
             onSelectJob={onSelectJob}
             onRetryJob={onRetryJob}
             onCancelJob={onCancelJob}

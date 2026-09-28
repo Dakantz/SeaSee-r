@@ -13,6 +13,7 @@ import {
 import { PipelineGraph } from './PipelineGraph';
 import { JobDetailsDrawer } from './JobDetailsDrawer';
 import { calculateDuration, formatDurationSeconds } from '../../utils/durationUtils';
+import { formatDateTime } from '../../utils/dateUtils';
 import './JobSystemOverview.css';
 
 export interface JobSystemOverviewProps {
@@ -88,13 +89,6 @@ const getPipelineStatusClass = (status: PipelineStatus): string => {
     default:
       return 'jso-pipe-status-pending';
   }
-};
-
-const formatTime = (dateStr?: string | null): string => {
-  if (!dateStr) return '';
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 };
 
 const calculatePipelineDuration = (
@@ -747,7 +741,7 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
                       </div>
 
                       <div className="jso-pipe-meta-actions">
-                        <span className="jso-pipe-time" title={`Created ${formatTime(pipeline.created_at)}`}>
+                        <span className="jso-pipe-time" title={`Created: ${formatDateTime(pipeline.created_at)}`}>
                           ⏱ {calculatePipelineDuration(pipeJobs, pipeline.status, now)}
                         </span>
 
@@ -771,6 +765,7 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
                       selectedJobId={selectedJob?.id}
                       searchQuery={searchQuery}
                       optimisticJobStatuses={optimisticJobStatuses}
+                      now={now}
                       onSelectJob={(job) => {
                         setSelectedJob(job);
                         onJobSelect?.(job);
@@ -803,7 +798,7 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
                       </div>
 
                       <div className="jso-pipe-meta-actions">
-                        <span className="jso-pipe-time" title={`Created ${formatTime(job.created_at)}`}>
+                        <span className="jso-pipe-time" title={`Created: ${formatDateTime(job.created_at)}`}>
                           ⏱ {calculateDuration(job.started_at, job.completed_at, now)}
                         </span>
 
@@ -833,6 +828,7 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
                       selectedJobId={selectedJob?.id}
                       searchQuery={searchQuery}
                       optimisticJobStatuses={optimisticJobStatuses}
+                      now={now}
                       onSelectJob={(j) => {
                         setSelectedJob(j);
                         onJobSelect?.(j);
@@ -957,6 +953,7 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
           onCancelJob={handleCancelJob}
           retryingJobId={retryingJobId}
           cancellingJobId={cancellingJobId}
+          now={now}
           style={{ top: `${drawerTopOffset}px` }}
         />
       </div>
