@@ -21,6 +21,8 @@ export interface DynamicLODConfig {
     maxConcurrentFetches: number;
     movementThresholdSq: number;
     showOutlines?: boolean;
+    /** Maximum number of chunks to keep in the in-memory background cache per target (default: 200) */
+    maxCacheSize?: number;
 }
 
 export function getLodColor(lod: number): string {
@@ -69,8 +71,16 @@ interface LoadedChunk {
     geometry?: THREE.BufferGeometry;
     mesh?: THREE.Points;
     outlineMesh?: THREE.LineSegments;
-    status: "loading" | "loaded" | "empty";
+    status: "loading" | "loaded" | "empty" | "cached";
     abortController?: AbortController;
+}
+
+export interface CachedChunk {
+    key: string;
+    lod: number;
+    bounds: Bounds3D;
+    geometry: THREE.BufferGeometry;
+    lastAccessed: number;
 }
 
 interface FetchTask {
@@ -102,10 +112,12 @@ class TargetLODManager {
     private outsideLevelsCount: number;
 
     private isCurrentlyInside: boolean | null = null;
+    private currentOutsideLod: number = 0;
     private wholeDomainChunk: LoadedChunk | null = null;
     private octreeRoot: OctreeNode;
 
     private loadedChunks: Map<string, LoadedChunk> = new Map();
+    private chunkCache: Map<string, CachedChunk> = new Map();
     private worldTransformMatrix: THREE.Matrix4 = new THREE.Matrix4();
     private invWorldTransformMatrix: THREE.Matrix4 = new THREE.Matrix4();
 
@@ -272,6 +284,7 @@ class TargetLODManager {
         this.isCurrentlyInside = isInside;
 
         if (isInside) {
+            this.currentOutsideLod = 0;
             // ==========================================
             // INSIDE REGIME: 3D OCTREE SPATIAL REFINEMENT
             // ==========================================
@@ -296,6 +309,15 @@ class TargetLODManager {
                 newActiveKeys.add(chunkKey);
 
                 const existing = this.loadedChunks.get(chunkKey);
+                if (existing && (existing.status === "loaded" || existing.status === "loading")) {
+                    continue;
+                }
+
+                // If available in background cache, activate and display immediately
+                if (this.activateCachedChunk(chunkKey)) {
+                    continue;
+                }
+
                 if (!existing) {
                     const distSq = localCamPos.distanceToSquared(leaf.center);
                     const baseFilters = this.target.filters || [];
@@ -332,8 +354,15 @@ class TargetLODManager {
 
             // Determine outside coarse LOD from distance
             const targetLod = this.calculateOutsideLod(distToCenter);
+            this.currentOutsideLod = targetLod;
             const wholeDomainKey = `${this.target.key}_whole_domain_lod${targetLod}`;
             newActiveKeys.add(wholeDomainKey);
+
+            // When moving camera outside of even the largest LOD (LOD10),
+            // evict all other cached chunks from the corresponding pointcloud
+            if (targetLod >= (this.config.maxLOD ?? 10)) {
+                this.evictOtherCachedChunks(wholeDomainKey);
+            }
 
             if (!this.wholeDomainChunk || this.wholeDomainChunk.lod !== targetLod) {
                 if (this.wholeDomainChunk) {
@@ -341,8 +370,17 @@ class TargetLODManager {
                     this.wholeDomainChunk = null;
                 }
 
+                // If moving at/outside max LOD, ensure any disposed whole domain chunks other than wholeDomainKey are evicted
+                if (targetLod >= (this.config.maxLOD ?? 10)) {
+                    this.evictOtherCachedChunks(wholeDomainKey);
+                }
+
                 const existing = this.loadedChunks.get(wholeDomainKey);
-                if (!existing) {
+                if (existing && (existing.status === "loaded" || existing.status === "loading")) {
+                    // Already in progress or displayed
+                } else if (this.activateCachedChunk(wholeDomainKey)) {
+                    // Restored instantly from background cache without network fetch
+                } else if (!existing) {
                     tasksToQueue.push({
                         key: wholeDomainKey,
                         pcId: this.target.pcId,
@@ -441,8 +479,12 @@ class TargetLODManager {
 
     public onChunkLoaded(key: string, geometry: THREE.BufferGeometry): void {
         const chunk = this.loadedChunks.get(key);
+        const lod = chunk ? chunk.lod : 0;
+        const bounds = chunk ? chunk.bounds : { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 };
+        this.saveToCache(key, lod, bounds, geometry);
+
         if (!chunk) {
-            geometry.dispose();
+            // Pointcloud data is safely preserved in background cache without displaying
             return;
         }
 
@@ -467,6 +509,155 @@ class TargetLODManager {
         if (key.includes("whole_domain")) {
             this.wholeDomainChunk = chunk;
         }
+    }
+
+    /**
+     * Checks if camera is currently outside of even the largest LOD (LOD10).
+     */
+    public isOutsideMaxLod(): boolean {
+        return this.isCurrentlyInside === false && this.currentOutsideLod >= (this.config.maxLOD ?? 10);
+    }
+
+    /**
+     * Evicts all cached chunks from this pointcloud target, preserving only the specified active key (e.g. LOD 10).
+     */
+    public evictOtherCachedChunks(keepKey?: string): number {
+        let evictedCount = 0;
+        for (const [key, cached] of this.chunkCache.entries()) {
+            if (keepKey && key === keepKey) {
+                continue;
+            }
+            cached.geometry.dispose();
+            this.chunkCache.delete(key);
+            evictedCount++;
+        }
+        return evictedCount;
+    }
+
+    /**
+     * Saves a pointcloud geometry into the background in-memory cache without displaying it to the user.
+     */
+    public saveToCache(
+        key: string,
+        lod: number,
+        bounds: Bounds3D,
+        geometry: THREE.BufferGeometry
+    ): void {
+        // When moving outside of even the largest LOD (LOD10), do not cache lower-LOD chunks
+        if (this.isOutsideMaxLod() && lod < (this.config.maxLOD ?? 10)) {
+            geometry.dispose();
+            return;
+        }
+
+        const existing = this.chunkCache.get(key);
+        if (existing) {
+            existing.lastAccessed = Date.now();
+            if (existing.geometry !== geometry) {
+                existing.geometry.dispose();
+                existing.geometry = geometry;
+            }
+            return;
+        }
+
+        this.chunkCache.set(key, {
+            key,
+            lod,
+            bounds: { ...bounds },
+            geometry,
+            lastAccessed: Date.now(),
+        });
+
+        this.pruneCache();
+    }
+
+    /**
+     * Activates a chunk directly from the background cache into the rendered scene.
+     */
+    public activateCachedChunk(key: string): boolean {
+        const cached = this.chunkCache.get(key);
+        if (!cached) return false;
+
+        cached.lastAccessed = Date.now();
+
+        const material = new THREE.PointsMaterial({
+            size: 2.0,
+            vertexColors: true,
+            sizeAttenuation: false,
+        });
+
+        const pointsMesh = new THREE.Points(cached.geometry, material);
+        const chunk: LoadedChunk = {
+            key: cached.key,
+            lod: cached.lod,
+            bounds: { ...cached.bounds },
+            geometry: cached.geometry,
+            mesh: pointsMesh,
+            status: "loaded",
+        };
+
+        this.loadedChunks.set(key, chunk);
+        this.group.add(pointsMesh);
+
+        if (this.showOutlines) {
+            this.createChunkOutline(chunk);
+        }
+
+        if (key.includes("whole_domain")) {
+            this.wholeDomainChunk = chunk;
+        }
+
+        return true;
+    }
+
+    /**
+     * Marks a background-fetched chunk as cached without rendering a mesh to the scene.
+     */
+    public onChunkCached(key: string): void {
+        const chunk = this.loadedChunks.get(key);
+        if (chunk) {
+            chunk.abortController = undefined;
+            chunk.status = "cached";
+            this.loadedChunks.delete(key);
+            if (this.wholeDomainChunk?.key === key) {
+                this.wholeDomainChunk = null;
+            }
+        }
+    }
+
+    /**
+     * Enforces LRU cache limits to keep memory bounded.
+     */
+    private pruneCache(): void {
+        const maxCache = this.config.maxCacheSize ?? 200;
+        if (this.chunkCache.size <= maxCache) return;
+
+        let oldestKey: string | null = null;
+        let oldestTime = Infinity;
+
+        for (const [key, item] of this.chunkCache.entries()) {
+            const active = this.loadedChunks.get(key);
+            if (active && active.status === "loaded") continue;
+
+            if (item.lastAccessed < oldestTime) {
+                oldestTime = item.lastAccessed;
+                oldestKey = key;
+            }
+        }
+
+        if (oldestKey) {
+            const evicted = this.chunkCache.get(oldestKey);
+            if (evicted) {
+                evicted.geometry.dispose();
+                this.chunkCache.delete(oldestKey);
+            }
+        }
+    }
+
+    public getCacheStats(): { size: number; keys: string[] } {
+        return {
+            size: this.chunkCache.size,
+            keys: Array.from(this.chunkCache.keys()),
+        };
     }
 
     private createChunkOutline(chunk: LoadedChunk): void {
@@ -573,7 +764,7 @@ class TargetLODManager {
         return count;
     }
 
-    private disposeChunk(chunk: LoadedChunk): void {
+    private disposeChunk(chunk: LoadedChunk, cacheGeometry: boolean = true): void {
         if (chunk.abortController) {
             chunk.abortController.abort();
             chunk.abortController = undefined;
@@ -600,17 +791,30 @@ class TargetLODManager {
             chunk.outlineMesh = undefined;
         }
         if (chunk.geometry) {
-            chunk.geometry.dispose();
+            if (cacheGeometry && chunk.status === "loaded" && !this.isOutsideMaxLod()) {
+                // Keep geometry cached in background without displaying
+                this.saveToCache(chunk.key, chunk.lod, chunk.bounds, chunk.geometry);
+            } else {
+                if (!this.chunkCache.has(chunk.key) || !cacheGeometry || this.isOutsideMaxLod()) {
+                    chunk.geometry.dispose();
+                }
+            }
             chunk.geometry = undefined;
         }
     }
 
     public destroy(): void {
         for (const chunk of this.loadedChunks.values()) {
-            this.disposeChunk(chunk);
+            this.disposeChunk(chunk, false);
         }
         this.loadedChunks.clear();
         this.wholeDomainChunk = null;
+
+        for (const cached of this.chunkCache.values()) {
+            cached.geometry.dispose();
+        }
+        this.chunkCache.clear();
+
         if (this.group.parent) {
             this.group.parent.remove(this.group);
         }
@@ -648,6 +852,7 @@ export class DynamicLODController {
             switchDistanceFactor: 1.0,
             maxConcurrentFetches: 6,
             movementThresholdSq: 0.05,
+            maxCacheSize: 200,
             ...config,
         };
         this.showOutlines = !!this.config.showOutlines;
@@ -756,9 +961,18 @@ export class DynamicLODController {
                     }
 
                     const currentManager = this.targetManagers.get(task.targetKey);
-                    if (currentManager && this.activeKeys.has(task.key)) {
-                        currentManager.onChunkLoaded(task.key, geometry);
-                        this.notifyPointCount();
+                    if (currentManager) {
+                        // Save geometry in background cache regardless of current view state
+                        currentManager.saveToCache(task.key, task.lod, task.bounds, geometry);
+
+                        if (this.activeKeys.has(task.key)) {
+                            // Currently in view: display to user
+                            currentManager.onChunkLoaded(task.key, geometry);
+                            this.notifyPointCount();
+                        } else {
+                            // Saved in background cache without displaying to the user
+                            currentManager.onChunkCached(task.key);
+                        }
                     } else {
                         geometry.dispose();
                     }
