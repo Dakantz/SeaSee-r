@@ -188,10 +188,15 @@
     right: 0;
     width: 156px;
     height: 156px;
-    margin: 56px 11px 0 0;
+    margin: 11px 11px 0 0;
     pointer-events: none;
     z-index: 1010;
     user-select: none;
+}
+
+.pointcloud-overview-container .gizmo-roll-ring-container,
+.gizmo-roll-ring-container.gizmo-roll-ring-container--overview {
+    margin: 56px 11px 0 0;
 }
 
 .gizmo-roll-ring-svg {

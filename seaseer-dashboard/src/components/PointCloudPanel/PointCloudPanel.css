@@ -34,7 +34,8 @@
     z-index: 1010;
 }
 
-.gizmo-roll-ring-container {
+.gizmo-roll-ring-container,
+.pointcloud-panel .gizmo-roll-ring-container {
     position: absolute;
     top: 0;
     right: 0;

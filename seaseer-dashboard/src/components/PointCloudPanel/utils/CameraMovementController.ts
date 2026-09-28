@@ -288,8 +288,8 @@ export class CameraMovementController {
         const deltaY = e.clientY - this.previousMouse.y;
         this.previousMouse = { x: e.clientX, y: e.clientY };
 
-        if (this.dragButton === 0) {
-            // Left click: Rotate around current camera position using quaternions
+        if (this.dragButton === 2) {
+            // Right click: Rotate around current camera position using quaternions
             const rotateSpeed = 0.003;
 
             if (this.isFixedUp) {
@@ -321,8 +321,8 @@ export class CameraMovementController {
 
                 this.camera.quaternion.premultiply(_qPitch).premultiply(_qYaw).normalize();
             }
-        } else if (this.dragButton === 2 || this.dragButton === 1) {
-            // Right or middle click: Pan camera position
+        } else if (this.dragButton === 0 || this.dragButton === 1) {
+            // Left or middle click: Pan camera position
             const heightFactor = getHeightFactor(this.camera.position.z);
             const panSpeed = 2.0 * heightFactor;
             const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(this.camera.quaternion);

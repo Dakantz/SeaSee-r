@@ -161,6 +161,7 @@ export class TransformGizmoSystem {
 
         this.overlayRoot.render(
             React.createElement(GizmoRollRing, {
+                className: "gizmo-roll-ring-container--overview",
                 camera: this.camera,
                 isFixedUp: this.isCameraUpFixed,
                 onToggleFixedUp: () => {
