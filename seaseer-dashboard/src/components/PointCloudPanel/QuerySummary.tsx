@@ -1,7 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useContext, useMemo } from "react";
+import { Link } from "react-router-dom";
+import { FiExternalLink } from "react-icons/fi";
 import type { CustomQuery, QuerySummaryData, ConnectedPointCloudMetadata } from "./CustomQueryManager";
 import PointProgressBar from "./PointProgressBar";
-import { usePLYPointCloudContext } from "./PLYPointCloudContext";
+import { PLYPointCloudContext } from "./PLYPointCloudContext";
+import { useTrajectoryLogSync } from "../Logs/hooks/useTrajectoryLogSync";
 import type { FilterRule } from "./utils/filterUtils.ts";
 
 export interface QuerySummaryProps {
@@ -90,12 +93,7 @@ const ConnectedMetadataCard: React.FC<{
 }> = ({ meta, cameraHeaders = [], defaultExpanded = false, queryId, queryFilters, onRefreshSummary }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(defaultExpanded);
 
-  let ctx: ReturnType<typeof usePLYPointCloudContext> | null = null;
-  try {
-    ctx = usePLYPointCloudContext();
-  } catch {
-    // Context unavailable
-  }
+  const ctx = useContext(PLYPointCloudContext);
 
   const handleResetPointcloudTransform = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -163,8 +161,32 @@ const ConnectedMetadataCard: React.FC<{
     (k) => !standardKeys.has(k) && meta[k] !== undefined && meta[k] !== null
   );
 
+  const focusedTrajectoryId = useTrajectoryLogSync((state) => state.focusedTrajectoryId);
+
+  const isSelected =
+    Boolean(meta.id) &&
+    (ctx?.identifier === meta.id || focusedTrajectoryId === meta.id);
+
+  const handleSelectDataset = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!meta.id) return;
+
+    if (isSelected) {
+      if (ctx?.selectPointcloud) {
+        ctx.selectPointcloud(null);
+      }
+      useTrajectoryLogSync.getState().focusTrajectory(null);
+      return;
+    }
+
+    if (ctx?.selectPointcloud) {
+      ctx.selectPointcloud(meta.id);
+    }
+    useTrajectoryLogSync.getState().focusTrajectory(meta.id, true);
+  };
+
   return (
-    <div className="query-summary__connected-card">
+    <div className={`query-summary__connected-card ${isSelected ? "query-summary__connected-card--selected" : ""}`}>
       <div
         className="query-summary__connected-card-header"
         onClick={() => setIsExpanded(!isExpanded)}
@@ -184,13 +206,42 @@ const ConnectedMetadataCard: React.FC<{
             </span>
           )}
         </div>
-        <button
-          type="button"
-          className="query-summary__connected-toggle-btn"
-          aria-label={isExpanded ? "Collapse metadata details" : "Expand metadata details"}
-        >
-          {isExpanded ? "▲ Hide Details" : "▼ Details"}
-        </button>
+        <div className="query-summary__connected-actions">
+          <button
+            type="button"
+            className={`query-summary__connected-select-btn ${isSelected ? "query-summary__connected-select-btn--active" : ""}`}
+            onClick={handleSelectDataset}
+            title={isSelected ? "Click to deselect dataset" : "Click to select dataset for video logs and telemetry"}
+          >
+            {isSelected ? "✓ Selected" : "Select"}
+          </button>
+          {meta.id && (
+            <Link
+              to={`/logs?map=${meta.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="query-summary__connected-link-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (ctx?.selectPointcloud) {
+                  ctx.selectPointcloud(meta.id);
+                }
+                useTrajectoryLogSync.getState().focusTrajectory(meta.id, true);
+              }}
+              title={`Open dedicated logs page for dataset ${meta.id} in a new tab`}
+            >
+              <span>Logs</span>
+              <FiExternalLink size={10} />
+            </Link>
+          )}
+          <button
+            type="button"
+            className="query-summary__connected-toggle-btn"
+            aria-label={isExpanded ? "Collapse metadata details" : "Expand metadata details"}
+          >
+            {isExpanded ? "▲ Hide Details" : "▼ Details"}
+          </button>
+        </div>
       </div>
 
       {isExpanded && (
@@ -375,6 +426,38 @@ export const QuerySummary: React.FC<QuerySummaryProps> = ({
   isLoadingStream = false,
   isLoadedStream = false,
 }) => {
+  const sortedConnectedPointclouds = useMemo(() => {
+    if (!summary?.connected_pointclouds || summary.connected_pointclouds.length === 0) {
+      return [];
+    }
+    return [...summary.connected_pointclouds].sort((a, b) => {
+      // 1. Sort by Batch ID first
+      const batchA = a.batch_id != null ? String(a.batch_id) : "";
+      const batchB = b.batch_id != null ? String(b.batch_id) : "";
+      if (batchA !== batchB) {
+        if (batchA && !batchB) return -1;
+        if (!batchA && batchB) return 1;
+        const cmp = batchA.localeCompare(batchB, undefined, { numeric: true });
+        if (cmp !== 0) return cmp;
+      }
+
+      // 2. Sort by Reconstruction Index
+      const recA =
+        a.reconstruction_index != null && !isNaN(Number(a.reconstruction_index))
+          ? Number(a.reconstruction_index)
+          : 0;
+      const recB =
+        b.reconstruction_index != null && !isNaN(Number(b.reconstruction_index))
+          ? Number(b.reconstruction_index)
+          : 0;
+      if (recA !== recB) {
+        return recA - recB;
+      }
+
+      // 3. Fallback deterministic tie-breaker
+      return (a.orig_filename || a.id || "").localeCompare(b.orig_filename || b.id || "");
+    });
+  }, [summary?.connected_pointclouds]);
   return (
     <div className="query-summary">
       <div className="query-summary__header">
@@ -465,7 +548,7 @@ export const QuerySummary: React.FC<QuerySummaryProps> = ({
                 Connected Metadata ({summary.connected_pointclouds.length}):
               </span>
               <div className="query-summary__connected-list">
-                {summary.connected_pointclouds.map((meta, idx) => {
+                {sortedConnectedPointclouds.map((meta, idx) => {
                   const matchingCameraHeaders = summary.connected_camera_headers?.filter(
                     (cam) => cam.pointcloud_id === meta.id
                   );

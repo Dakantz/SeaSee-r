@@ -31,6 +31,7 @@ class VideoResponse(BaseModel):
     total_bytes: Optional[int] = None
     video_start_at: datetime
     video_stop_at: datetime
+    duration: Optional[float] = None
     stream_url: Optional[str] = None
     download_url: Optional[str] = None
     upload_metadata: Optional[UploadMetadataResponse] = None

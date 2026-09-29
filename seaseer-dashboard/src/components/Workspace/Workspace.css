@@ -51,7 +51,8 @@
    ========================================== */
 .left-sidebar-header,
 .jobs-sidebar-header,
-.videologs-sidebar-header {
+.videologs-sidebar-header,
+.right-sidebar-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -67,19 +68,24 @@
 
 .left-sidebar-title,
 .jobs-sidebar-title,
-.videologs-sidebar-title {
+.videologs-sidebar-title,
+.right-sidebar-title {
     font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
 }
 
 /* Shared, Pixel-Identical Cross Close Button */
 .panel-close-btn,
 .left-sidebar-toggle-btn,
 .jobs-sidebar-toggle-btn,
-.videologs-sidebar-toggle-btn {
+.videologs-sidebar-toggle-btn,
+.right-sidebar-toggle-btn {
     background: transparent;
     border: none;
     color: var(--color-text-muted);
@@ -95,7 +101,8 @@
 .panel-close-btn:hover,
 .left-sidebar-toggle-btn:hover,
 .jobs-sidebar-toggle-btn:hover,
-.videologs-sidebar-toggle-btn:hover {
+.videologs-sidebar-toggle-btn:hover,
+.right-sidebar-toggle-btn:hover {
     background: var(--color-border-default);
     color: var(--color-text-primary);
 }
@@ -234,4 +241,34 @@
     display: flex;
     flex-direction: column;
     gap: var(--spacing-sm);
+}
+
+/* Collapsible Right Sidebar Styles for PointCloudOverview */
+.right-sidebar-panel {
+    background: var(--color-bg-surface);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    border-left: 1px solid var(--color-border-default);
+}
+
+.right-sidebar-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.right-sidebar-content .job-system-overview {
+    border-radius: var(--radius-md);
+    height: 100%;
+}
+
+.right-sidebar-content .pointcloud-sidebar {
+    height: 100%;
+    overflow-y: auto;
 }

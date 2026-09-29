@@ -243,7 +243,7 @@ export class CameraMovementSystem {
 
         const isShift = this.keysPressed["ShiftLeft"] || this.keysPressed["ShiftRight"];
         const heightFactor = getHeightFactor(this.camera.position.z);
-        const moveSpeed = (isShift ? 2000 : 200) * heightFactor * delta;
+        const moveSpeed = (isShift ? 1000 : 100) * heightFactor * delta;
 
         this.camera.getWorldDirection(_tmpVecForward);
         const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(this.camera.quaternion);
@@ -347,7 +347,7 @@ export class CameraMovementSystem {
         const zoomSpeed = 1.0 * heightFactor;
         this.camera.getWorldDirection(_tmpVecDir);
 
-        const moveDistance = -Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 100) * zoomSpeed;
+        const moveDistance = -Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 10) * zoomSpeed;
         this.camera.position.addScaledVector(_tmpVecDir, moveDistance);
     }
 

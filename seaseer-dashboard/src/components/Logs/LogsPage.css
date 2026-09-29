@@ -435,6 +435,27 @@
     stroke: rgba(255, 255, 255, 0.04);
 }
 
+.logs-video-boundary-line {
+    stroke: rgba(56, 189, 248, 0.3);
+    stroke-dasharray: 4 3;
+    stroke-width: 1.5;
+}
+
+.logs-part-badge {
+    fill: #64748b;
+    font-size: 9px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    text-anchor: middle;
+    letter-spacing: 0.5px;
+    user-select: none;
+}
+
+.logs-part-badge.active {
+    fill: #38bdf8;
+    font-weight: 700;
+}
+
 .logs-axis-label-y {
     fill: var(--color-text-subtle);
     font-size: 9px;

@@ -16,6 +16,7 @@ export default function LogsPage() {
         selectMap,
         loadingMaps,
         loadingFrames,
+        videos,
         error,
         telemetryPoints,
         summary,
@@ -78,6 +79,7 @@ export default function LogsPage() {
                     />
                     <LogsCharts
                         points={telemetryPoints}
+                        videos={videos}
                         activeIndex={activeIndex}
                         hoveredIndex={hoveredIndex}
                         onSelectIndex={setActiveIndex}

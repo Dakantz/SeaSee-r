@@ -5,7 +5,6 @@ import { LogsSummaryCards } from "./LogsSummaryCards";
 import { LogsCharts } from "./LogsCharts";
 import { usePLYPointCloudContext } from "../PointCloudPanel/PLYPointCloudContext";
 import { useLogsData, useTrajectoryLogSync, useRoverFocus } from "./hooks";
-import type { VideoItem } from "./types";
 
 import "./LogsPage.css";
 import "./VideoLogsPanel.css";
@@ -17,6 +16,8 @@ export const VideoLogsPanel: React.FC = () => {
         selectMap,
         loadingMaps,
         loadingFrames,
+        loadingVideos,
+        videos,
         error,
         telemetryPoints,
         summary,
@@ -35,74 +36,44 @@ export const VideoLogsPanel: React.FC = () => {
     const focusedTrajectoryId = useTrajectoryLogSync((state) => state.focusedTrajectoryId);
 
     // Sequential Video Playlist State
-    const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
-    const [videos, setVideos] = useState<VideoItem[]>([]);
     const [currentVideoIndex, setCurrentVideoIndex] = useState<number>(0);
-    const [loadingVideos, setLoadingVideos] = useState<boolean>(false);
     const [autoPlayNext, setAutoPlayNext] = useState<boolean>(false);
 
-    // Fetch video playlist for the focused dataset
-    const fetchVideos = useCallback(async () => {
-        if (!selectedMapId) {
-            setVideos([]);
-            setCurrentVideoIndex(0);
-            setAutoPlayNext(false);
-            return;
-        }
-
-        setLoadingVideos(true);
-        try {
-            const res = await fetch(`${apiBaseUrl}/videos/by-pointcloud/${selectedMapId}`);
-            if (res.ok) {
-                const data = await res.json();
-                const list: VideoItem[] = Array.isArray(data) ? data : data ? [data] : [];
-                setVideos(list);
-                setCurrentVideoIndex(0);
-                setAutoPlayNext(false);
-            } else {
-                setVideos([]);
-                setCurrentVideoIndex(0);
-            }
-        } catch (err) {
-            console.warn("Could not load video playlist for point cloud:", err);
-            setVideos([]);
-            setCurrentVideoIndex(0);
-        } finally {
-            setLoadingVideos(false);
-        }
-    }, [selectedMapId, apiBaseUrl]);
-
+    // Reset current video index when selected map changes
     useEffect(() => {
-        fetchVideos();
-    }, [fetchVideos]);
+        setCurrentVideoIndex(0);
+        setAutoPlayNext(false);
+        useTrajectoryLogSync.getState().clearSync();
+    }, [selectedMapId]);
+
+    const handleSelectVideoIndex = useCallback((index: number, autoPlay: boolean = false) => {
+        if (index >= 0 && index < videos.length) {
+            setCurrentVideoIndex(index);
+            setAutoPlayNext(autoPlay);
+        }
+    }, [videos.length]);
 
     // Advance to next video when current video completes
     const handleVideoEnded = useCallback(() => {
-        setCurrentVideoIndex((prevIndex) => {
-            if (prevIndex < videos.length - 1) {
-                setAutoPlayNext(true);
-                return prevIndex + 1;
-            }
+        if (currentVideoIndex < videos.length - 1) {
+            handleSelectVideoIndex(currentVideoIndex + 1, true);
+        } else {
             setAutoPlayNext(false);
-            return prevIndex;
-        });
-    }, [videos.length]);
-
-    const handleSelectVideoIndex = useCallback((index: number) => {
-        if (index >= 0 && index < videos.length) {
-            setCurrentVideoIndex(index);
-            setAutoPlayNext(true);
         }
-    }, [videos.length]);
+    }, [currentVideoIndex, videos.length, handleSelectVideoIndex]);
 
-    // Sync active point index when updated externally (from 3D map click or video playback)
+    // Sync active point index when updated externally (from 3D map click)
     useEffect(() => {
-        if (!activeSyncPoint || syncSource === "chart") return;
+        if (!activeSyncPoint || syncSource !== "3d") return;
 
         // If activeSyncPoint has an index, use it directly
         if (typeof activeSyncPoint.index === "number" && activeSyncPoint.index >= 0) {
             if (activeSyncPoint.index !== activeIndex) {
                 setActiveIndex(activeSyncPoint.index);
+            }
+            const pt = telemetryPoints[activeSyncPoint.index];
+            if (pt && typeof pt.videoIndex === "number" && pt.videoIndex !== currentVideoIndex) {
+                handleSelectVideoIndex(pt.videoIndex);
             }
             return;
         }
@@ -120,37 +91,23 @@ export const VideoLogsPanel: React.FC = () => {
 
         if (matchedIdx !== -1 && matchedIdx !== activeIndex) {
             setActiveIndex(matchedIdx);
-        }
-    }, [activeSyncPoint, syncSource, telemetryPoints, activeIndex, setActiveIndex]);
-
-    // Automatically sync when 3D scene point cloud is selected
-    useEffect(() => {
-        if (plyContext?.identifier && plyContext.identifier !== selectedMapId) {
-            const match = maps.find((m) => m.id === plyContext.identifier || m.name === plyContext.identifier);
-            if (match) {
-                selectMap(match.id);
+            const pt = telemetryPoints[matchedIdx];
+            if (pt && typeof pt.videoIndex === "number" && pt.videoIndex !== currentVideoIndex) {
+                handleSelectVideoIndex(pt.videoIndex);
             }
         }
-    }, [plyContext?.identifier, selectedMapId, maps, selectMap]);
+    }, [activeSyncPoint, syncSource, telemetryPoints, activeIndex, setActiveIndex, currentVideoIndex, handleSelectVideoIndex]);
 
-    // Automatically focus on trajectory/pointcloud if focused from 3D scene
+    // Automatically sync when 3D scene point cloud or query card is selected/deselected
     useEffect(() => {
-        if (focusedTrajectoryId && focusedTrajectoryId !== selectedMapId) {
-            const match = maps.find(
-                (m) => m.id === focusedTrajectoryId || m.name === focusedTrajectoryId
-            );
-            if (match) {
-                selectMap(match.id);
-            }
+        const targetId = focusedTrajectoryId || plyContext?.identifier || null;
+        if (targetId !== selectedMapId) {
+            const match = targetId ? maps.find((m) => m.id === targetId || m.name === targetId) : null;
+            selectMap(match ? match.id : targetId);
         }
-    }, [focusedTrajectoryId, selectedMapId, maps, selectMap]);
+    }, [focusedTrajectoryId, plyContext?.identifier, selectedMapId, maps, selectMap]);
 
-    const handleMapChange = (newId: string | null) => {
-        selectMap(newId);
-        if (plyContext?.selectPointcloud) {
-            plyContext.selectPointcloud(newId);
-        }
-    };
+    const activeMap = maps.find((m) => m.id === selectedMapId);
 
     // When a point is selected on the chart, update chart, seek video, and focus 3D camera
     const handleChartPointSelect = useCallback(
@@ -158,6 +115,11 @@ export const VideoLogsPanel: React.FC = () => {
             setActiveIndex(index);
             const pt = telemetryPoints[index];
             if (!pt) return;
+
+            // Switch video if this point belongs to another video part in the playlist
+            if (typeof pt.videoIndex === "number" && pt.videoIndex !== currentVideoIndex) {
+                handleSelectVideoIndex(pt.videoIndex);
+            }
 
             // 1. Sync global state (source = "chart") -> seeks video & highlights 3D waypoint
             const videoTime = pt.videoTime !== undefined ? pt.videoTime : pt.relativeTime;
@@ -167,6 +129,7 @@ export const VideoLogsPanel: React.FC = () => {
                     index: pt.index,
                     relativeTime: pt.relativeTime,
                     videoTime,
+                    videoIndex: pt.videoIndex,
                     frameNumber: pt.frameNumber,
                     filename: pt.filename,
                     x: pt.x,
@@ -183,42 +146,59 @@ export const VideoLogsPanel: React.FC = () => {
             // 2. Focus 3D camera on rover at that position using the EXACT same hook!
             focusOnRover(pt);
         },
-        [telemetryPoints, setActiveIndex, selectedMapId, focusOnRover]
+        [telemetryPoints, setActiveIndex, selectedMapId, focusOnRover, currentVideoIndex, handleSelectVideoIndex]
+    );
+
+    // When an empty section of the timeline is clicked, seek video player directly
+    const handleChartSeekTime = useCallback(
+        (timeSec: number, targetVideoIndex?: number) => {
+            if (typeof targetVideoIndex === "number" && targetVideoIndex !== currentVideoIndex) {
+                handleSelectVideoIndex(targetVideoIndex);
+            }
+            setActiveIndex(null);
+            useTrajectoryLogSync.getState().selectPoint(
+                {
+                    relativeTime: timeSec,
+                    videoTime: timeSec,
+                    videoIndex: targetVideoIndex ?? currentVideoIndex,
+                    pointCloudId: selectedMapId || undefined,
+                },
+                "chart"
+            );
+        },
+        [currentVideoIndex, handleSelectVideoIndex, selectedMapId, setActiveIndex]
     );
 
     return (
         <div className="video-logs-panel">
-            {/* Top Toolbar: Map/Dataset Selector */}
-            <div className="video-logs-toolbar">
-                <div className="video-logs-select-row">
-                    <select
-                        className="video-logs-select"
-                        value={selectedMapId || ""}
-                        onChange={(e) => handleMapChange(e.target.value || null)}
-                        disabled={loadingMaps}
-                    >
-                        <option value="">-- No dataset focused --</option>
-                        {maps.map((m) => (
-                            <option key={m.id} value={m.id}>
-                                {m.name} ({m.number_of_points ? (m.number_of_points / 1000000).toFixed(1) + "M pts" : "Dataset"})
-                            </option>
-                        ))}
-                    </select>
-
-                    <button
-                        type="button"
-                        className="video-logs-refresh-btn"
-                        onClick={() => {
-                            refetch();
-                            fetchVideos();
-                        }}
-                        disabled={loadingMaps || loadingFrames || loadingVideos}
-                        title="Reload Telemetry & Video"
-                    >
-                        ↻
-                    </button>
+            {/* Top Toolbar: Active Dataset Header */}
+            {selectedMapId ? (
+                <div className="video-logs-toolbar">
+                    <div className="video-logs-active-row">
+                        <div className="video-logs-active-info">
+                            <span className="video-logs-active-label">Dataset:</span>
+                            <span className="video-logs-active-name" title={activeMap?.name || selectedMapId}>
+                                {activeMap?.name || selectedMapId}
+                            </span>
+                        </div>
+                        <button
+                            type="button"
+                            className="video-logs-refresh-btn"
+                            onClick={() => refetch()}
+                            disabled={loadingMaps || loadingFrames || loadingVideos}
+                            title="Reload Telemetry & Video"
+                        >
+                            ↻
+                        </button>
+                    </div>
                 </div>
-            </div>
+            ) : (
+                <div className="video-logs-toolbar video-logs-toolbar--empty">
+                    <span className="video-logs-empty-text">
+                        No dataset focused. Click <strong>Select</strong> on a query card in Custom Queries to view video & telemetry logs.
+                    </span>
+                </div>
+            )}
 
             {error && (
                 <div className="logs-alert-banner" style={{ margin: "0 0 6px 0", padding: "6px 10px" }}>
@@ -297,10 +277,13 @@ export const VideoLogsPanel: React.FC = () => {
             <div className="video-logs-charts-wrapper">
                 <LogsCharts
                     points={telemetryPoints}
+                    videos={videos}
+                    currentVideoIndex={currentVideoIndex}
                     activeIndex={activeIndex}
                     hoveredIndex={hoveredIndex}
                     onSelectIndex={handleChartPointSelect}
                     onHoverIndex={setHoveredIndex}
+                    onSeekTime={handleChartSeekTime}
                 />
             </div>
         </div>

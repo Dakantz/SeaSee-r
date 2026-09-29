@@ -1,32 +1,80 @@
 import React, { useRef, useState, useMemo, useCallback } from "react";
 import { FiActivity, FiCompass, FiNavigation, FiLayers } from "react-icons/fi";
-import type { ComputedTelemetryPoint } from "./types";
+import type { ComputedTelemetryPoint, VideoItem } from "./types";
+import { getVideoDuration } from "./types";
+import { useTrajectoryLogSync } from "./hooks/useTrajectoryLogSync";
 
 interface LogsChartsProps {
     points: ComputedTelemetryPoint[];
+    videos?: VideoItem[];
+    currentVideoIndex?: number;
+    totalDuration?: number;
     activeIndex: number | null;
     hoveredIndex: number | null;
     onSelectIndex: (index: number) => void;
     onHoverIndex: (index: number | null) => void;
+    onSeekTime?: (timeSec: number, videoIndex?: number) => void;
 }
 
 export const LogsCharts: React.FC<LogsChartsProps> = ({
     points,
+    videos,
+    currentVideoIndex,
+    totalDuration: propTotalDuration,
     activeIndex,
     hoveredIndex,
     onSelectIndex,
     onHoverIndex,
+    onSeekTime,
 }) => {
     const [chartMode, setChartMode] = useState<"depth" | "altitude" | "speed" | "distance">("depth");
     const containerRef = useRef<HTMLDivElement>(null);
+    const activeSyncPoint = useTrajectoryLogSync((state) => state.activePoint);
+
+    // Compute combined duration and start offsets across all videos
+    const videoTimeline = useMemo(() => {
+        if (!videos || videos.length === 0) return null;
+        const durations = videos.map(getVideoDuration);
+        const offsets: number[] = [];
+        let runningOffset = 0;
+        for (let i = 0; i < videos.length; i++) {
+            offsets.push(runningOffset);
+            runningOffset += durations[i];
+        }
+        return {
+            durations,
+            offsets,
+            totalDuration: runningOffset,
+        };
+    }, [videos]);
 
     const chartData = useMemo(() => {
-        if (!points || points.length === 0) return null;
+        const hasPoints = Boolean(points && points.length > 0);
+        const times = hasPoints ? points.map((p) => p.relativeTime) : [];
+        const maxPointsTime = times.length > 0 ? Math.max(...times) : 0;
 
-        const times = points.map((p) => p.relativeTime);
-        const minTime = Math.min(...times);
-        const maxTime = Math.max(...times);
+        // Total combined duration across all videos
+        const combinedVideoDuration = videoTimeline ? videoTimeline.totalDuration : (propTotalDuration ?? 0);
+        const minTime = 0;
+        const maxTime = combinedVideoDuration > 0 ? combinedVideoDuration : Math.max(maxPointsTime, 1);
         const timeRange = Math.max(maxTime - minTime, 0.5);
+
+        if (!hasPoints) {
+            return {
+                minTime,
+                maxTime,
+                timeRange,
+                minDepth: 0,
+                maxDepth: 10,
+                depthRange: 10,
+                minZ: 0,
+                maxZ: 10,
+                zRange: 10,
+                maxSpeed: 1,
+                maxDistance: 10,
+                hasData: false,
+            };
+        }
 
         const depths = points.map((p) => p.depth);
         const minDepth = Math.min(...depths);
@@ -56,12 +104,13 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             zRange,
             maxSpeed,
             maxDistance,
+            hasData: true,
         };
-    }, [points]);
+    }, [points, videoTimeline, propTotalDuration]);
 
     const svgWidth = 1000;
     const svgHeight = 280;
-    const padding = { top: 25, right: 35, bottom: 45, left: 65 };
+    const padding = { top: 28, right: 35, bottom: 45, left: 65 };
     const innerWidth = svgWidth - padding.left - padding.right;
     const innerHeight = svgHeight - padding.top - padding.bottom;
 
@@ -99,8 +148,16 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
     );
 
     const { linePath, areaPath, activeCoord, hoveredCoord } = useMemo(() => {
-        if (!points || points.length === 0 || !chartData) {
-            return { linePath: "", areaPath: "", activeCoord: null, hoveredCoord: null };
+        if (!points || points.length === 0 || !chartData || !chartData.hasData) {
+            let aCoord: { x: number; y: number } | null = null;
+            if (activeSyncPoint && typeof activeSyncPoint.relativeTime === "number" && chartData) {
+                const nx = (activeSyncPoint.relativeTime - chartData.minTime) / chartData.timeRange;
+                if (nx >= 0 && nx <= 1) {
+                    const x = padding.left + nx * innerWidth;
+                    aCoord = { x, y: padding.top + innerHeight / 2 };
+                }
+            }
+            return { linePath: "", areaPath: "", activeCoord: aCoord, hoveredCoord: null };
         }
 
         const validCoords = points.map(getCoords).filter((c) => Number.isFinite(c.x) && Number.isFinite(c.y));
@@ -114,44 +171,122 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
         const baselineY = padding.top + innerHeight;
         const aPath = `${lPath} L ${validCoords[validCoords.length - 1].x.toFixed(2)} ${baselineY} L ${validCoords[0].x.toFixed(2)} ${baselineY} Z`;
 
-        const aCoord = activeIndex !== null && points[activeIndex] ? getCoords(points[activeIndex]) : null;
+        let aCoord = activeIndex !== null && points[activeIndex] ? getCoords(points[activeIndex]) : null;
+        if (!aCoord && activeSyncPoint && typeof activeSyncPoint.relativeTime === "number" && chartData) {
+            const nx = (activeSyncPoint.relativeTime - chartData.minTime) / chartData.timeRange;
+            if (nx >= 0 && nx <= 1) {
+                const x = padding.left + nx * innerWidth;
+                aCoord = { x, y: padding.top + innerHeight / 2 };
+            }
+        }
+
         const hCoord = hoveredIndex !== null && points[hoveredIndex] ? getCoords(points[hoveredIndex]) : null;
 
         return { linePath: lPath, areaPath: aPath, activeCoord: aCoord, hoveredCoord: hCoord };
-    }, [points, chartData, getCoords, padding.top, innerHeight, activeIndex, hoveredIndex]);
+    }, [points, chartData, getCoords, padding.top, padding.left, innerHeight, innerWidth, activeIndex, hoveredIndex, activeSyncPoint]);
 
     const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-        if (!points || points.length === 0 || !chartData) return;
+        if (!chartData) return;
         const rect = e.currentTarget.getBoundingClientRect();
         const clientX = e.clientX - rect.left;
         const svgX = (clientX / rect.width) * svgWidth;
 
-        let closestIdx = 0;
+        let closestIdx = -1;
         let minDiff = Infinity;
-        points.forEach((p, idx) => {
-            const { x } = getCoords(p);
-            const diff = Math.abs(x - svgX);
-            if (diff < minDiff) {
-                minDiff = diff;
-                closestIdx = idx;
-            }
-        });
+        if (points && points.length > 0) {
+            points.forEach((p, idx) => {
+                const { x } = getCoords(p);
+                const diff = Math.abs(x - svgX);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    closestIdx = idx;
+                }
+            });
+        }
 
-        onHoverIndex(closestIdx);
+        // Only snap to hover if cursor is reasonably close (within 30px) to actual data points
+        if (closestIdx !== -1 && minDiff < 30) {
+            onHoverIndex(closestIdx);
+        } else {
+            onHoverIndex(null);
+        }
     };
 
     const handleMouseLeave = () => {
         onHoverIndex(null);
     };
 
-    const handleClick = () => {
+    const handleClick = (e: React.MouseEvent<SVGSVGElement>) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const clientX = e.clientX - rect.left;
+        const svgX = (clientX / rect.width) * svgWidth;
+
         if (hoveredIndex !== null) {
             onSelectIndex(hoveredIndex);
+            return;
+        }
+
+        if (!chartData) return;
+
+        let closestIdx = -1;
+        let minDiff = Infinity;
+        if (points && points.length > 0) {
+            points.forEach((p, idx) => {
+                const { x } = getCoords(p);
+                const diff = Math.abs(x - svgX);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    closestIdx = idx;
+                }
+            });
+        }
+
+        if (closestIdx !== -1 && minDiff < 30) {
+            onSelectIndex(closestIdx);
+            return;
+        }
+
+        // If clicked on an empty area of the timeline, seek video to that time
+        const clickedRatio = Math.max(0, Math.min(1, (svgX - padding.left) / innerWidth));
+        const clickedTime = chartData.minTime + clickedRatio * chartData.timeRange;
+
+        if (videoTimeline && videoTimeline.offsets.length > 0) {
+            let targetVidIdx = 0;
+            let timeWithinVid = clickedTime;
+            for (let i = 0; i < videoTimeline.offsets.length; i++) {
+                const start = videoTimeline.offsets[i];
+                const dur = videoTimeline.durations[i];
+                if (clickedTime >= start && clickedTime < start + dur) {
+                    targetVidIdx = i;
+                    timeWithinVid = clickedTime - start;
+                    break;
+                }
+                if (i === videoTimeline.offsets.length - 1 && clickedTime >= start) {
+                    targetVidIdx = i;
+                    timeWithinVid = Math.min(dur, clickedTime - start);
+                }
+            }
+            if (onSeekTime) {
+                onSeekTime(timeWithinVid, targetVidIdx);
+            } else {
+                useTrajectoryLogSync.getState().selectPoint(
+                    {
+                        relativeTime: clickedTime,
+                        videoTime: timeWithinVid,
+                        videoIndex: targetVidIdx,
+                    },
+                    "chart"
+                );
+            }
         }
     };
 
     return (
-        <div className="logs-chart-panel" ref={containerRef}>
+        <div
+            className="logs-chart-panel"
+            ref={containerRef}
+            onClick={() => useTrajectoryLogSync.getState().openLogsPanel()}
+        >
             <div className="logs-chart-header">
                 <div className="logs-chart-tabs">
                     <button
@@ -186,7 +321,7 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             </div>
 
             <div className="logs-svg-wrapper">
-                {points.length === 0 ? (
+                {(!points || points.length === 0) && (!videoTimeline || videoTimeline.totalDuration <= 0) ? (
                     <div className="logs-chart-empty">No trajectory data available to plot</div>
                 ) : (
                     <svg
@@ -219,10 +354,55 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             </linearGradient>
                         </defs>
 
+                        {/* Video Parts Boundaries */}
+                        {videoTimeline && videoTimeline.offsets.length > 1 && chartData && (
+                            <g className="logs-video-parts-grid">
+                                {videoTimeline.offsets.map((offset, idx) => {
+                                    if (idx === 0) return null;
+                                    const x = padding.left + (offset / chartData.timeRange) * innerWidth;
+                                    return (
+                                        <line
+                                            key={`boundary-${idx}`}
+                                            x1={x}
+                                            y1={padding.top}
+                                            x2={x}
+                                            y2={padding.top + innerHeight}
+                                            className="logs-video-boundary-line"
+                                        />
+                                    );
+                                })}
+                            </g>
+                        )}
+
+                        {/* Video Part Segment Labels */}
+                        {videoTimeline && videoTimeline.offsets.length > 1 && chartData && (
+                            <g className="logs-video-parts-labels">
+                                {videoTimeline.offsets.map((offset, idx) => {
+                                    const startX = padding.left + (offset / chartData.timeRange) * innerWidth;
+                                    const dur = videoTimeline.durations[idx];
+                                    const endX = padding.left + ((offset + dur) / chartData.timeRange) * innerWidth;
+                                    const midX = (startX + endX) / 2;
+                                    const isActivePart = currentVideoIndex === idx;
+
+                                    return (
+                                        <text
+                                            key={`label-${idx}`}
+                                            x={midX}
+                                            y={padding.top - 8}
+                                            className={`logs-part-badge ${isActivePart ? "active" : ""}`}
+                                        >
+                                            Part {idx + 1}
+                                        </text>
+                                    );
+                                })}
+                            </g>
+                        )}
+
+                        {/* Y-Axis Horizontal Grid Lines and Labels */}
                         {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
                             const y = padding.top + (1 - ratio) * innerHeight;
                             let label = "";
-                            if (chartData) {
+                            if (chartData && chartData.hasData) {
                                 if (chartMode === "depth") {
                                     // Oceanographic depth: ratio = 1 is top (min depth / surface), ratio = 0 is bottom (deepest)
                                     const val = chartData.maxDepth - ratio * chartData.depthRange;
@@ -247,20 +427,23 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                                         y2={y}
                                         className="logs-grid-line"
                                     />
-                                    <text x={padding.left - 10} y={y + 4} className="logs-axis-label-y">
-                                        {label}
-                                    </text>
+                                    {label && (
+                                        <text x={padding.left - 10} y={y + 4} className="logs-axis-label-y">
+                                            {label}
+                                        </text>
+                                    )}
                                 </g>
                             );
                         })}
 
+                        {/* X-Axis Vertical Time Grid Lines and Labels across Combined Duration */}
                         {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
                             const x = padding.left + ratio * innerWidth;
                             const y = padding.top + innerHeight + 20;
                             const timeVal = chartData ? chartData.minTime + ratio * chartData.timeRange : 0;
                             const mins = Math.floor(timeVal / 60);
-                            const secs = (timeVal % 60).toFixed(1);
-                            const timeLabel = `${mins}:${Number(secs) < 10 ? "0" : ""}${secs}s`;
+                            const secs = Math.floor(timeVal % 60);
+                            const timeLabel = `${mins}:${secs < 10 ? "0" : ""}${secs}`;
 
                             return (
                                 <g key={ratio}>
@@ -278,6 +461,7 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             );
                         })}
 
+                        {/* Filled Area: Only covers portion where data exists */}
                         {areaPath && (
                             <path
                                 d={areaPath}
@@ -293,6 +477,7 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             />
                         )}
 
+                        {/* Line Path: Only covers portion where data exists */}
                         {linePath && (
                             <path
                                 d={linePath}
@@ -312,6 +497,7 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             />
                         )}
 
+                        {/* Cursor line for hovered or active timestamp */}
                         {(hoveredCoord || activeCoord) && (
                             <line
                                 x1={(hoveredCoord || activeCoord)!.x}
@@ -322,7 +508,8 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             />
                         )}
 
-                        {activeCoord && Number.isFinite(activeCoord.x) && Number.isFinite(activeCoord.y) && (
+                        {/* Active Point Circle (only when on a real telemetry point) */}
+                        {activeCoord && activeIndex !== null && points[activeIndex] && Number.isFinite(activeCoord.x) && Number.isFinite(activeCoord.y) && (
                             <circle
                                 cx={activeCoord.x}
                                 cy={activeCoord.y}
@@ -331,6 +518,7 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             />
                         )}
 
+                        {/* Hovered Point Circle */}
                         {hoveredCoord && hoveredIndex !== activeIndex && Number.isFinite(hoveredCoord.x) && Number.isFinite(hoveredCoord.y) && (
                             <circle
                                 cx={hoveredCoord.x}
@@ -342,6 +530,45 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                     </svg>
                 )}
             </div>
+
+            {/* Tooltip bar displaying active / hovered point details */}
+            {(() => {
+                const targetIdx = hoveredIndex !== null ? hoveredIndex : activeIndex;
+                if (targetIdx === null || !points[targetIdx]) return null;
+                const pt = points[targetIdx];
+                const formatTime = (t?: number) => {
+                    if (t === undefined || !Number.isFinite(t)) return "00:00";
+                    const mins = Math.floor(t / 60);
+                    const secs = Math.floor(t % 60);
+                    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+                };
+
+                return (
+                    <div className="logs-chart-tooltip">
+                        <div className="logs-tooltip-item">
+                            <span className="logs-tooltip-label">Frame:</span>
+                            <span className="logs-tooltip-val">#{pt.frameNumber ?? pt.index + 1}</span>
+                        </div>
+                        {typeof pt.videoIndex === "number" && (
+                            <div className="logs-tooltip-item">
+                                <span className="logs-tooltip-label">Video:</span>
+                                <span className="logs-tooltip-val">Part {pt.videoIndex + 1} ({formatTime(pt.videoTime)})</span>
+                            </div>
+                        )}
+                        <div className="logs-tooltip-item">
+                            <span className="logs-tooltip-label">Depth:</span>
+                            <span className="logs-tooltip-val">{pt.depth.toFixed(2)}m</span>
+                        </div>
+                        <div className="logs-tooltip-item">
+                            <span className="logs-tooltip-label">Distance:</span>
+                            <span className="logs-tooltip-val">{pt.distanceTravelled.toFixed(1)}m</span>
+                        </div>
+                        <div className="logs-tooltip-item" style={{ marginLeft: "auto", color: "#38bdf8", opacity: 0.85 }}>
+                            <span>Click to jump video</span>
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 };

@@ -22,44 +22,44 @@ export interface VideoPlayerProps {
     videos?: VideoItem[];
     currentVideoIndex?: number;
     onVideoEnded?: () => void;
-    onSelectVideoIndex?: (index: number) => void;
+    onSelectVideoIndex?: (index: number, autoPlay?: boolean) => void;
     autoPlayNext?: boolean;
     loadingVideos?: boolean;
 }
 
-function findClosestPointIndex(points: ComputedTelemetryPoint[], t: number): number {
+function findClosestPointIndex(points: ComputedTelemetryPoint[], t: number, currentVideoIndex?: number): number {
     if (!points || points.length === 0) return -1;
     if (points.length === 1) return 0;
 
-    const hasVideoTime = points.some((p) => p.videoTime !== undefined);
+    const hasVideoIndices = points.some((p) => p.videoIndex !== undefined);
+    let candidateIndices: number[] = [];
+    if (hasVideoIndices && currentVideoIndex !== undefined) {
+        for (let i = 0; i < points.length; i++) {
+            if (points[i].videoIndex === currentVideoIndex) {
+                candidateIndices.push(i);
+            }
+        }
+        if (candidateIndices.length === 0) {
+            return -1;
+        }
+    } else {
+        candidateIndices = points.map((_, i) => i);
+    }
+
     const getTime = (p: ComputedTelemetryPoint) =>
-        hasVideoTime && p.videoTime !== undefined ? p.videoTime : p.relativeTime;
+        p.videoTime !== undefined ? p.videoTime : p.relativeTime;
 
-    // Check boundary conditions
-    if (t <= getTime(points[0])) return 0;
-    if (t >= getTime(points[points.length - 1])) return points.length - 1;
-
-    let low = 0;
-    let high = points.length - 1;
-
-    while (low <= high) {
-        const mid = (low + high) >> 1;
-        const midTime = getTime(points[mid]);
-
-        if (midTime === t) return mid;
-        if (midTime < t) {
-            low = mid + 1;
-        } else {
-            high = mid - 1;
+    let closestIdx = candidateIndices[0];
+    let minDiff = Infinity;
+    for (const idx of candidateIndices) {
+        const diff = Math.abs(getTime(points[idx]) - t);
+        if (diff < minDiff) {
+            minDiff = diff;
+            closestIdx = idx;
         }
     }
 
-    const p1 = Math.max(0, Math.min(points.length - 1, high));
-    const p2 = Math.max(0, Math.min(points.length - 1, low));
-    const diff1 = Math.abs(getTime(points[p1]) - t);
-    const diff2 = Math.abs(getTime(points[p2]) - t);
-
-    return diff1 <= diff2 ? p1 : p2;
+    return closestIdx;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -99,7 +99,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     const seekTimestamp = useTrajectoryLogSync((state) => state.seekTimestamp);
     const syncSource = useTrajectoryLogSync((state) => state.syncSource);
+    const activeSyncPoint = useTrajectoryLogSync((state) => state.activePoint);
     const selectPoint = useTrajectoryLogSync((state) => state.selectPoint);
+    const pendingSeekTimeRef = useRef<number | null>(null);
 
     // Fallback: Fetch video info internally if videos prop is not controlled
     useEffect(() => {
@@ -170,7 +172,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             const title = activeVideo.upload_metadata?.orig_filename || `Video ${activeVideo.id.substring(0, 8)}`;
             setVideoSrc(targetUrl);
             setVideoTitle(title);
-            setCurrentTime(0);
+            if (pendingSeekTimeRef.current === null) {
+                setCurrentTime(0);
+            } else {
+                setCurrentTime(pendingSeekTimeRef.current);
+            }
         } else if (!resolvedLoading) {
             setVideoSrc(null);
             setVideoTitle("No Video Recording Linked");
@@ -195,18 +201,71 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         }
     }, [videoSrc, resolvedAutoPlay]);
 
-    // Synchronize video seeking when triggered from 3D or Chart
+    // Apply pending seek timestamp when video element is ready
+    const applyPendingSeek = useCallback(() => {
+        if (pendingSeekTimeRef.current !== null && videoRef.current) {
+            const dur = videoRef.current.duration || 10000;
+            const clamped = Math.min(Math.max(0, pendingSeekTimeRef.current), dur);
+            videoRef.current.currentTime = clamped;
+            videoRef.current.pause();
+            setIsPlaying(false);
+            setCurrentTime(clamped);
+            pendingSeekTimeRef.current = null;
+        }
+    }, []);
+
+    // Synchronize video seeking and video file switching when triggered from 3D or Chart
     useEffect(() => {
-        if (seekTimestamp !== null && syncSource !== "video" && videoRef.current) {
-            const video = videoRef.current;
-            if (Number.isFinite(seekTimestamp) && seekTimestamp >= 0) {
-                const maxT = video.duration || 10000;
-                const clamped = Math.min(Math.max(0, seekTimestamp), maxT);
-                video.currentTime = clamped;
+        if (syncSource === "video" || !activeSyncPoint) return;
+
+        const targetVidIndex = activeSyncPoint.videoIndex;
+        const targetTime =
+            activeSyncPoint.videoTime !== undefined
+                ? activeSyncPoint.videoTime
+                : activeSyncPoint.relativeTime !== undefined
+                ? activeSyncPoint.relativeTime
+                : seekTimestamp;
+
+        // When jumping to a specific frame, ensure current playback is paused
+        if (videoRef.current && !videoRef.current.paused) {
+            videoRef.current.pause();
+            setIsPlaying(false);
+        }
+
+        // 1. Switch to correct video file if target video index differs from currently playing video
+        if (
+            typeof targetVidIndex === "number" &&
+            targetVidIndex >= 0 &&
+            targetVidIndex < resolvedVideos.length &&
+            targetVidIndex !== resolvedIndex
+        ) {
+            if (typeof targetTime === "number" && Number.isFinite(targetTime) && targetTime >= 0) {
+                pendingSeekTimeRef.current = targetTime;
+            }
+            if (onSelectVideoIndex) {
+                onSelectVideoIndex(targetVidIndex, false);
+            } else if (!isControlled) {
+                setInternalIndex(targetVidIndex);
+                setInternalAutoPlay(false);
+            }
+            return;
+        }
+
+        // 2. On the correct video file -> seek to exact target frame time and pause
+        if (typeof targetTime === "number" && Number.isFinite(targetTime) && targetTime >= 0) {
+            if (videoRef.current && videoRef.current.readyState >= 1) {
+                const maxT = videoRef.current.duration || 10000;
+                const clamped = Math.min(Math.max(0, targetTime), maxT);
+                videoRef.current.currentTime = clamped;
+                videoRef.current.pause();
+                setIsPlaying(false);
                 setCurrentTime(clamped);
+                pendingSeekTimeRef.current = null;
+            } else {
+                pendingSeekTimeRef.current = targetTime;
             }
         }
-    }, [seekTimestamp, syncSource]);
+    }, [activeSyncPoint, seekTimestamp, syncSource, resolvedIndex, resolvedVideos.length, onSelectVideoIndex, isControlled]);
 
     // Reference to track last active index and prevent redundant dispatches
     const lastActiveIdxRef = useRef<number | null>(null);
@@ -219,7 +278,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const syncPointAtTime = useCallback(
         (timeSec: number) => {
             if (!telemetryPoints || telemetryPoints.length === 0) return;
-            const closestIdx = findClosestPointIndex(telemetryPoints, timeSec);
+            const closestIdx = findClosestPointIndex(telemetryPoints, timeSec, resolvedIndex);
             if (closestIdx !== -1 && closestIdx !== lastActiveIdxRef.current) {
                 lastActiveIdxRef.current = closestIdx;
                 if (onPointSelect) {
@@ -233,6 +292,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                             index: closest.index,
                             relativeTime: closest.relativeTime,
                             videoTime: closest.videoTime,
+                            videoIndex: closest.videoIndex,
                             frameNumber: closest.frameNumber,
                             filename: closest.filename,
                             x: closest.x,
@@ -246,7 +306,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 }
             }
         },
-        [telemetryPoints, onPointSelect, selectPoint]
+        [telemetryPoints, onPointSelect, selectPoint, resolvedIndex]
     );
 
     // Continuous smooth synchronization while video is playing
@@ -300,6 +360,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const handleLoadedMetadata = () => {
         if (!videoRef.current) return;
         setDuration(videoRef.current.duration || 0);
+        const hadPendingSeek = pendingSeekTimeRef.current !== null;
+        applyPendingSeek();
+        if (resolvedAutoPlay && videoRef.current.paused && !hadPendingSeek) {
+            videoRef.current
+                .play()
+                .then(() => setIsPlaying(true))
+                .catch((err) => console.warn("Autoplay in handleLoadedMetadata interrupted:", err));
+        }
+    };
+
+    const handleCanPlay = () => {
+        const hadPendingSeek = pendingSeekTimeRef.current !== null;
+        applyPendingSeek();
+        if (resolvedAutoPlay && videoRef.current && videoRef.current.paused && !hadPendingSeek) {
+            videoRef.current
+                .play()
+                .then(() => setIsPlaying(true))
+                .catch((err) => console.warn("Autoplay in handleCanPlay interrupted:", err));
+        }
     };
 
     const toggleMute = () => {
@@ -384,9 +463,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                         className="logs-video-element"
                         muted={isMuted}
                         playsInline
-                        preload="metadata"
+                        autoPlay={resolvedAutoPlay}
+                        preload="auto"
                         onTimeUpdate={handleTimeUpdate}
                         onLoadedMetadata={handleLoadedMetadata}
+                        onCanPlay={handleCanPlay}
                         onPlay={() => setIsPlaying(true)}
                         onPause={() => setIsPlaying(false)}
                         onEnded={handleEnded}
@@ -454,10 +535,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                             className="logs-video-btn"
                             onClick={() => {
                                 if (onSelectVideoIndex && resolvedIndex > 0) {
-                                    onSelectVideoIndex(resolvedIndex - 1);
+                                    onSelectVideoIndex(resolvedIndex - 1, isPlaying);
                                 } else if (!isControlled && resolvedIndex > 0) {
                                     setInternalIndex(resolvedIndex - 1);
-                                    setInternalAutoPlay(true);
+                                    setInternalAutoPlay(isPlaying);
                                 }
                             }}
                             disabled={resolvedIndex === 0 && currentTime <= 3}
@@ -483,10 +564,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                             className="logs-video-btn"
                             onClick={() => {
                                 if (onSelectVideoIndex && resolvedIndex < resolvedVideos.length - 1) {
-                                    onSelectVideoIndex(resolvedIndex + 1);
+                                    onSelectVideoIndex(resolvedIndex + 1, isPlaying);
                                 } else if (!isControlled && resolvedIndex < resolvedVideos.length - 1) {
                                     setInternalIndex(resolvedIndex + 1);
-                                    setInternalAutoPlay(true);
+                                    setInternalAutoPlay(isPlaying);
                                 }
                             }}
                             disabled={resolvedIndex >= resolvedVideos.length - 1}
@@ -535,7 +616,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
                 <div className="logs-video-controls-right">
                     <span className="logs-video-frame-badge">
-                        Frame #{videoSrc ? currentFrame : "--"}
+                        {videoSrc
+                            ? activeSyncPoint?.frameNumber
+                                ? `Frame #${activeSyncPoint.frameNumber}`
+                                : `Frame #${currentFrame}`
+                            : "Frame #--"}
                     </span>
 
                     <button

@@ -1147,6 +1147,90 @@
     margin-top: 2px;
 }
 
+.query-summary__connected-card--selected {
+    border-color: var(--color-accent-text, #38bdf8) !important;
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+}
+
+.query-summary__connected-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.query-summary__connected-select-btn {
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    color: var(--color-accent-text, #38bdf8);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 2px 7px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s ease;
+    user-select: none;
+
+    &:hover {
+        background: rgba(56, 189, 248, 0.25);
+        border-color: var(--color-accent-text, #38bdf8);
+        color: #ffffff;
+        transform: translateY(-1px);
+    }
+
+    &:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px var(--color-accent-text, #38bdf8);
+    }
+}
+
+.query-summary__connected-select-btn--active {
+    background: var(--color-accent-text, #38bdf8);
+    border-color: var(--color-accent-text, #38bdf8);
+    color: #0f172a;
+    font-weight: 700;
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+
+    &:hover {
+        background: #7dd3fc;
+        border-color: #7dd3fc;
+        color: #0f172a;
+    }
+}
+
+.query-summary__connected-link-btn {
+    background: rgba(148, 163, 184, 0.12);
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    color: var(--color-text-secondary, #cbd5e1);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    text-decoration: none;
+    transition: all 0.15s ease;
+    user-select: none;
+
+    &:hover {
+        background: rgba(56, 189, 248, 0.2);
+        border-color: var(--color-accent-text, #38bdf8);
+        color: var(--color-accent-text, #38bdf8);
+        transform: translateY(-1px);
+        text-decoration: none;
+    }
+
+    &:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px var(--color-accent-text, #38bdf8);
+    }
+}
+
 .query-summary__connected-toggle-btn {
     background: transparent;
     border: none;

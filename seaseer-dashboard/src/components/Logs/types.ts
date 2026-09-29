@@ -19,6 +19,7 @@ export interface ComputedTelemetryPoint {
     timestamp: number;
     relativeTime: number; // Flight segment elapsed time (starts at 0.0s)
     videoTime?: number; // Time position within the source video recording (seconds)
+    videoIndex?: number; // Video playlist index if multiple videos exist
     frameNumber?: number; // Video frame sequence number (e.g. 545)
     wallClockTime?: string; // Formatted HH:mm:ss.SSS
     x: number;
@@ -65,6 +66,7 @@ export interface VideoItem {
     total_bytes?: number | null;
     video_start_at: string;
     video_stop_at: string;
+    duration?: number | null;
     stream_url?: string | null;
     download_url?: string | null;
     upload_metadata?: {
@@ -77,4 +79,16 @@ export interface VideoItem {
         created_at: string;
         completed_at?: string | null;
     } | null;
+}
+
+export function getVideoDuration(v: VideoItem): number {
+    if (typeof v.duration === "number" && v.duration > 0) {
+        return v.duration;
+    }
+    const s = new Date(v.video_start_at).getTime();
+    const e = new Date(v.video_stop_at).getTime();
+    if (!isNaN(s) && !isNaN(e) && e > s) {
+        return (e - s) / 1000.0;
+    }
+    return 180.0; // Standard fallback duration
 }

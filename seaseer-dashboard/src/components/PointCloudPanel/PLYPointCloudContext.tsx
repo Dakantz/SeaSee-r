@@ -134,7 +134,7 @@ export interface PLYPointCloudContextType {
 
 const DEFAULT_HARDCODED_IDENTIFIER = "";
 
-const PLYPointCloudContext = createContext<PLYPointCloudContextType | undefined>(undefined);
+export const PLYPointCloudContext = createContext<PLYPointCloudContextType | undefined>(undefined);
 
 export const usePLYPointCloudContext = () => {
     const context = useContext(PLYPointCloudContext);

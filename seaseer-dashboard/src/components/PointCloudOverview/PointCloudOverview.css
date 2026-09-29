@@ -40,15 +40,45 @@
     flex-shrink: 0;
 }
 
-/* Top-Right Floating Toolbar */
+/* Top-Right Toolbar */
 .pco-top-right-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm, 8px);
+}
+
+/* Floating Toolbar (when right panel is collapsed) */
+.pco-top-right-toolbar.pco-top-right-toolbar--floating {
     position: absolute;
     top: var(--spacing-lg, 16px);
     right: var(--spacing-lg, 16px);
     z-index: var(--z-sticky, 100);
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm, 8px);
+}
+
+/* Inside Right Sidebar Panel (positioned directly above right-sidebar-header) */
+.right-sidebar-panel .pco-top-right-toolbar {
+    position: static;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs, 6px);
+    padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+    background: var(--color-bg-card, rgba(30, 41, 59, 0.7));
+    border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+    flex-shrink: 0;
+}
+
+.right-sidebar-panel .pco-toggle-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: center;
+    padding: var(--spacing-xs, 6px) var(--spacing-sm, 10px);
+    font-size: var(--font-size-xs, 11px);
+    box-shadow: none;
+}
+
+.right-sidebar-panel .pco-toggle-btn span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Floating Toggle Buttons */

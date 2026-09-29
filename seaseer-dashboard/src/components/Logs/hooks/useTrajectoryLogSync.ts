@@ -5,6 +5,7 @@ export interface TrajectorySyncPoint {
     index?: number;
     relativeTime?: number;
     videoTime?: number;
+    videoIndex?: number;
     frameNumber?: number;
     filename?: string | null;
     x?: number;
@@ -23,10 +24,12 @@ interface TrajectoryLogSyncStore {
     focusedTrajectoryId: string | null; // e.g. pointcloud ID or header ID
     syncSource: "3d" | "chart" | "video" | null;
     seekTimestamp: number | null; // Trigger to seek video player
+    requestOpenLogsPanel: number;
 
     // Actions
     selectPoint: (point: TrajectorySyncPoint | null, source?: "3d" | "chart" | "video") => void;
-    focusTrajectory: (trajectoryId: string | null) => void;
+    focusTrajectory: (trajectoryId: string | null, openPanel?: boolean) => void;
+    openLogsPanel: () => void;
     setSeekTimestamp: (timestamp: number | null) => void;
     clearSync: () => void;
 }
@@ -37,6 +40,7 @@ export const useTrajectoryLogSync = create<TrajectoryLogSyncStore>((set) => ({
     focusedTrajectoryId: null,
     syncSource: null,
     seekTimestamp: null,
+    requestOpenLogsPanel: 0,
 
     selectPoint: (point, source = "3d") => {
         set({
@@ -53,8 +57,15 @@ export const useTrajectoryLogSync = create<TrajectoryLogSyncStore>((set) => ({
         });
     },
 
-    focusTrajectory: (trajectoryId) => {
-        set({ focusedTrajectoryId: trajectoryId });
+    focusTrajectory: (trajectoryId, openPanel = false) => {
+        set((state) => ({
+            focusedTrajectoryId: trajectoryId,
+            ...(openPanel ? { requestOpenLogsPanel: state.requestOpenLogsPanel + 1 } : {}),
+        }));
+    },
+
+    openLogsPanel: () => {
+        set((state) => ({ requestOpenLogsPanel: state.requestOpenLogsPanel + 1 }));
     },
 
     setSeekTimestamp: (timestamp) => {

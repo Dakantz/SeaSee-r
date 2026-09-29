@@ -20,10 +20,25 @@ router = APIRouter(
 )
 
 def _enrich_video_response(video: Video) -> VideoResponse:
-    """Helper to populate stream_url and download_url on VideoResponse."""
+    """Helper to populate stream_url, download_url, and duration on VideoResponse."""
     resp = VideoResponse.model_validate(video)
     resp.stream_url = f"/videos/{video.id}/stream"
     resp.download_url = f"/videos/{video.id}/file"
+    if video.video_stop_at and video.video_start_at and video.video_stop_at > video.video_start_at:
+        resp.duration = round((video.video_stop_at - video.video_start_at).total_seconds(), 3)
+    else:
+        try:
+            file_path = _find_video_file_path(video)
+            if file_path and os.path.exists(file_path):
+                import cv2
+                cap = cv2.VideoCapture(file_path)
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+                cap.release()
+                if fps > 0 and frame_count > 0:
+                    resp.duration = round(float(frame_count / fps), 3)
+        except Exception:
+            pass
     return resp
 
 def _find_video_file_path(video: Video) -> str:
