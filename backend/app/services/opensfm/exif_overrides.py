@@ -6,7 +6,7 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List, Tuple, Union
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session
@@ -306,7 +306,9 @@ async def get_video_metadata_timestamps(
     1. Direct payload fields: `video_start_at` / `video_stop_at` (or per-video mapping in payload).
     2. Database lookup: matches video filename/UUID against `upload_metadata` and `video_metadata`.
     3. Video container tags via ffprobe (`creation_time`).
-    4. File modification time / current UTC time fallback.
+
+    Raises:
+    - RuntimeError: If timestamps cannot be resolved from any of the above sources.
     """
     payload = payload or {}
     basename = os.path.basename(video_path)
@@ -331,32 +333,40 @@ async def get_video_metadata_timestamps(
     # 2. Database lookup
     async def _query_db(db: AsyncSession) -> Optional[Tuple[datetime, datetime]]:
         try:
-            stmt = (
-                select(Video)
-                .join(UploadMetadata, Video.upload_metadata_id == UploadMetadata.id)
-                .where(
-                    (UploadMetadata.safe_filename == basename) |
-                    (UploadMetadata.orig_filename == basename) |
-                    (UploadMetadata.safe_filename == stem) |
-                    (UploadMetadata.orig_filename == stem)
-                )
-            )
+            conditions = [
+                UploadMetadata.safe_filename == basename,
+                UploadMetadata.orig_filename == basename,
+                UploadMetadata.safe_filename == stem,
+                UploadMetadata.orig_filename == stem,
+            ]
 
             # Check if stem is a valid UUID
             try:
                 file_uuid = uuid.UUID(stem)
-                stmt = stmt.or_where(UploadMetadata.id == file_uuid)
+                conditions.append(UploadMetadata.id == file_uuid)
             except ValueError:
                 pass
 
-            # Also check payload file_id if present
+            # Also check payload file_id if present and matches this video
             payload_file_id = payload.get("file_id")
-            if payload_file_id:
+            payload_safe_filename = payload.get("safe_filename")
+            payload_orig_filename = payload.get("filename")
+            if payload_file_id and (
+                (payload_safe_filename and payload_safe_filename == basename)
+                or (payload_orig_filename and payload_orig_filename == basename)
+                or (not payload_safe_filename and not payload_orig_filename)
+            ):
                 try:
                     p_uuid = uuid.UUID(str(payload_file_id))
-                    stmt = stmt.or_where(UploadMetadata.id == p_uuid)
+                    conditions.append(UploadMetadata.id == p_uuid)
                 except ValueError:
                     pass
+
+            stmt = (
+                select(Video)
+                .join(UploadMetadata, Video.upload_metadata_id == UploadMetadata.id)
+                .where(or_(*conditions))
+            )
 
             result = await db.execute(stmt)
             video_rec = result.scalars().first()
@@ -386,15 +396,13 @@ async def get_video_metadata_timestamps(
         stop_time = container_time + timedelta(seconds=dur if dur > 0 else 1.0)
         return container_time, stop_time
 
-    # 4. Fallback: file mtime or UTC now
-    try:
-        mtime = os.path.getmtime(video_path)
-        end_time = datetime.fromtimestamp(mtime, tz=timezone.utc)
-    except Exception:
-        end_time = datetime.now(timezone.utc)
-
-    start_time = end_time - timedelta(seconds=dur if dur > 0 else 1.0)
-    return start_time, end_time
+    # No valid recording timestamps could be resolved - raise an error instead of a silent fallback
+    err_msg = (
+        f"Failed to resolve recording timestamps (video_start_at / video_stop_at) for video '{video_path}'. "
+        f"No valid timestamps found in payload, database (matching '{basename}'), or video container creation_time."
+    )
+    logger.error(err_msg)
+    raise RuntimeError(err_msg)
 
 
 def lerp_value(v1: float, v2: float, alpha: float) -> float:

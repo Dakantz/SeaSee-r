@@ -103,6 +103,47 @@ async def test_get_video_metadata_timestamps_payload():
 
 
 @pytest.mark.anyio
+async def test_get_video_metadata_timestamps_db_lookup():
+    mock_video = MagicMock()
+    mock_video.video_start_at = datetime(2026, 9, 4, 13, 42, 10, tzinfo=timezone.utc)
+    mock_video.video_stop_at = datetime(2026, 9, 4, 13, 45, 10, tzinfo=timezone.utc)
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.first.return_value = mock_video
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=mock_result)
+
+    start, stop = await get_video_metadata_timestamps(
+        "c577b3e5-dbd0-3ba9-a776-aa289eff9376.mp4",
+        session=mock_session
+    )
+    assert start == mock_video.video_start_at
+    assert stop == mock_video.video_stop_at
+
+    # Verify session execute was called with a query using or_
+    mock_session.execute.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_get_video_metadata_timestamps_raises_error_without_fallback():
+    # When no payload, db returns None, and ffprobe fails, must raise RuntimeError (no silent fallback)
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.first.return_value = None
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=mock_result)
+
+    with patch("app.services.opensfm.exif_overrides._get_container_creation_time", new_callable=AsyncMock) as mock_probe:
+        mock_probe.return_value = None
+        with pytest.raises(RuntimeError) as exc_info:
+            await get_video_metadata_timestamps("unmatched_video.mp4", session=mock_session)
+
+        assert "Failed to resolve recording timestamps" in str(exc_info.value)
+
+
+
+@pytest.mark.anyio
 async def test_frame_extraction_generates_exif_overrides_with_rejected_frames(tmp_path):
     video_dir = str(tmp_path / "videos")
     output_dir = str(tmp_path / "opensfm_ingestion")
