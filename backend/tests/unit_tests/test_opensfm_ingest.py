@@ -229,3 +229,120 @@ async def test_opensfm_ingest_single_reconstruction_component_1():
             assert res["reconstructions"][0]["reconstruction_index"] == 1
             assert res["reconstructions"][0]["views"] == 1
             assert res["reconstructions"][0]["sparse_points"] == 1
+
+
+def test_compute_relative_times_chronological():
+    from app.services.opensfm.ingest import compute_relative_times
+
+    # Unordered input frames with millisecond timestamps
+    input_frames = [
+        {"filename": "image_00003.png", "timestamp": 1727604005000},
+        {"filename": "image_00001.png", "timestamp": 1727604000000},
+        {"filename": "image_00002.png", "timestamp": 1727604001500},
+    ]
+
+    res = compute_relative_times(input_frames)
+
+    # First frame chronologically should be image_00001.png
+    assert res[0]["filename"] == "image_00001.png"
+    assert res[0]["timestamp"] == 1727604000000
+    assert res[0]["relative_time"] == 0.0
+
+    # Second frame should be image_00002.png at +1.5s
+    assert res[1]["filename"] == "image_00002.png"
+    assert res[1]["timestamp"] == 1727604001500
+    assert res[1]["relative_time"] == 1.5
+
+    # Third frame should be image_00003.png at +5.0s
+    assert res[2]["filename"] == "image_00003.png"
+    assert res[2]["timestamp"] == 1727604005000
+    assert res[2]["relative_time"] == 5.0
+
+
+def test_compute_relative_times_edge_cases():
+    from app.services.opensfm.ingest import compute_relative_times
+
+    assert compute_relative_times([]) == []
+
+    # All timestamps 0
+    zero_frames = [
+        {"filename": "frame_1.png", "timestamp": 0},
+        {"filename": "frame_2.png", "timestamp": 0},
+    ]
+    res_zero = compute_relative_times(zero_frames)
+    assert res_zero[0]["relative_time"] == 0.0
+    assert res_zero[1]["relative_time"] == 0.0
+
+
+@pytest.mark.anyio
+async def test_opensfm_ingest_populates_relative_time_on_camera_frames():
+    from app.models.camera import CameraFrame
+    handler = OpenSfMIngestTaskHandler()
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pc_path = os.path.join(tmp_dir, "fused.laz")
+        with open(pc_path, "wb") as f:
+            f.write(b"dummy laz content")
+
+        # Create reconstruction.json with capture_time set
+        rec_json_path = os.path.join(tmp_dir, "reconstruction.json")
+        rec_data = [
+            {
+                "cameras": {"cam1": {"focal": 0.8, "width": 1920, "height": 1080}},
+                "shots": {
+                    "shot_b.png": {
+                        "rotation": [0, 0, 0],
+                        "translation": [1, 1, 1],
+                        "capture_time": 1727604003.5  # +3.5s
+                    },
+                    "shot_a.png": {
+                        "rotation": [0, 0, 0],
+                        "translation": [0, 0, 0],
+                        "capture_time": 1727604000.0  # Base time
+                    }
+                },
+                "points": {}
+            }
+        ]
+        with open(rec_json_path, "w") as f:
+            json.dump(rec_data, f)
+
+        undistorted_dir = os.path.join(tmp_dir, "undistorted", "depthmaps")
+        os.makedirs(undistorted_dir, exist_ok=True)
+        ply_path = os.path.join(undistorted_dir, "merged.ply")
+        with open(ply_path, "w") as f:
+            f.write("ply\nformat ascii 1.0\nelement vertex 10\nend_header\n")
+
+        with patch("app.services.worker.handlers.opensfm_ingest.PointCloudUploadTaskHandler.ingest_pointcloud_pipeline", new_callable=AsyncMock), \
+             patch("app.services.worker.handlers.opensfm_ingest.async_session") as mock_session_ctx, \
+             patch.object(handler, "update_job_status", new_callable=AsyncMock):
+
+            from unittest.mock import MagicMock
+            mock_session = AsyncMock()
+            added_objects = []
+            mock_session.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
+            mock_session_ctx.return_value.__aenter__.return_value = mock_session
+
+            res = await handler.process_opensfm(
+                file_path=pc_path,
+                file_id="44444444-4444-4444-4444-444444444444",
+                job_id="55555555-5555-5555-5555-555555555555",
+                folder_path=tmp_dir,
+                subfolder="undistorted",
+                reconstruction_index=0
+            )
+
+            assert res["status"] == "success"
+
+            camera_frames = [obj for obj in added_objects if isinstance(obj, CameraFrame)]
+            assert len(camera_frames) == 2
+
+            # Chronologically first frame should be shot_a.png
+            frame_a = next(f for f in camera_frames if f.filename == "shot_a.png")
+            frame_b = next(f for f in camera_frames if f.filename == "shot_b.png")
+
+            assert frame_a.timestamp == 1727604000000
+            assert frame_a.relative_time == 0.0
+
+            assert frame_b.timestamp == 1727604003500
+            assert pytest.approx(frame_b.relative_time, 1e-4) == 3.5

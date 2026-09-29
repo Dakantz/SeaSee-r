@@ -195,7 +195,8 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
                 parse_shots_geojson,
                 get_camera_center,
                 get_camera_viewing_direction,
-                get_camera_three_quaternion
+                get_camera_three_quaternion,
+                compute_relative_times
             )
             from geoalchemy2 import WKTElement
 
@@ -242,6 +243,9 @@ class OpenSfMIngestTaskHandler(BaseTaskHandler):
                             "rotation": rot_quat,
                             "relative_time": sdata.get("relative_time", 0.0)
                         })
+
+            if frames_list:
+                frames_list = compute_relative_times(frames_list)
 
             if views_count == 0 and frames_list:
                 views_count = len(frames_list)

@@ -91,7 +91,8 @@ class OpenSfMTaskHandler(BaseTaskHandler):
             parse_shots_geojson,
             get_camera_center,
             get_camera_viewing_direction,
-            get_camera_three_quaternion
+            get_camera_three_quaternion,
+            compute_relative_times
         )
         from geoalchemy2 import WKTElement
 
@@ -138,14 +139,8 @@ class OpenSfMTaskHandler(BaseTaskHandler):
         elif shots_geojson_path and os.path.exists(shots_geojson_path):
             header_info, frames_list = parse_shots_geojson(shots_geojson_path)
 
-        def _get_frame_sort_key(f: Dict[str, Any]):
-            fname = f.get("filename") or ""
-            m = re.search(r"_(\d+)_(\d+)\.jpg$", fname)
-            if m:
-                return (int(m.group(1)), int(m.group(2)))
-            return (f.get("timestamp", 0), 0)
-
-        frames_list.sort(key=_get_frame_sort_key)
+        if frames_list:
+            frames_list = compute_relative_times(frames_list)
 
         if header_info and frames_list:
             async with async_session() as session:

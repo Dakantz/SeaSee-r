@@ -43,7 +43,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
   const [batchId, setBatchId] = useState<string>('');
   const batchIdRef = useRef<string>(batchId);
   const videoFilesRef = useRef<File[]>(videoFiles);
-  
+
   const [frameCountsInput, setFrameCountsInput] = useState<string>(
     defaultFrameCounts.join(', ')
   );
@@ -174,7 +174,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
                       dataset_name: datasetName,
                       batch_id: activeBatchId
                     },
-                    depends_on: []
+                    depends_on: ['video_upload']
                   },
                   {
                     id_key: 'opensfm_sparse',
@@ -185,7 +185,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
                       file_id: primaryFileId,
                       batch_id: activeBatchId
                     },
-                    depends_on: ['frame_extraction', 'video_upload']
+                    depends_on: ['frame_extraction']
                   },
                   {
                     id_key: 'opensfm_dense',
@@ -348,7 +348,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
     }
 
     const configs: TusUploadConfig[] = [];
-    
+
     // Sort all video files by modifieddatetime and calculate start/stop timestamps
     const videoMetadataList = await calculateVideoTimestamps(videoFiles);
     const sortedVideos = videoMetadataList.map(v => v.file);
@@ -380,7 +380,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
       }
       configs.push({
         file: item.file,
-        metadata: { 
+        metadata: {
           upload_type: 'video',
           batch_id: currentBatchId,
           video_start_at: item.video_start_at,
@@ -393,7 +393,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
     for (const meta of metadataFiles) {
       configs.push({
         file: meta,
-        metadata: { 
+        metadata: {
           upload_type: 'video_metadata',
           batch_id: currentBatchId
         },
@@ -555,7 +555,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
               <strong>Multiple Values Tip:</strong> Enter comma-separated values (e.g. <code style={{ color: '#38bdf8', backgroundColor: 'rgba(0,0,0,0.3)', padding: '1px 4px', borderRadius: '3px' }}>100, 200</code>) to run a parameter sweep matrix.
             </span>
           </div>
-          
+
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px', borderTop: '1px solid rgba(255, 255, 255, 0.05)' }}>
             <span style={{ fontSize: '11px', color: '#cbd5e1' }}>
               Execution Grid: <strong>{parsedFrameCounts.length}</strong> frame count{parsedFrameCounts.length > 1 ? 's' : ''} × <strong>{parsedBlurThresholds.length}</strong> blur threshold{parsedBlurThresholds.length > 1 ? 's' : ''}

@@ -8,6 +8,10 @@ import cv2
 
 from app.core.config import settings
 from app.services.worker.handlers.base import BaseTaskHandler
+from app.services.opensfm.exif_overrides import (
+    ExifOverridesBuilder,
+    register_frames_for_video,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -96,10 +100,12 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
         logger.info(f"Job {job_id}: Found {len(video_files)} video files in {video_dir}")
         await self.update_job_status(job_id, "RUNNING", 15.0)
 
-        # Calculate total duration
+        # Calculate total duration and individual durations
         total_duration = 0.0
+        video_durations: Dict[str, float] = {}
         for vf in video_files:
             dur = await self._get_video_duration(vf)
+            video_durations[vf] = dur
             total_duration += dur
 
         if total_duration <= 0.0:
@@ -117,6 +123,9 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
         images_dir = os.path.join(dataset_dir, "images")
         os.makedirs(images_dir, exist_ok=True)
 
+        # Initialize EXIF overrides builder
+        exif_builder = ExifOverridesBuilder()
+
         # Extract frames using ffmpeg
         start_num = 1
         total_extracted = 0
@@ -125,6 +134,7 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
             if total_extracted >= num_frames:
                 break
 
+            current_start_num = start_num
             remaining = num_frames - total_extracted
             cmd = [
                 "ffmpeg",
@@ -132,7 +142,7 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
                 "-i", vf,
                 "-vf", f"fps={fps:.8f}",
                 "-vframes", str(remaining),
-                "-start_number", str(start_num),
+                "-start_number", str(current_start_num),
                 os.path.join(images_dir, "image_%05d.png")
             ]
             
@@ -149,7 +159,25 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
 
             # Count total extracted pngs
             png_files = glob.glob(os.path.join(images_dir, "image_*.png"))
-            total_extracted = len(png_files)
+            new_total = len(png_files)
+
+            # Register capture_time for every newly extracted image from this video
+            if new_total > total_extracted:
+                extracted_names = [
+                    f"image_{k:05d}.png"
+                    for k in range(current_start_num, new_total + 1)
+                ]
+                dur_vf = video_durations.get(vf, 0.0)
+                await register_frames_for_video(
+                    builder=exif_builder,
+                    video_path=vf,
+                    frame_filenames=extracted_names,
+                    fps=fps,
+                    video_duration=dur_vf,
+                    payload=payload
+                )
+
+            total_extracted = new_total
             start_num = total_extracted + 1
 
             step_progress = 25.0 + (50.0 * (idx + 1) / len(video_files))
@@ -199,6 +227,15 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
         logger.info(f"Job {job_id}: Blur filtering complete. Kept: {kept_count}, Rejected: {rejected_count}")
         await self.update_job_status(job_id, "RUNNING", 90.0)
 
+        # Part 3: Write exif_overrides.json containing capture_time for every extracted image (including rejected ones)
+        exif_overrides_file = os.path.join(dataset_dir, "exif_overrides.json")
+        exif_builder.save_to_json(exif_overrides_file)
+        logger.info(f"Job {job_id}: Saved {len(exif_builder.overrides)} EXIF overrides to {exif_overrides_file}")
+
+        if reject_dir and os.path.exists(reject_dir):
+            reject_exif_file = os.path.join(reject_dir, "exif_overrides.json")
+            exif_builder.save_to_json(reject_exif_file)
+
         # Copy OpenSfM config if present
         if os.path.exists(opensfm_config):
             target_config = os.path.join(dataset_dir, "config.yaml")
@@ -216,7 +253,9 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
             "kept_images": kept_count,
             "rejected_images": rejected_count,
             "blur_threshold": blur_threshold,
-            "num_frames_requested": num_frames
+            "num_frames_requested": num_frames,
+            "exif_overrides_file": exif_overrides_file,
+            "total_overrides": len(exif_builder.overrides)
         }
 
         await self.update_job_status(job_id, "COMPLETED", 100.0, result=res_data)
