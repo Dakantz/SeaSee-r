@@ -3,7 +3,7 @@ import { BaseUploader } from '../common/BaseUploader';
 import { useTusUpload, formatUuid } from '../common/useTusUpload';
 import type { TusUploadConfig } from '../common/useTusUpload';
 import { calculateVideoTimestamps, DEBUG_VIDEO_TIMESTAMPS } from '../common/videoUtils';
-import { createPipeline, generateBatchId } from '../../client';
+import { createPipeline, generateTusdBatchId } from '../../client';
 import { getTusEndpoint } from '../../utils/apiConfig';
 
 export interface VideoUploaderProps {
@@ -128,7 +128,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
         let activeBatchId = batchIdRef.current || batchId;
         if (!activeBatchId) {
           try {
-            const bRes = await generateBatchId();
+            const bRes = await generateTusdBatchId();
             if (bRes.data?.batch_id || bRes.data?.batchId) {
               activeBatchId = String(bRes.data.batch_id || bRes.data.batchId);
               batchIdRef.current = activeBatchId;
@@ -283,7 +283,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
     }
 
     if ((newVideoFiles.length > 0 || newMetadataFiles.length > 0) && !batchIdRef.current) {
-      generateBatchId().then(res => {
+      generateTusdBatchId().then(res => {
         const id = res.data?.batch_id || res.data?.batchId;
         if (id) {
           const idStr = String(id);
@@ -326,7 +326,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
     let currentBatchId = batchIdRef.current || batchId;
     if (!isResume || !currentBatchId) {
       try {
-        const res = await generateBatchId();
+        const res = await generateTusdBatchId();
         if (res.data?.batch_id || res.data?.batchId) {
           currentBatchId = String(res.data.batch_id || res.data.batchId);
         }

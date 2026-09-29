@@ -453,11 +453,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                             type="button"
                             className="logs-video-btn"
                             onClick={() => {
-                                if (currentTime > 3 && videoRef.current) {
-                                    videoRef.current.currentTime = 0;
-                                    setCurrentTime(0);
-                                    syncPointAtTime(0);
-                                } else if (onSelectVideoIndex && resolvedIndex > 0) {
+                                if (onSelectVideoIndex && resolvedIndex > 0) {
                                     onSelectVideoIndex(resolvedIndex - 1);
                                 } else if (!isControlled && resolvedIndex > 0) {
                                     setInternalIndex(resolvedIndex - 1);

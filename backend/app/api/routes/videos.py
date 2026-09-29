@@ -2,9 +2,8 @@ import os
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import FileResponse
 from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from sqlalchemy.orm import selectinload
@@ -13,8 +12,7 @@ from app.core.config import settings
 from app.core.database import get_db_session
 from app.models.video import Video, UploadMetadata
 from app.models.pointcloud import PointCloudMetadata
-from app.schemas.video import VideoResponse, UploadMetadataResponse
-from app.schemas.video import VideoResponse, UploadMetadataResponse, BatchIdResponse, BatchOverviewResponse
+from app.schemas.video import VideoResponse, UploadMetadataResponse, BatchOverviewResponse
 
 router = APIRouter(
     prefix="/videos",
@@ -45,25 +43,8 @@ def _find_video_file_path(video: Video) -> str:
     raise HTTPException(status_code=404, detail=f"Video file not found on server disk for video {video.id}")
 
 # ==========================================
-# BATCH ENDPOINTS
+# BATCH OVERVIEW ENDPOINTS
 # ==========================================
-
-@router.post("/batch-id", response_model=BatchIdResponse)
-async def generate_batch_id():
-    """
-    Generate a new batch UUID for grouping files during tusd upload.
-    """
-    new_id = uuid.uuid4()
-    return BatchIdResponse(batch_id=new_id, batchId=new_id)
-
-
-@router.get("/batch-id", response_model=BatchIdResponse)
-async def get_batch_id():
-    """
-    Get a newly generated batch UUID for grouping files during tusd upload.
-    """
-    new_id = uuid.uuid4()
-    return BatchIdResponse(batch_id=new_id, batchId=new_id)
 
 
 @router.get("/batches", response_model=List[BatchOverviewResponse])
