@@ -9,22 +9,22 @@ interface UploaderInstanceProps {
 
 const UploaderInstance: React.FC<UploaderInstanceProps> = ({ title, chunkSize }) => {
   const [statusMessage, setStatusMessage] = useState<string>('');
-  const [fileIds, setFileIds] = useState<string[]>([]);
+  const [isSuccess, setIsSuccess] = useState<boolean>(false);
 
-  const handleUploadSuccess = (ids: string[]) => {
-    setFileIds(ids);
+  const handleUploadSuccess = () => {
+    setIsSuccess(true);
     setStatusMessage(`Upload completed successfully!`);
   };
 
   const handleUploadError = (error: Error) => {
     setStatusMessage(`Upload failed: ${error.message}`);
-    setFileIds([]);
+    setIsSuccess(false);
   };
 
   const handleProgress = (percentage: number) => {
     if (percentage < 100) {
       setStatusMessage(`Uploading... ${percentage}%`);
-      setFileIds([]);
+      setIsSuccess(false);
     } else {
       setStatusMessage('Finalizing...');
     }
@@ -46,35 +46,18 @@ const UploaderInstance: React.FC<UploaderInstanceProps> = ({ title, chunkSize })
         <div style={{
           marginTop: '24px',
           padding: '16px',
-          backgroundColor: fileIds.length > 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(15, 23, 42, 0.6)',
+          backgroundColor: isSuccess ? 'rgba(16, 185, 129, 0.1)' : 'rgba(15, 23, 42, 0.6)',
           borderRadius: '8px',
           borderStyle: 'solid',
           borderWidth: '1px',
           borderColor: 'rgba(255, 255, 255, 0.05)',
           borderLeftWidth: '4px',
-          borderLeftColor: fileIds.length > 0 ? '#10b981' : '#3b82f6',
+          borderLeftColor: isSuccess ? '#10b981' : '#3b82f6',
           boxShadow: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)'
         }}>
           <p style={{ margin: 0, color: '#f1f5f9', fontWeight: 500, fontSize: '15px' }}>
             {statusMessage}
           </p>
-          {fileIds.length > 0 && (
-            <div style={{ margin: '12px 0 0 0', color: '#94a3b8', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              File IDs:
-              {fileIds.map(id => (
-                <span key={id} style={{
-                  fontFamily: 'monospace',
-                  backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                  padding: '4px 8px',
-                  borderRadius: '6px',
-                  color: '#cbd5e1',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
-                }}>
-                  {id}
-                </span>
-              ))}
-            </div>
-          )}
         </div>
       )}
     </div>

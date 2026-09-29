@@ -52,8 +52,23 @@ class VideoUploadService:
         video_stop_at_str = payload.metadata.get("video_stop_at")
         now = datetime.now(timezone.utc)
         
-        start_at = datetime.fromisoformat(video_start_at_str) if video_start_at_str else now
-        stop_at = datetime.fromisoformat(video_stop_at_str) if video_stop_at_str else now
+        start_at = now
+        if video_start_at_str:
+            try:
+                start_at = datetime.fromisoformat(video_start_at_str)
+                if start_at.tzinfo is None:
+                    start_at = start_at.replace(tzinfo=timezone.utc)
+            except Exception:
+                start_at = now
+
+        stop_at = now
+        if video_stop_at_str:
+            try:
+                stop_at = datetime.fromisoformat(video_stop_at_str)
+                if stop_at.tzinfo is None:
+                    stop_at = stop_at.replace(tzinfo=timezone.utc)
+            except Exception:
+                stop_at = now
 
         video = Video(
             id=uuid.uuid4(),
@@ -83,6 +98,29 @@ class VideoUploadService:
         if upload_meta:
             upload_meta.status = VideoStatus.COMPLETED
             upload_meta.completed_at = datetime.now(timezone.utc)
+
+            v_start_str = payload.metadata.get("video_start_at")
+            v_stop_str = payload.metadata.get("video_stop_at")
+            if upload_meta.videos:
+                for v in upload_meta.videos:
+                    if payload.total_bytes and not v.total_bytes:
+                        v.total_bytes = payload.total_bytes
+                    if v_start_str:
+                        try:
+                            parsed_start = datetime.fromisoformat(v_start_str)
+                            if parsed_start.tzinfo is None:
+                                parsed_start = parsed_start.replace(tzinfo=timezone.utc)
+                            v.video_start_at = parsed_start
+                        except Exception:
+                            pass
+                    if v_stop_str:
+                        try:
+                            parsed_stop = datetime.fromisoformat(v_stop_str)
+                            if parsed_stop.tzinfo is None:
+                                parsed_stop = parsed_stop.replace(tzinfo=timezone.utc)
+                            v.video_stop_at = parsed_stop
+                        except Exception:
+                            pass
             await db.commit()
 
         try:

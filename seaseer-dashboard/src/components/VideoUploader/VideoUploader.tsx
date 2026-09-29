@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { BaseUploader } from '../common/BaseUploader';
 import { useTusUpload, formatUuid } from '../common/useTusUpload';
 import type { TusUploadConfig } from '../common/useTusUpload';
+import { calculateVideoTimestamps, DEBUG_VIDEO_TIMESTAMPS } from '../common/videoUtils';
 import { createPipeline, generateBatchId } from '../../client';
 import { getTusEndpoint } from '../../utils/apiConfig';
 
@@ -41,6 +42,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
   const [metadataFiles, setMetadataFiles] = useState<File[]>([]);
   const [batchId, setBatchId] = useState<string>('');
   const batchIdRef = useRef<string>(batchId);
+  const videoFilesRef = useRef<File[]>(videoFiles);
   
   const [frameCountsInput, setFrameCountsInput] = useState<string>(
     defaultFrameCounts.join(', ')
@@ -55,6 +57,10 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
   useEffect(() => {
     batchIdRef.current = batchId;
   }, [batchId]);
+
+  useEffect(() => {
+    videoFilesRef.current = videoFiles;
+  }, [videoFiles]);
 
   useEffect(() => {
     frameCountsRef.current = frameCountsInput;
@@ -80,7 +86,8 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
     tusEndpoint,
     chunkSize,
     onUploadSuccess: async (fileIdsMap) => {
-      const videoIds = videoFiles.map(v => formatUuid(fileIdsMap[v.name])).filter(Boolean);
+      const currentVideos = videoFilesRef.current.length > 0 ? videoFilesRef.current : videoFiles;
+      const videoIds = currentVideos.map(v => formatUuid(fileIdsMap[v.name])).filter(Boolean);
 
       // Automatically create job pipeline across user-configured parameter grid (num_frames x blur_threshold)
       try {
@@ -88,7 +95,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
         const blurThresholds = parseInputNumbers(blurThresholdsRef.current, defaultBlurThresholds);
 
         const videoSafeFilenames: string[] = [];
-        for (const vf of videoFiles) {
+        for (const vf of currentVideos) {
           const rawId = fileIdsMap[vf.name];
           const fId = formatUuid(rawId);
           const ext = vf.name.includes('.') ? vf.name.slice(vf.name.lastIndexOf('.')) : '';
@@ -98,7 +105,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
           }
         }
 
-        const primaryFile = videoFiles[0] || metadataFiles[0];
+        const primaryFile = currentVideos[0] || metadataFiles[0];
         if (!primaryFile) return;
 
         const primaryRawId = fileIdsMap[primaryFile.name];
@@ -114,7 +121,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
           return `${files.length} videos (${firstTwo}${extra})`;
         };
 
-        const fileNamesSummary = formatSummary(videoFiles);
+        const fileNamesSummary = formatSummary(currentVideos);
         const truncateStr = (str: string, maxLen = 220) =>
           str.length > maxLen ? `${str.slice(0, maxLen - 3)}...` : str;
 
@@ -245,10 +252,25 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
     });
 
     if (newVideoFiles.length > 0) {
+      if (DEBUG_VIDEO_TIMESTAMPS) {
+        console.log(
+          '[VideoUploader] Video files selected/dropped:',
+          newVideoFiles.map((f) => ({
+            name: f.name,
+            lastModifiedMs: f.lastModified,
+            lastModifiedISO: new Date(f.lastModified).toISOString(),
+            lastModifiedLocal: new Date(f.lastModified).toString(),
+            sizeBytes: f.size,
+          }))
+        );
+      }
       setVideoFiles(prev => {
         const existingNames = new Set(prev.map(f => f.name));
         const filtered = newVideoFiles.filter(f => !existingNames.has(f.name));
-        return [...prev, ...filtered];
+        const merged = [...prev, ...filtered];
+        const sorted = merged.sort((a, b) => (a.lastModified || 0) - (b.lastModified || 0));
+        videoFilesRef.current = sorted;
+        return sorted;
       });
     }
 
@@ -327,12 +349,42 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
 
     const configs: TusUploadConfig[] = [];
     
-    for (const video of videoFiles) {
+    // Sort all video files by modifieddatetime and calculate start/stop timestamps
+    const videoMetadataList = await calculateVideoTimestamps(videoFiles);
+    const sortedVideos = videoMetadataList.map(v => v.file);
+    videoFilesRef.current = sortedVideos;
+    setVideoFiles(sortedVideos);
+
+    if (DEBUG_VIDEO_TIMESTAMPS) {
+      console.log('[VideoUploader] Video timestamps ready for upload:');
+      console.table(
+        videoMetadataList.map((item) => ({
+          fileName: item.file.name,
+          lastModifiedMs: item.file.lastModified,
+          lastModifiedISO: new Date(item.file.lastModified).toISOString(),
+          durationSec: `${item.duration.toFixed(2)}s`,
+          video_start_at: item.video_start_at,
+          video_stop_at: item.video_stop_at,
+        }))
+      );
+    }
+
+    for (const item of videoMetadataList) {
+      if (DEBUG_VIDEO_TIMESTAMPS) {
+        console.log(`[VideoUploader] Upload metadata payload for "${item.file.name}":`, {
+          upload_type: 'video',
+          batch_id: currentBatchId,
+          video_start_at: item.video_start_at,
+          video_stop_at: item.video_stop_at,
+        });
+      }
       configs.push({
-        file: video,
+        file: item.file,
         metadata: { 
           upload_type: 'video',
-          batch_id: currentBatchId
+          batch_id: currentBatchId,
+          video_start_at: item.video_start_at,
+          video_stop_at: item.video_stop_at,
         },
         fingerprintPrefix: 'video'
       });
