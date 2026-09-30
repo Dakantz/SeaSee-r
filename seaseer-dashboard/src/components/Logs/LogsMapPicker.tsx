@@ -104,7 +104,7 @@ export const LogsMapPicker: React.FC<LogsMapPickerProps> = ({
                             </button>
                             <Link to="/" className="logs-empty-btn-secondary">
                                 <FiEye size={14} />
-                                <span>Open Workspace</span>
+                                <span>Open PointCloud Overview</span>
                             </Link>
                         </div>
                     </div>

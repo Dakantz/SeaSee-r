@@ -9,6 +9,7 @@ import { PLYPointCloudProvider } from "../PointCloudPanel/PLYPointCloudContext";
 import PLYPointCloudSidebar from "../PointCloudPanel/PLYPointCloudSidebar";
 import CustomQueryManagerContainer from "../PointCloudPanel/CustomQueryManagerContainer";
 import { VideoLogsPanel } from "../Logs/VideoLogsPanel";
+import LegacyBanner from "../common/LegacyBanner";
 
 import "./Workspace.css";
 
@@ -19,7 +20,9 @@ export default function Workspace() {
 
     return (
         <PLYPointCloudProvider>
-            <div className="workspace-container">
+            <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <LegacyBanner pageName="Workspace" />
+                <div className="workspace-container">
                 <Group orientation="horizontal" className="workspace">
                     {/* Left Collapsible Panel: Custom Queries */}
                     {isQueriesOpen && (
@@ -152,6 +155,7 @@ export default function Workspace() {
                         </>
                     )}
                 </Group>
+                </div>
             </div>
         </PLYPointCloudProvider>
     );

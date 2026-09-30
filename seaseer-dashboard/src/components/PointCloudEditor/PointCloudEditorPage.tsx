@@ -6,6 +6,7 @@ import type {PointCloudMetadataResponse} from "../../client";
 import PointCloudSidebar from './PointCloudSidebar';
 import { ViewerProvider } from './ViewerContext';
 import { getApiBaseUrl } from '../../utils/apiConfig';
+import LegacyBanner from '../common/LegacyBanner';
 
 const PointCloudEditorPageContent: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -131,10 +132,12 @@ const PointCloudEditorPageContent: React.FC = () => {
     }
 
     return (
-        <div style={{ width: '100%', height: '100vh', background: '#000', position: 'relative' }}>
-            <PointCloudSidebar onSelect={handleSelect} selectedIds={selectedIds} onEditSelect={setEditingPointcloudId} editingId={editingPointcloudId} refreshKey={refreshSidebarKey} onDelete={handleDeletePointCloud} onDeleteAll={handleDeleteAllSelected} />
-            
-            <div style={{ marginLeft: '288px', height: '100%', position: 'relative' }}>
+        <div style={{ width: '100%', height: '100%', flex: 1, display: 'flex', flexDirection: 'column', background: '#000', overflow: 'hidden' }}>
+            <LegacyBanner pageName="PointCloud Editor" />
+            <div style={{ position: 'relative', flex: 1, width: '100%', minHeight: 0, overflow: 'hidden' }}>
+                <PointCloudSidebar onSelect={handleSelect} selectedIds={selectedIds} onEditSelect={setEditingPointcloudId} editingId={editingPointcloudId} refreshKey={refreshSidebarKey} onDelete={handleDeletePointCloud} onDeleteAll={handleDeleteAllSelected} />
+                
+                <div style={{ marginLeft: '288px', height: '100%', position: 'relative' }}>
                 {/* Native Potree DOM Container */}
                 <NativePotreeViewer pointCloudIds={selectedIds} gizmoMode={gizmoMode} editingPointcloudId={editingPointcloudId} />
                 
@@ -347,6 +350,7 @@ const PointCloudEditorPageContent: React.FC = () => {
                         </div>
                     </div>
                 )}
+            </div>
             </div>
         </div>
     );

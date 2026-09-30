@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import "./App.css";
 
 import Toolbar from "./components/Toolbar";
@@ -18,9 +18,10 @@ function App() {
         <div className="app">
             <Toolbar />
             <Routes>
-                <Route path="/" element={<Workspace />} />
+                <Route path="/" element={<PointCloudOverviewPage />} />
+                <Route path="/pointcloud-overview" element={<Navigate to="/" replace />} />
+                <Route path="/workspace" element={<Workspace />} />
                 <Route path="/logs" element={<LogsPage />} />
-                <Route path="/pointcloud-overview" element={<PointCloudOverviewPage />} />
                 <Route path="/lod-algorithm-analyzer" element={<LodAlgorithmAnalyzerPage />} />
                 <Route path="/health" element={<HealthPage />} />
                 <Route path="/video-upload-test" element={<VideoUploadTestPage />} />

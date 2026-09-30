@@ -56,7 +56,7 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
     };
 
     return (
-        <aside style={{ position: 'fixed', left: 0, top: 0, width: '288px', height: '100vh', backgroundColor: '#0f172a', borderRight: '1px solid #1e293b', color: '#cbd5e1', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', zIndex: 50 }}>
+        <aside style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '288px', height: '100%', backgroundColor: '#0f172a', borderRight: '1px solid #1e293b', color: '#cbd5e1', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', zIndex: 50 }}>
             <div style={{ padding: '24px', borderBottom: '1px solid #1e293b', backgroundColor: 'rgba(15, 23, 42, 0.5)' }}>
                 <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: 'white', letterSpacing: '-0.025em', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
                     <svg style={{ width: '20px', height: '20px', color: '#3b82f6' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">

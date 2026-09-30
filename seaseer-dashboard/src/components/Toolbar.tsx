@@ -51,22 +51,7 @@ export default function Toolbar() {
                 <nav style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <NavLink
                         to="/"
-                        style={({ isActive }) => ({
-                            color: isActive ? "#38bdf8" : "#94a3b8",
-                            textDecoration: "none",
-                            padding: "6px 12px",
-                            borderRadius: "6px",
-                            fontSize: "13px",
-                            fontWeight: 500,
-                            background: isActive ? "rgba(56, 189, 248, 0.15)" : "transparent",
-                            border: isActive ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid transparent"
-                        })}
-                    >
-                        Workspace
-                    </NavLink>
-
-                    <NavLink
-                        to="/pointcloud-overview"
+                        end
                         style={({ isActive }) => ({
                             color: isActive ? "#38bdf8" : "#94a3b8",
                             textDecoration: "none",
@@ -95,22 +80,6 @@ export default function Toolbar() {
                         })}
                     >
                         LOD Analyzer
-                    </NavLink>
-
-                    <NavLink
-                        to="/pointcloud-editor"
-                        style={({ isActive }) => ({
-                            color: isActive ? "#38bdf8" : "#94a3b8",
-                            textDecoration: "none",
-                            padding: "6px 12px",
-                            borderRadius: "6px",
-                            fontSize: "13px",
-                            fontWeight: 500,
-                            background: isActive ? "rgba(56, 189, 248, 0.15)" : "transparent",
-                            border: isActive ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid transparent"
-                        })}
-                    >
-                        PointCloud Editor
                     </NavLink>
 
                     <NavLink
