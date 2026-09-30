@@ -388,14 +388,58 @@ async def test_register_frames_for_video_with_telemetry():
     # Frame 1 at base_ts_ms (matches mock_logs[0])
     f1 = overrides["image_00001.png"]
     assert "capture_time" in f1
-    assert "yaw" in f1 and "pitch" in f1 and "roll" in f1
-    assert "ypr" in f1
-    assert pytest.approx(f1["yaw"], 1e-4) == 320.0
-    assert pytest.approx(f1["pitch"], 1e-4) == 1.0
-    assert pytest.approx(f1["roll"], 1e-4) == 5.0
+    assert "opk" in f1
+    assert "yaw" not in f1 and "pitch" not in f1 and "roll" not in f1 and "ypr" not in f1
+    assert "omega" in f1["opk"] and "phi" in f1["opk"] and "kappa" in f1["opk"]
 
     # Frame 2 at base_ts_ms + 1000 (matches mock_logs[1])
     f2 = overrides["image_00002.png"]
-    assert pytest.approx(f2["yaw"], 1e-4) == 330.0
-    assert pytest.approx(f2["pitch"], 1e-4) == 3.0
-    assert pytest.approx(f2["roll"], 1e-4) == 7.0
+    assert "capture_time" in f2
+    assert "opk" in f2
+    assert "yaw" not in f2 and "pitch" not in f2 and "roll" not in f2 and "ypr" not in f2
+
+
+def test_opk_from_ypr_and_omits_unused():
+    from app.services.opensfm.exif_overrides import opk_from_ypr, ImageExifOverride, ExifOverridesBuilder
+
+    # 1. Direct opk_from_ypr conversion verification
+    opk = opk_from_ypr(yaw=166.8124, pitch=-26.9126, roll=0.0845, lat=52.0, lon=13.0, alt=100.0)
+    assert pytest.approx(opk["omega"], 1e-2) == 26.32
+    assert pytest.approx(opk["phi"], 1e-2) == 5.84
+    assert pytest.approx(opk["kappa"], 1e-2) == -168.20
+
+    # 2. ImageExifOverride formats to OPK and discards yaw/pitch/roll/ypr
+    override = ImageExifOverride(
+        capture_time=1785617503.0,
+        yaw=166.8124,
+        pitch=-26.9126,
+        roll=0.0845,
+        ypr={"yaw": 166.8124, "pitch": -26.9126, "roll": 0.0845},
+        extra={"unused_ypr_in_extra": 123, "yaw": 999.0}
+    )
+    serialized = override.to_dict()
+
+    assert serialized["capture_time"] == 1785617503.0
+    assert "opk" in serialized
+    assert serialized["opk"]["omega"] == opk_from_ypr(166.8124, -26.9126, 0.0845)["omega"]
+    assert serialized["opk"]["phi"] == opk_from_ypr(166.8124, -26.9126, 0.0845)["phi"]
+    assert serialized["opk"]["kappa"] == opk_from_ypr(166.8124, -26.9126, 0.0845)["kappa"]
+
+    # Verify unused fields are completely omitted
+    assert "yaw" not in serialized
+    assert "pitch" not in serialized
+    assert "roll" not in serialized
+    assert "ypr" not in serialized
+    assert serialized["unused_ypr_in_extra"] == 123
+
+    # 3. Builder add_opk convenience method
+    builder = ExifOverridesBuilder()
+    builder.add_opk("test_img.jpg", omega=10.0, phi=20.0, kappa=30.0, accuracy=0.5)
+    b_dict = builder.to_dict()
+    assert b_dict["test_img.jpg"]["opk"] == {
+        "omega": 10.0,
+        "phi": 20.0,
+        "kappa": 30.0,
+        "accuracy": 0.5,
+    }
+

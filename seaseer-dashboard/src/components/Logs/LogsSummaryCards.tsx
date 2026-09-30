@@ -4,19 +4,17 @@ import {
     FiCompass,
     FiActivity,
     FiClock,
-    FiCrosshair,
     FiDatabase,
 } from "react-icons/fi";
 import type { MissionSummary, ComputedTelemetryPoint } from "./types";
 
 interface LogsSummaryCardsProps {
     summary: MissionSummary | null;
-    activePoint: ComputedTelemetryPoint | null;
+    activePoint?: ComputedTelemetryPoint | null;
 }
 
 export const LogsSummaryCards: React.FC<LogsSummaryCardsProps> = ({
     summary,
-    activePoint,
 }) => {
     if (!summary) {
         return (
@@ -122,31 +120,6 @@ export const LogsSummaryCards: React.FC<LogsSummaryCardsProps> = ({
                 <div className="logs-kpi-subtext">
                     Volume: {summary.boundingVolumeM3.toFixed(1)} m³ ({summary.extentX.toFixed(1)}m × {summary.extentY.toFixed(1)}m)
                 </div>
-            </div>
-
-            <div className="logs-kpi-card logs-kpi-active">
-                <div className="logs-kpi-header">
-                    <span className="logs-kpi-title">
-                        {activePoint ? `Waypoint #${activePoint.index + 1}` : "Waypoint Focus"}
-                    </span>
-                    <div className="logs-kpi-icon logs-icon-focus">
-                        <FiCrosshair size={15} />
-                    </div>
-                </div>
-                {activePoint ? (
-                    <>
-                        <div className="logs-kpi-value-group logs-coords-text">
-                            [{activePoint.x.toFixed(1)}, {activePoint.y.toFixed(1)}, {activePoint.z.toFixed(1)}]
-                        </div>
-                        <div className="logs-kpi-subtext logs-truncate" title={activePoint.filename || undefined}>
-                            Time: {activePoint.relativeTime.toFixed(2)}s | {activePoint.filename || ""}
-                        </div>
-                    </>
-                ) : (
-                    <div className="logs-kpi-subtext logs-muted">
-                        Hover/click waypoint to inspect coordinates
-                    </div>
-                )}
             </div>
         </div>
     );

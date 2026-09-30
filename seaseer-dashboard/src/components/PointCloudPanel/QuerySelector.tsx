@@ -25,8 +25,8 @@ export interface QuerySelectorProps {
   onUpdateQuery: (id: string, field: string, value: any) => void;
   /** Handler to delete a query */
   onDeleteQuery: (id: string) => void;
-  /** Handler to run/stream a query */
-  onRunQuery: (query: CustomQuery) => void;
+  /** Optional handler to run/stream a query */
+  onRunQuery?: (query: CustomQuery) => void;
   /** Handler to unload a query from the 3D scene */
   onUnloadQuery?: (query: CustomQuery) => void;
   /** Handler to focus camera on the query bounding box center */
@@ -65,7 +65,7 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
   summaryError,
   onUpdateQuery,
   onDeleteQuery,
-  onRunQuery,
+  onRunQuery: _onRunQuery,
   onUnloadQuery,
   onFocusQuery,
   onRefreshSummary,
@@ -180,7 +180,7 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
             ✏️ {ctx?.editingPointcloudId === query.id ? "Editing" : "Edit"}
           </button>
 
-          {isLoadedStream || isLoadingStream ? (
+          {(isLoadedStream || isLoadingStream) && (
             <button
               type="button"
               title="Unload this query from 3D scene"
@@ -188,15 +188,6 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
               className="query-selector__btn--unload"
             >
               ⏸️ Unload
-            </button>
-          ) : (
-            <button
-              type="button"
-              title="Run / Stream this query"
-              onClick={() => onRunQuery(query)}
-              className="query-selector__btn--stream"
-            >
-              ⚡ Stream
             </button>
           )}
 

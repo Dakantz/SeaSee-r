@@ -47,6 +47,7 @@ export function useLogsData() {
                     min_z: item.min_z,
                     max_z: item.max_z,
                     center: item.center as [number, number, number] | undefined,
+                    batch_id: item.batch_id,
                 }));
 
             setMaps(parsedMaps);

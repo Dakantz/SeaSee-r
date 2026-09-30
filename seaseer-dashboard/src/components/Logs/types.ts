@@ -11,7 +11,30 @@ export interface PointCloudOption {
     min_z?: number | null;
     max_z?: number | null;
     center?: [number, number, number] | null;
+    batch_id?: string | null;
 }
+
+export interface LogDataPayload {
+    depth?: number;
+    temperature?: number;
+    yaw?: number;
+    pitch?: number;
+    roll?: number;
+    altitude?: number;
+    distance?: number;
+    left?: number;
+    right?: number;
+    [key: string]: any;
+}
+
+export interface LogDataItem {
+    id: string;
+    timestamp: number;
+    time_recorded?: string | null;
+    payload: LogDataPayload;
+    batch_id?: string | null;
+}
+
 
 export interface ComputedTelemetryPoint {
     index: number;

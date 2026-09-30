@@ -9,6 +9,7 @@ from app.services.opensfm.exif_overrides import (
     lerp_angle,
     lerp_value,
     fetch_log_data_for_time_range,
+    opk_from_ypr,
 )
 from app.services.opensfm.ingest import compute_relative_times
 
@@ -22,5 +23,6 @@ __all__ = [
     "lerp_angle",
     "lerp_value",
     "fetch_log_data_for_time_range",
+    "opk_from_ypr",
     "compute_relative_times",
 ]

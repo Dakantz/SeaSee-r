@@ -1,6 +1,6 @@
-import React, { useRef, useState, useMemo, useCallback } from "react";
-import { FiActivity, FiCompass, FiNavigation, FiLayers } from "react-icons/fi";
-import type { ComputedTelemetryPoint, VideoItem } from "./types";
+import React, { useRef, useState, useMemo, useCallback, useEffect } from "react";
+import { FiActivity, FiNavigation, FiThermometer, FiDroplet } from "react-icons/fi";
+import type { ComputedTelemetryPoint, VideoItem, LogDataItem } from "./types";
 import { getVideoDuration } from "./types";
 import { useTrajectoryLogSync } from "./hooks/useTrajectoryLogSync";
 
@@ -14,6 +14,21 @@ interface LogsChartsProps {
     onSelectIndex: (index: number) => void;
     onHoverIndex: (index: number | null) => void;
     onSeekTime?: (timeSec: number, videoIndex?: number) => void;
+    batchId?: string | null;
+    startTime?: number | string | null;
+    endTime?: number | string | null;
+}
+
+type ChartMode = "log_depth" | "log_temperature" | "speed" | "distance";
+
+interface ComputedLogPoint {
+    raw: LogDataItem;
+    index: number;
+    relativeTime: number;
+    videoIndex?: number;
+    videoTime?: number;
+    depth: number | null;
+    temperature: number | null;
 }
 
 export const LogsCharts: React.FC<LogsChartsProps> = ({
@@ -26,10 +41,132 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
     onSelectIndex,
     onHoverIndex,
     onSeekTime,
+    batchId: propBatchId,
+    startTime: propStartTime,
+    endTime: propEndTime,
 }) => {
-    const [chartMode, setChartMode] = useState<"depth" | "altitude" | "speed" | "distance">("depth");
+    const [chartMode, setChartMode] = useState<ChartMode>("log_depth");
     const containerRef = useRef<HTMLDivElement>(null);
     const activeSyncPoint = useTrajectoryLogSync((state) => state.activePoint);
+
+    const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+    // Resolve batch_id from props or from videos metadata
+    const resolvedBatchId = useMemo(() => {
+        if (propBatchId) return propBatchId;
+        if (videos && videos.length > 0) {
+            const found = videos.find((v) => v.upload_metadata?.batch_id);
+            if (found && found.upload_metadata?.batch_id) {
+                return found.upload_metadata.batch_id;
+            }
+        }
+        return null;
+    }, [propBatchId, videos]);
+
+    // Determine timerange across videos or points if not explicitly passed
+    const { effectiveStart, effectiveEnd } = useMemo(() => {
+        if (propStartTime !== undefined && propStartTime !== null && propEndTime !== undefined && propEndTime !== null) {
+            return { effectiveStart: propStartTime, effectiveEnd: propEndTime };
+        }
+
+        // Try from videos
+        if (videos && videos.length > 0) {
+            const starts = videos.map((v) => new Date(v.video_start_at).getTime()).filter((t) => !isNaN(t) && t > 0);
+            const stops = videos.map((v) => new Date(v.video_stop_at).getTime()).filter((t) => !isNaN(t) && t > 0);
+            if (starts.length > 0 && stops.length > 0) {
+                return {
+                    effectiveStart: propStartTime ?? Math.min(...starts),
+                    effectiveEnd: propEndTime ?? Math.max(...stops),
+                };
+            }
+        }
+
+        // Try from points timestamps
+        if (points && points.length > 0) {
+            const validTs = points.map((p) => p.timestamp).filter((t) => typeof t === "number" && t > 1e8);
+            if (validTs.length > 0) {
+                const norm = validTs.map((t) => (t > 1e11 ? t : t * 1000));
+                return {
+                    effectiveStart: propStartTime ?? Math.min(...norm),
+                    effectiveEnd: propEndTime ?? Math.max(...norm),
+                };
+            }
+        }
+
+        return {
+            effectiveStart: propStartTime ?? null,
+            effectiveEnd: propEndTime ?? null,
+        };
+    }, [propStartTime, propEndTime, videos, points]);
+
+    // Backend route state for log_data
+    const [logData, setLogData] = useState<LogDataItem[]>([]);
+    const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
+    const [logsError, setLogsError] = useState<string | null>(null);
+
+    // Fetch log_data from the new backend route
+    useEffect(() => {
+        if (!resolvedBatchId) {
+            setLogData([]);
+            setLoadingLogs(false);
+            return;
+        }
+
+        let isCancelled = false;
+        setLoadingLogs(true);
+        setLogsError(null);
+
+        async function fetchLogs() {
+            try {
+                const url = new URL(`${apiBaseUrl}/videos/batches/${resolvedBatchId}/logs`);
+                if (effectiveStart !== null && effectiveStart !== undefined) {
+                    url.searchParams.append("start_time", String(effectiveStart));
+                }
+                if (effectiveEnd !== null && effectiveEnd !== undefined) {
+                    url.searchParams.append("end_time", String(effectiveEnd));
+                }
+
+                let res = await fetch(url.toString());
+                if (!res.ok) {
+                    // Fallback to /logs?batch_id=...
+                    const fallbackUrl = new URL(`${apiBaseUrl}/logs`);
+                    fallbackUrl.searchParams.append("batch_id", resolvedBatchId!);
+                    if (effectiveStart !== null && effectiveStart !== undefined) {
+                        fallbackUrl.searchParams.append("start_time", String(effectiveStart));
+                    }
+                    if (effectiveEnd !== null && effectiveEnd !== undefined) {
+                        fallbackUrl.searchParams.append("end_time", String(effectiveEnd));
+                    }
+                    res = await fetch(fallbackUrl.toString());
+                }
+
+                if (!res.ok) {
+                    throw new Error(`Failed to load log data: ${res.statusText}`);
+                }
+
+                const data = await res.json();
+                if (!isCancelled) {
+                    setLogData(Array.isArray(data) ? data : []);
+                }
+            } catch (err: any) {
+                if (!isCancelled) {
+                    console.error("Error fetching batch log data:", err);
+                    setLogsError(err?.message || "Failed to load log data");
+                    setLogData([]);
+                }
+            } finally {
+                if (!isCancelled) {
+                    setLoadingLogs(false);
+                }
+            }
+        }
+
+        fetchLogs();
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [resolvedBatchId, effectiveStart, effectiveEnd, apiBaseUrl]);
 
     // Compute combined duration and start offsets across all videos
     const videoTimeline = useMemo(() => {
@@ -48,49 +185,105 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
         };
     }, [videos]);
 
+    // Compute log data points mapped to timeline
+    const computedLogPoints = useMemo<ComputedLogPoint[]>(() => {
+        if (!logData || logData.length === 0) return [];
+
+        let t0: number | null = null;
+        if (videos && videos.length > 0) {
+            const vStart = new Date(videos[0].video_start_at).getTime();
+            if (!isNaN(vStart) && vStart > 0) {
+                t0 = vStart;
+            }
+        }
+        if (t0 === null && points && points.length > 0) {
+            const firstPtTs = points.find((p) => p.timestamp > 1e8)?.timestamp;
+            if (firstPtTs) {
+                t0 = firstPtTs > 1e11 ? firstPtTs : firstPtTs * 1000;
+            }
+        }
+        if (t0 === null && logData.length > 0) {
+            t0 = logData[0].timestamp;
+        }
+
+        return logData.map((item, idx) => {
+            let relTime = t0 !== null ? Math.max(0, (item.timestamp - t0) / 1000.0) : idx * 0.1;
+            let vidIdx: number | undefined = undefined;
+            let vidTime: number | undefined = undefined;
+
+            if (videoTimeline && videos && videos.length > 0) {
+                for (let i = 0; i < videos.length; i++) {
+                    const s = new Date(videos[i].video_start_at).getTime();
+                    const e = new Date(videos[i].video_stop_at).getTime();
+                    if (!isNaN(s) && !isNaN(e) && item.timestamp >= s && item.timestamp <= e) {
+                        vidIdx = i;
+                        vidTime = Math.max(0, (item.timestamp - s) / 1000.0);
+                        relTime = videoTimeline.offsets[i] + vidTime;
+                        break;
+                    }
+                }
+            }
+
+            const rawDepth = item.payload?.depth ?? item.payload?.Depth;
+            const depth = typeof rawDepth === "number" && !isNaN(rawDepth) ? rawDepth : null;
+
+            const rawTemp = item.payload?.temperature ?? item.payload?.Temperature;
+            const temperature = typeof rawTemp === "number" && !isNaN(rawTemp) ? rawTemp : null;
+
+            return {
+                raw: item,
+                index: idx,
+                relativeTime: relTime,
+                videoIndex: vidIdx,
+                videoTime: vidTime,
+                depth,
+                temperature,
+            };
+        });
+    }, [logData, videos, points, videoTimeline]);
+
+    const isLogMode = chartMode === "log_depth" || chartMode === "log_temperature";
+    const [hoveredLogIndex, setHoveredLogIndex] = useState<number | null>(null);
+
     const chartData = useMemo(() => {
         const hasPoints = Boolean(points && points.length > 0);
         const times = hasPoints ? points.map((p) => p.relativeTime) : [];
         const maxPointsTime = times.length > 0 ? Math.max(...times) : 0;
+        const maxLogTime = computedLogPoints.length > 0 ? Math.max(...computedLogPoints.map((p) => p.relativeTime)) : 0;
 
         // Total combined duration across all videos
         const combinedVideoDuration = videoTimeline ? videoTimeline.totalDuration : (propTotalDuration ?? 0);
         const minTime = 0;
-        const maxTime = combinedVideoDuration > 0 ? combinedVideoDuration : Math.max(maxPointsTime, 1);
+        const maxTime = combinedVideoDuration > 0 ? combinedVideoDuration : Math.max(maxPointsTime, maxLogTime, 1);
         const timeRange = Math.max(maxTime - minTime, 0.5);
 
-        if (!hasPoints) {
-            return {
-                minTime,
-                maxTime,
-                timeRange,
-                minDepth: 0,
-                maxDepth: 10,
-                depthRange: 10,
-                minZ: 0,
-                maxZ: 10,
-                zRange: 10,
-                maxSpeed: 1,
-                maxDistance: 10,
-                hasData: false,
-            };
-        }
-
-        const depths = points.map((p) => p.depth);
+        // Trajectory points ranges
+        const depths = hasPoints ? points.map((p) => p.depth) : [0];
         const minDepth = Math.min(...depths);
         const maxDepth = Math.max(...depths);
         const depthRange = Math.max(maxDepth - minDepth, 0.5);
 
-        const zs = points.map((p) => p.z);
+        const zs = hasPoints ? points.map((p) => p.z) : [0];
         const minZ = Math.min(...zs);
         const maxZ = Math.max(...zs);
         const zRange = Math.max(maxZ - minZ, 0.5);
 
-        const speeds = points.map((p) => p.speed);
+        const speeds = hasPoints ? points.map((p) => p.speed) : [0];
         const maxSpeed = Math.max(...speeds, 0.5);
 
-        const distances = points.map((p) => p.distanceTravelled);
+        const distances = hasPoints ? points.map((p) => p.distanceTravelled) : [0];
         const maxDistance = Math.max(...distances, 1.0);
+
+        // Log points ranges
+        const validLogDepths = computedLogPoints.map((p) => p.depth).filter((d): d is number => d !== null);
+        const minLogDepth = validLogDepths.length > 0 ? Math.min(...validLogDepths) : 0;
+        const maxLogDepth = validLogDepths.length > 0 ? Math.max(...validLogDepths) : 10;
+        const logDepthRange = Math.max(maxLogDepth - minLogDepth, 0.5);
+
+        const validLogTemps = computedLogPoints.map((p) => p.temperature).filter((t): t is number => t !== null);
+        const minLogTemp = validLogTemps.length > 0 ? Math.min(...validLogTemps) : 15;
+        const maxLogTemp = validLogTemps.length > 0 ? Math.max(...validLogTemps) : 25;
+        const logTempRange = Math.max(maxLogTemp - minLogTemp, 0.5);
 
         return {
             minTime,
@@ -104,9 +297,16 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             zRange,
             maxSpeed,
             maxDistance,
-            hasData: true,
+            minLogDepth,
+            maxLogDepth,
+            logDepthRange,
+            minLogTemp,
+            maxLogTemp,
+            logTempRange,
+            hasData: isLogMode ? computedLogPoints.length > 0 : hasPoints,
+            hasLogData: computedLogPoints.length > 0,
         };
-    }, [points, videoTimeline, propTotalDuration]);
+    }, [points, computedLogPoints, videoTimeline, propTotalDuration, isLogMode]);
 
     const svgWidth = 1000;
     const svgHeight = 280;
@@ -114,31 +314,20 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
     const innerWidth = svgWidth - padding.left - padding.right;
     const innerHeight = svgHeight - padding.top - padding.bottom;
 
-    const getCoords = useCallback(
+    const getTrajectoryCoords = useCallback(
         (point: ComputedTelemetryPoint) => {
             if (!chartData) return { x: 0, y: 0 };
-            const { minTime, timeRange, minDepth, depthRange, minZ, zRange, maxSpeed, maxDistance } = chartData;
+            const { minTime, timeRange, maxSpeed, maxDistance } = chartData;
 
             const nx = (point.relativeTime - minTime) / timeRange;
             const x = padding.left + Math.max(0, Math.min(1, nx)) * innerWidth;
 
             let ny = 0;
-            if (chartMode === "depth") {
-                // Oceanographic depth profile: deeper = lower on canvas
-                ny = (point.depth - minDepth) / depthRange;
-                const y = padding.top + ny * innerHeight;
-                return { x, y };
-            } else if (chartMode === "altitude") {
-                // Altitude / Z: higher Z = higher on canvas
-                ny = (point.z - minZ) / zRange;
-                const y = padding.top + (1 - ny) * innerHeight;
-                return { x, y };
-            } else if (chartMode === "speed") {
+            if (chartMode === "speed") {
                 ny = point.speed / maxSpeed;
                 const y = padding.top + (1 - Math.max(0, Math.min(1, ny))) * innerHeight;
                 return { x, y };
             } else {
-                // Distance
                 ny = point.distanceTravelled / maxDistance;
                 const y = padding.top + (1 - Math.max(0, Math.min(1, ny))) * innerHeight;
                 return { x, y };
@@ -147,21 +336,160 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
         [chartData, chartMode, innerWidth, innerHeight, padding.left, padding.top]
     );
 
+    const getLogCoords = useCallback(
+        (point: ComputedLogPoint) => {
+            if (!chartData) return { x: 0, y: 0 };
+            const { minTime, timeRange, minLogDepth, logDepthRange, minLogTemp, logTempRange } = chartData;
+
+            const nx = (point.relativeTime - minTime) / timeRange;
+            const x = padding.left + Math.max(0, Math.min(1, nx)) * innerWidth;
+
+            let ny = 0;
+            if (chartMode === "log_depth") {
+                const val = point.depth !== null ? point.depth : minLogDepth;
+                ny = (val - minLogDepth) / logDepthRange;
+                const y = padding.top + Math.max(0, Math.min(1, ny)) * innerHeight;
+                return { x, y };
+            } else {
+                const val = point.temperature !== null ? point.temperature : minLogTemp;
+                ny = (val - minLogTemp) / logTempRange;
+                const y = padding.top + (1 - Math.max(0, Math.min(1, ny))) * innerHeight;
+                return { x, y };
+            }
+        },
+        [chartData, chartMode, innerWidth, innerHeight, padding.left, padding.top]
+    );
+
+    const activeTime = useMemo(() => {
+        if (activeSyncPoint && typeof activeSyncPoint.relativeTime === "number") {
+            return activeSyncPoint.relativeTime;
+        }
+        if (activeIndex !== null && points && points[activeIndex]) {
+            return points[activeIndex].relativeTime;
+        }
+        if (activeSyncPoint && typeof activeSyncPoint.videoTime === "number") {
+            const vIdx = activeSyncPoint.videoIndex ?? 0;
+            const vOffset = videoTimeline?.offsets[vIdx] ?? 0;
+            return vOffset + activeSyncPoint.videoTime;
+        }
+        return null;
+    }, [activeSyncPoint, activeIndex, points, videoTimeline]);
+
+    const activeLogIndex = useMemo(() => {
+        if (!computedLogPoints || computedLogPoints.length === 0 || activeTime === null) return null;
+        let closestIdx = -1;
+        let minDiff = Infinity;
+        for (let i = 0; i < computedLogPoints.length; i++) {
+            const diff = Math.abs(computedLogPoints[i].relativeTime - activeTime);
+            if (diff < minDiff) {
+                minDiff = diff;
+                closestIdx = i;
+            }
+        }
+        return closestIdx !== -1 ? closestIdx : null;
+    }, [computedLogPoints, activeTime]);
+
     const { linePath, areaPath, activeCoord, hoveredCoord } = useMemo(() => {
-        if (!points || points.length === 0 || !chartData || !chartData.hasData) {
+        if (isLogMode) {
+            // Compute activeCoord on the log curve
             let aCoord: { x: number; y: number } | null = null;
-            if (activeSyncPoint && typeof activeSyncPoint.relativeTime === "number" && chartData) {
-                const nx = (activeSyncPoint.relativeTime - chartData.minTime) / chartData.timeRange;
-                if (nx >= 0 && nx <= 1) {
-                    const x = padding.left + nx * innerWidth;
-                    aCoord = { x, y: padding.top + innerHeight / 2 };
+            if (activeTime !== null && chartData) {
+                const validPoints = computedLogPoints.filter((p) =>
+                    chartMode === "log_depth" ? p.depth !== null : p.temperature !== null
+                );
+                if (validPoints.length > 0) {
+                    let activeVal: number | null = null;
+                    if (activeTime <= validPoints[0].relativeTime) {
+                        activeVal = chartMode === "log_depth" ? validPoints[0].depth : validPoints[0].temperature;
+                    } else if (activeTime >= validPoints[validPoints.length - 1].relativeTime) {
+                        activeVal = chartMode === "log_depth" ? validPoints[validPoints.length - 1].depth : validPoints[validPoints.length - 1].temperature;
+                    } else {
+                        let low = 0;
+                        let high = validPoints.length - 1;
+                        while (low <= high) {
+                            const mid = Math.floor((low + high) / 2);
+                            if (validPoints[mid].relativeTime <= activeTime) {
+                                low = mid + 1;
+                            } else {
+                                high = mid - 1;
+                            }
+                        }
+                        const idxA = Math.max(0, high);
+                        const idxB = Math.min(validPoints.length - 1, low);
+                        const pA = validPoints[idxA];
+                        const pB = validPoints[idxB];
+                        const valA = chartMode === "log_depth" ? pA.depth! : pA.temperature!;
+                        const valB = chartMode === "log_depth" ? pB.depth! : pB.temperature!;
+
+                        if (pB.relativeTime === pA.relativeTime) {
+                            activeVal = valA;
+                        } else {
+                            const t = (activeTime - pA.relativeTime) / (pB.relativeTime - pA.relativeTime);
+                            activeVal = valA + t * (valB - valA);
+                        }
+                    }
+
+                    if (activeVal !== null) {
+                        const nx = (activeTime - chartData.minTime) / chartData.timeRange;
+                        if (nx >= 0 && nx <= 1) {
+                            const x = padding.left + nx * innerWidth;
+                            let y: number;
+                            if (chartMode === "log_depth") {
+                                const ny = (activeVal - chartData.minLogDepth) / chartData.logDepthRange;
+                                y = padding.top + Math.max(0, Math.min(1, ny)) * innerHeight;
+                            } else {
+                                const ny = (activeVal - chartData.minLogTemp) / chartData.logTempRange;
+                                y = padding.top + (1 - Math.max(0, Math.min(1, ny))) * innerHeight;
+                            }
+                            aCoord = { x, y };
+                        }
+                    }
                 }
             }
-            return { linePath: "", areaPath: "", activeCoord: aCoord, hoveredCoord: null };
+
+            const validCoords = computedLogPoints
+                .filter((p) => (chartMode === "log_depth" ? p.depth !== null : p.temperature !== null))
+                .map(getLogCoords)
+                .filter((c) => Number.isFinite(c.x) && Number.isFinite(c.y));
+
+            if (validCoords.length === 0) return { linePath: "", areaPath: "", activeCoord: aCoord, hoveredCoord: null };
+
+            let lPath = `M ${validCoords[0].x.toFixed(2)} ${validCoords[0].y.toFixed(2)}`;
+            for (let i = 1; i < validCoords.length; i++) {
+                lPath += ` L ${validCoords[i].x.toFixed(2)} ${validCoords[i].y.toFixed(2)}`;
+            }
+
+            const baselineY = padding.top + innerHeight;
+            const aPath = `${lPath} L ${validCoords[validCoords.length - 1].x.toFixed(2)} ${baselineY} L ${validCoords[0].x.toFixed(2)} ${baselineY} Z`;
+
+            const hCoord = hoveredLogIndex !== null && computedLogPoints[hoveredLogIndex] ? getLogCoords(computedLogPoints[hoveredLogIndex]) : null;
+
+            return { linePath: lPath, areaPath: aPath, activeCoord: aCoord, hoveredCoord: hCoord };
         }
 
-        const validCoords = points.map(getCoords).filter((c) => Number.isFinite(c.x) && Number.isFinite(c.y));
-        if (validCoords.length === 0) return { linePath: "", areaPath: "", activeCoord: null, hoveredCoord: null };
+        // Trajectory mode
+        const validCoords = points.map(getTrajectoryCoords).filter((c) => Number.isFinite(c.x) && Number.isFinite(c.y));
+
+        let aCoord = activeIndex !== null && points[activeIndex] ? getTrajectoryCoords(points[activeIndex]) : null;
+        if (!aCoord && activeTime !== null && points && points.length > 0 && chartData) {
+            let closestPt = points[0];
+            let minDiff = Math.abs(points[0].relativeTime - activeTime);
+            for (let i = 1; i < points.length; i++) {
+                const diff = Math.abs(points[i].relativeTime - activeTime);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    closestPt = points[i];
+                }
+            }
+            const ptCoords = getTrajectoryCoords(closestPt);
+            const nx = (activeTime - chartData.minTime) / chartData.timeRange;
+            if (nx >= 0 && nx <= 1) {
+                const x = padding.left + nx * innerWidth;
+                aCoord = { x, y: ptCoords.y };
+            }
+        }
+
+        if (validCoords.length === 0) return { linePath: "", areaPath: "", activeCoord: aCoord, hoveredCoord: null };
 
         let lPath = `M ${validCoords[0].x.toFixed(2)} ${validCoords[0].y.toFixed(2)}`;
         for (let i = 1; i < validCoords.length; i++) {
@@ -171,19 +499,26 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
         const baselineY = padding.top + innerHeight;
         const aPath = `${lPath} L ${validCoords[validCoords.length - 1].x.toFixed(2)} ${baselineY} L ${validCoords[0].x.toFixed(2)} ${baselineY} Z`;
 
-        let aCoord = activeIndex !== null && points[activeIndex] ? getCoords(points[activeIndex]) : null;
-        if (!aCoord && activeSyncPoint && typeof activeSyncPoint.relativeTime === "number" && chartData) {
-            const nx = (activeSyncPoint.relativeTime - chartData.minTime) / chartData.timeRange;
-            if (nx >= 0 && nx <= 1) {
-                const x = padding.left + nx * innerWidth;
-                aCoord = { x, y: padding.top + innerHeight / 2 };
-            }
-        }
-
-        const hCoord = hoveredIndex !== null && points[hoveredIndex] ? getCoords(points[hoveredIndex]) : null;
+        const hCoord = hoveredIndex !== null && points[hoveredIndex] ? getTrajectoryCoords(points[hoveredIndex]) : null;
 
         return { linePath: lPath, areaPath: aPath, activeCoord: aCoord, hoveredCoord: hCoord };
-    }, [points, chartData, getCoords, padding.top, padding.left, innerHeight, innerWidth, activeIndex, hoveredIndex, activeSyncPoint]);
+    }, [
+        isLogMode,
+        points,
+        computedLogPoints,
+        chartData,
+        chartMode,
+        getTrajectoryCoords,
+        getLogCoords,
+        padding.top,
+        padding.left,
+        innerHeight,
+        innerWidth,
+        activeIndex,
+        hoveredIndex,
+        hoveredLogIndex,
+        activeTime,
+    ]);
 
     const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
         if (!chartData) return;
@@ -191,11 +526,33 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
         const clientX = e.clientX - rect.left;
         const svgX = (clientX / rect.width) * svgWidth;
 
+        if (isLogMode) {
+            let closestIdx = -1;
+            let minDiff = Infinity;
+            if (computedLogPoints && computedLogPoints.length > 0) {
+                computedLogPoints.forEach((p, idx) => {
+                    const { x } = getLogCoords(p);
+                    const diff = Math.abs(x - svgX);
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        closestIdx = idx;
+                    }
+                });
+            }
+
+            if (closestIdx !== -1 && minDiff < 40) {
+                setHoveredLogIndex(closestIdx);
+            } else {
+                setHoveredLogIndex(null);
+            }
+            return;
+        }
+
         let closestIdx = -1;
         let minDiff = Infinity;
         if (points && points.length > 0) {
             points.forEach((p, idx) => {
-                const { x } = getCoords(p);
+                const { x } = getTrajectoryCoords(p);
                 const diff = Math.abs(x - svgX);
                 if (diff < minDiff) {
                     minDiff = diff;
@@ -204,7 +561,6 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             });
         }
 
-        // Only snap to hover if cursor is reasonably close (within 30px) to actual data points
         if (closestIdx !== -1 && minDiff < 30) {
             onHoverIndex(closestIdx);
         } else {
@@ -213,7 +569,11 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
     };
 
     const handleMouseLeave = () => {
-        onHoverIndex(null);
+        if (isLogMode) {
+            setHoveredLogIndex(null);
+        } else {
+            onHoverIndex(null);
+        }
     };
 
     const handleClick = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -221,32 +581,33 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
         const clientX = e.clientX - rect.left;
         const svgX = (clientX / rect.width) * svgWidth;
 
-        if (hoveredIndex !== null) {
-            onSelectIndex(hoveredIndex);
-            return;
+        if (isLogMode) {
+            if (hoveredLogIndex !== null && computedLogPoints[hoveredLogIndex]) {
+                const pt = computedLogPoints[hoveredLogIndex];
+                if (typeof pt.videoTime === "number" && typeof pt.videoIndex === "number" && onSeekTime) {
+                    onSeekTime(pt.videoTime, pt.videoIndex);
+                } else {
+                    useTrajectoryLogSync.getState().selectPoint(
+                        {
+                            relativeTime: pt.relativeTime,
+                            videoTime: pt.videoTime,
+                            videoIndex: pt.videoIndex,
+                        },
+                        "chart"
+                    );
+                }
+                return;
+            }
+        } else {
+            if (hoveredIndex !== null) {
+                onSelectIndex(hoveredIndex);
+                return;
+            }
         }
 
         if (!chartData) return;
 
-        let closestIdx = -1;
-        let minDiff = Infinity;
-        if (points && points.length > 0) {
-            points.forEach((p, idx) => {
-                const { x } = getCoords(p);
-                const diff = Math.abs(x - svgX);
-                if (diff < minDiff) {
-                    minDiff = diff;
-                    closestIdx = idx;
-                }
-            });
-        }
-
-        if (closestIdx !== -1 && minDiff < 30) {
-            onSelectIndex(closestIdx);
-            return;
-        }
-
-        // If clicked on an empty area of the timeline, seek video to that time
+        // If clicked on timeline, calculate time and seek
         const clickedRatio = Math.max(0, Math.min(1, (svgX - padding.left) / innerWidth));
         const clickedTime = chartData.minTime + clickedRatio * chartData.timeRange;
 
@@ -290,18 +651,18 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             <div className="logs-chart-header">
                 <div className="logs-chart-tabs">
                     <button
-                        className={`logs-chart-tab ${chartMode === "depth" ? "active" : ""}`}
-                        onClick={() => setChartMode("depth")}
+                        className={`logs-chart-tab ${chartMode === "log_depth" ? "active" : ""}`}
+                        onClick={() => setChartMode("log_depth")}
                     >
-                        <FiCompass size={12} style={{ marginRight: 4 }} />
-                        Depth Profile
+                        <FiDroplet size={12} style={{ marginRight: 4 }} />
+                        Log Depth
                     </button>
                     <button
-                        className={`logs-chart-tab ${chartMode === "altitude" ? "active" : ""}`}
-                        onClick={() => setChartMode("altitude")}
+                        className={`logs-chart-tab ${chartMode === "log_temperature" ? "active" : ""}`}
+                        onClick={() => setChartMode("log_temperature")}
                     >
-                        <FiLayers size={12} style={{ marginRight: 4 }} />
-                        Elevation
+                        <FiThermometer size={12} style={{ marginRight: 4 }} />
+                        Log Temp
                     </button>
                     <button
                         className={`logs-chart-tab ${chartMode === "speed" ? "active" : ""}`}
@@ -321,7 +682,13 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             </div>
 
             <div className="logs-svg-wrapper">
-                {(!points || points.length === 0) && (!videoTimeline || videoTimeline.totalDuration <= 0) ? (
+                {isLogMode && loadingLogs ? (
+                    <div className="logs-chart-empty">Loading log data from server...</div>
+                ) : isLogMode && (!logData || logData.length === 0) ? (
+                    <div className="logs-chart-empty">
+                        {logsError || (!resolvedBatchId ? "No batch associated to fetch log data" : "No log data available for this batch / timerange")}
+                    </div>
+                ) : (!isLogMode && (!points || points.length === 0) && (!videoTimeline || videoTimeline.totalDuration <= 0)) ? (
                     <div className="logs-chart-empty">No trajectory data available to plot</div>
                 ) : (
                     <svg
@@ -351,6 +718,16 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             <linearGradient id="distGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.4" />
                                 <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.0" />
+                            </linearGradient>
+
+                            <linearGradient id="logDepthGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.45" />
+                                <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.02" />
+                            </linearGradient>
+
+                            <linearGradient id="logTempGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#f97316" stopOpacity="0.45" />
+                                <stop offset="100%" stopColor="#f97316" stopOpacity="0.02" />
                             </linearGradient>
                         </defs>
 
@@ -402,20 +779,21 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                         {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
                             const y = padding.top + (1 - ratio) * innerHeight;
                             let label = "";
-                            if (chartData && chartData.hasData) {
-                                if (chartMode === "depth") {
-                                    // Oceanographic depth: ratio = 1 is top (min depth / surface), ratio = 0 is bottom (deepest)
-                                    const val = chartData.maxDepth - ratio * chartData.depthRange;
-                                    label = `${val.toFixed(1)}m`;
-                                } else if (chartMode === "altitude") {
-                                    const val = chartData.minZ + ratio * chartData.zRange;
-                                    label = `${val.toFixed(1)}m`;
-                                } else if (chartMode === "speed") {
+                            if (chartData && (isLogMode ? chartData.hasLogData : chartData.hasData)) {
+                                if (chartMode === "speed") {
                                     const val = ratio * chartData.maxSpeed;
                                     label = `${val.toFixed(2)}m/s`;
-                                } else {
+                                } else if (chartMode === "distance") {
                                     const val = ratio * chartData.maxDistance;
                                     label = `${val.toFixed(1)}m`;
+                                } else if (chartMode === "log_depth") {
+                                    // Oceanographic: top is min (shallowest), bottom is max (deepest)
+                                    const val = chartData.maxLogDepth - ratio * chartData.logDepthRange;
+                                    label = `${val.toFixed(1)}m`;
+                                } else if (chartMode === "log_temperature") {
+                                    // Temperature: top is max (warmest), bottom is min (coolest)
+                                    const val = chartData.minLogTemp + ratio * chartData.logTempRange;
+                                    label = `${val.toFixed(1)}°C`;
                                 }
                             }
                             return (
@@ -461,35 +839,35 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             );
                         })}
 
-                        {/* Filled Area: Only covers portion where data exists */}
+                        {/* Filled Area */}
                         {areaPath && (
                             <path
                                 d={areaPath}
                                 fill={
-                                    chartMode === "depth"
-                                        ? "url(#depthGradient)"
-                                        : chartMode === "altitude"
-                                        ? "url(#altitudeGradient)"
-                                        : chartMode === "speed"
+                                    chartMode === "speed"
                                         ? "url(#speedGradient)"
-                                        : "url(#distGradient)"
+                                        : chartMode === "distance"
+                                        ? "url(#distGradient)"
+                                        : chartMode === "log_depth"
+                                        ? "url(#logDepthGradient)"
+                                        : "url(#logTempGradient)"
                                 }
                             />
                         )}
 
-                        {/* Line Path: Only covers portion where data exists */}
+                        {/* Line Path */}
                         {linePath && (
                             <path
                                 d={linePath}
                                 fill="none"
                                 stroke={
-                                    chartMode === "depth"
-                                        ? "#38bdf8"
-                                        : chartMode === "altitude"
-                                        ? "#60a5fa"
-                                        : chartMode === "speed"
+                                    chartMode === "speed"
                                         ? "#34d399"
-                                        : "#c084fc"
+                                        : chartMode === "distance"
+                                        ? "#c084fc"
+                                        : chartMode === "log_depth"
+                                        ? "#22d3ee"
+                                        : "#fb923c"
                                 }
                                 strokeWidth="2.5"
                                 strokeLinecap="round"
@@ -508,8 +886,8 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             />
                         )}
 
-                        {/* Active Point Circle (only when on a real telemetry point) */}
-                        {activeCoord && activeIndex !== null && points[activeIndex] && Number.isFinite(activeCoord.x) && Number.isFinite(activeCoord.y) && (
+                        {/* Active Point Circle */}
+                        {activeCoord && Number.isFinite(activeCoord.x) && Number.isFinite(activeCoord.y) && (
                             <circle
                                 cx={activeCoord.x}
                                 cy={activeCoord.y}
@@ -519,7 +897,7 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                         )}
 
                         {/* Hovered Point Circle */}
-                        {hoveredCoord && hoveredIndex !== activeIndex && Number.isFinite(hoveredCoord.x) && Number.isFinite(hoveredCoord.y) && (
+                        {hoveredCoord && Number.isFinite(hoveredCoord.x) && Number.isFinite(hoveredCoord.y) && (
                             <circle
                                 cx={hoveredCoord.x}
                                 cy={hoveredCoord.y}
@@ -533,6 +911,54 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
 
             {/* Tooltip bar displaying active / hovered point details */}
             {(() => {
+                if (isLogMode) {
+                    const targetLogIdx = hoveredLogIndex !== null ? hoveredLogIndex : activeLogIndex;
+                    if (targetLogIdx === null || !computedLogPoints[targetLogIdx]) return null;
+                    const pt = computedLogPoints[targetLogIdx];
+                    const formatTime = (t?: number) => {
+                        if (t === undefined || !Number.isFinite(t)) return "00:00";
+                        const mins = Math.floor(t / 60);
+                        const secs = Math.floor(t % 60);
+                        return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+                    };
+
+                    return (
+                        <div className="logs-chart-tooltip">
+                            <div className="logs-tooltip-item">
+                                <span className="logs-tooltip-label">Log:</span>
+                                <span className="logs-tooltip-val">#{pt.index + 1}</span>
+                            </div>
+                            {typeof pt.videoIndex === "number" && (
+                                <div className="logs-tooltip-item">
+                                    <span className="logs-tooltip-label">Video:</span>
+                                    <span className="logs-tooltip-val">Part {pt.videoIndex + 1} ({formatTime(pt.videoTime)})</span>
+                                </div>
+                            )}
+                            {chartMode === "log_depth" && typeof pt.depth === "number" && (
+                                <div className="logs-tooltip-item">
+                                    <span className="logs-tooltip-label">Depth:</span>
+                                    <span className="logs-tooltip-val" style={{ color: "#22d3ee" }}>{pt.depth.toFixed(2)}m</span>
+                                </div>
+                            )}
+                            {chartMode === "log_temperature" && typeof pt.temperature === "number" && (
+                                <div className="logs-tooltip-item">
+                                    <span className="logs-tooltip-label">Temp:</span>
+                                    <span className="logs-tooltip-val" style={{ color: "#fb923c" }}>{pt.temperature.toFixed(2)}°C</span>
+                                </div>
+                            )}
+                            {typeof pt.raw.payload?.yaw === "number" && (
+                                <div className="logs-tooltip-item">
+                                    <span className="logs-tooltip-label">Yaw:</span>
+                                    <span className="logs-tooltip-val">{pt.raw.payload.yaw.toFixed(1)}°</span>
+                                </div>
+                            )}
+                            <div className="logs-tooltip-item" style={{ marginLeft: "auto", color: "#38bdf8", opacity: 0.85 }}>
+                                <span>Click to jump video</span>
+                            </div>
+                        </div>
+                    );
+                }
+
                 const targetIdx = hoveredIndex !== null ? hoveredIndex : activeIndex;
                 if (targetIdx === null || !points[targetIdx]) return null;
                 const pt = points[targetIdx];

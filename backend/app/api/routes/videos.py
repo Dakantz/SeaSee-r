@@ -1,6 +1,6 @@
 import os
 import uuid
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Union
 import time
 
 from fastapi import APIRouter, HTTPException, Depends, Query
@@ -14,10 +14,13 @@ from app.core.database import get_db_session
 from app.models.video import Video, UploadMetadata
 from app.models.pointcloud import PointCloudMetadata
 from app.models.job import JobStatus
+from app.models.log_data import LogData
 from app.schemas.video import VideoResponse, UploadMetadataResponse, BatchOverviewResponse, StartBatchPipelineRequest
 from app.schemas.job import PipelineResponse, PipelineCreate, PipelineJobCreate
+from app.schemas.log_data import LogDataResponse
 from app.services.worker.pipeline_service import build_pipeline_and_jobs
 from app.api.routes.jobs import _enqueue_job_to_redis, _are_dependencies_satisfied, _get_pipeline_or_404
+from app.api.routes.logs import parse_timestamp_to_ms
 
 router = APIRouter(
     prefix="/videos",
@@ -364,6 +367,38 @@ async def start_batch_pipeline(
 # ==========================================
 # GET ENDPOINTS
 # ==========================================
+
+@router.get("/batches/{batch_id}/logs", response_model=List[LogDataResponse])
+async def get_batch_logs(
+    batch_id: uuid.UUID,
+    start_time: Optional[str] = Query(None, description="Start of timerange (ms, s, or ISO datetime string)"),
+    end_time: Optional[str] = Query(None, description="End of timerange (ms, s, or ISO datetime string)"),
+    start_ts: Optional[Union[int, float]] = Query(None, description="Start timestamp (ms or s)"),
+    end_ts: Optional[Union[int, float]] = Query(None, description="End timestamp (ms or s)"),
+    min_timestamp: Optional[Union[int, float]] = Query(None, description="Min timestamp (ms or s)"),
+    max_timestamp: Optional[Union[int, float]] = Query(None, description="Max timestamp (ms or s)"),
+    limit: Optional[int] = Query(None, ge=1, le=100000, description="Max records to return"),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Get log_data for a specific batch_id and optional timerange.
+    """
+    start_ms = parse_timestamp_to_ms(start_ts if start_ts is not None else (min_timestamp if min_timestamp is not None else start_time))
+    end_ms = parse_timestamp_to_ms(end_ts if end_ts is not None else (max_timestamp if max_timestamp is not None else end_time))
+
+    stmt = select(LogData).where(LogData.batch_id == batch_id)
+    if start_ms is not None:
+        stmt = stmt.where(LogData.timestamp >= start_ms)
+    if end_ms is not None:
+        stmt = stmt.where(LogData.timestamp <= end_ms)
+
+    stmt = stmt.order_by(LogData.timestamp.asc())
+    if limit is not None and limit > 0:
+        stmt = stmt.limit(limit)
+
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
 
 @router.get("", response_model=List[VideoResponse])
 async def get_videos(

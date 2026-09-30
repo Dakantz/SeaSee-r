@@ -3,6 +3,7 @@ import json
 import uuid
 import logging
 import asyncio
+import numpy as np
 from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List, Tuple, Union
@@ -15,17 +16,129 @@ from app.models.log_data import LogData
 
 logger = logging.getLogger(__name__)
 
+# Constants for WGS84 ellipsoid model matching OpenSfM geo calculations
+WGS84_A: float = 6378137.0
+WGS84_B: float = 6356752.314245
+
+
+def ecef_from_lla(lat: float, lon: float, alt: float) -> Tuple[float, float, float]:
+    """Computes ECEF coordinates (X, Y, Z) from latitude, longitude, and altitude under WGS84."""
+    a2 = WGS84_A ** 2
+    b2 = WGS84_B ** 2
+    lat_rad = np.radians(lat)
+    lon_rad = np.radians(lon)
+    L = 1.0 / np.sqrt(a2 * np.cos(lat_rad) ** 2 + b2 * np.sin(lat_rad) ** 2)
+    x = (a2 * L + alt) * np.cos(lat_rad) * np.cos(lon_rad)
+    y = (a2 * L + alt) * np.cos(lat_rad) * np.sin(lon_rad)
+    z = (b2 * L + alt) * np.sin(lat_rad)
+    return float(x), float(y), float(z)
+
+
+def ecef_from_topocentric_transform(lat: float, lon: float, alt: float) -> np.ndarray:
+    """Transformation matrix from topocentric frame at reference position to ECEF."""
+    x, y, z = ecef_from_lla(lat, lon, alt)
+    sa = np.sin(np.radians(lat))
+    ca = np.cos(np.radians(lat))
+    so = np.sin(np.radians(lon))
+    co = np.cos(np.radians(lon))
+    return np.array([
+        [-so, -sa * co, ca * co, x],
+        [co, -sa * so, ca * so, y],
+        [0.0, ca, sa, z],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+
+
+def topocentric_from_lla(
+    lat: float,
+    lon: float,
+    alt: float,
+    reflat: float,
+    reflon: float,
+    refalt: float,
+) -> Tuple[float, float, float]:
+    """Transforms WGS84 LLA coordinates to local topocentric (East, North, Up) coordinates."""
+    T = np.linalg.inv(ecef_from_topocentric_transform(reflat, reflon, refalt))
+    x, y, z = ecef_from_lla(lat, lon, alt)
+    tx = T[0, 0] * x + T[0, 1] * y + T[0, 2] * z + T[0, 3]
+    ty = T[1, 0] * x + T[1, 1] * y + T[1, 2] * z + T[1, 3]
+    tz = T[2, 0] * x + T[2, 1] * y + T[2, 2] * z + T[2, 3]
+    return float(tx), float(ty), float(tz)
+
+
+def opk_from_ypr(
+    yaw: float,
+    pitch: float,
+    roll: float,
+    lat: float = 0.0,
+    lon: float = 0.0,
+    alt: float = 0.0,
+    apply_pitch_offset: bool = False,
+) -> Dict[str, float]:
+    """
+    Converts Yaw, Pitch, Roll (in degrees) to Omega, Phi, Kappa (OPK in degrees)
+    adhering strictly to OpenSfM's opk_from_ypr convention.
+    """
+    y, p, r = np.radians([yaw, pitch, roll])
+
+    # YPR rotation matrix (body to navigation)
+    cnb = np.array([
+        [
+            np.cos(y) * np.cos(p),
+            np.cos(y) * np.sin(p) * np.sin(r) - np.sin(y) * np.cos(r),
+            np.cos(y) * np.sin(p) * np.cos(r) + np.sin(y) * np.sin(r),
+        ],
+        [
+            np.sin(y) * np.cos(p),
+            np.sin(y) * np.sin(p) * np.sin(r) + np.cos(y) * np.cos(r),
+            np.sin(y) * np.sin(p) * np.cos(r) - np.cos(y) * np.sin(r),
+        ],
+        [-np.sin(p), np.cos(p) * np.sin(r), np.cos(p) * np.cos(r)],
+    ])
+
+    if apply_pitch_offset:
+        cnb = cnb.dot(np.array([[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]]))
+
+    # Conversion between image and body coordinates
+    cbb = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]])
+
+    delta = 1e-10
+    p1 = np.array(topocentric_from_lla(lat + delta, lon, alt, lat, lon, alt))
+    p2 = np.array(topocentric_from_lla(lat - delta, lon, alt, lat, lon, alt))
+    xnp = p1 - p2
+    m = np.linalg.norm(xnp)
+    if m == 0:
+        xnp = np.array([0.0, 1.0, 0.0])
+    else:
+        xnp /= m
+
+    znp = np.array([0.0, 0.0, -1.0]).T
+    ynp = np.cross(znp, xnp)
+    cen = np.array([xnp, ynp, znp]).T
+
+    # OPK rotation matrix
+    ceb = cen.dot(cnb).dot(cbb)
+
+    return {
+        "omega": round(float(np.degrees(np.arctan2(-ceb[1][2], ceb[2][2]))), 4),
+        "phi": round(float(np.degrees(np.arcsin(ceb[0][2]))), 4),
+        "kappa": round(float(np.degrees(np.arctan2(-ceb[0][1], ceb[0][0]))), 4),
+    }
+
 
 @dataclass
 class ImageExifOverride:
     """
     Data model representing EXIF override parameters for an individual image.
-    Supports capture_time, gps, orientation, camera, and yaw/pitch/roll telemetry.
+    Supports capture_time, gps, orientation, camera, and OPK camera orientation.
+    Telemetric yaw/pitch/roll angles are automatically converted into OPK priors,
+    and unused telemetry fields (yaw, pitch, roll, ypr) are excluded from serialized output.
     """
     capture_time: Optional[float] = None
     gps: Optional[Dict[str, Any]] = None
     orientation: Optional[int] = None
     camera: Optional[str] = None
+    opk: Optional[Dict[str, float]] = None
     yaw: Optional[float] = None
     pitch: Optional[float] = None
     roll: Optional[float] = None
@@ -43,22 +156,41 @@ class ImageExifOverride:
             data["orientation"] = self.orientation
         if self.camera is not None:
             data["camera"] = self.camera
-        if self.yaw is not None:
-            data["yaw"] = float(self.yaw)
-        if self.pitch is not None:
-            data["pitch"] = float(self.pitch)
-        if self.roll is not None:
-            data["roll"] = float(self.roll)
-        if self.ypr is not None:
-            data["ypr"] = self.ypr
-        elif self.yaw is not None and self.pitch is not None and self.roll is not None:
-            data["ypr"] = {
-                "yaw": float(self.yaw),
-                "pitch": float(self.pitch),
-                "roll": float(self.roll)
-            }
+
+        # Format camera orientation into OPK (omega, phi, kappa)
+        if self.opk is not None:
+            data["opk"] = self.opk
+        else:
+            y = self.yaw
+            p = self.pitch
+            r = self.roll
+            if self.ypr is not None:
+                if y is None:
+                    y = self.ypr.get("yaw")
+                if p is None:
+                    p = self.ypr.get("pitch")
+                if r is None:
+                    r = self.ypr.get("roll")
+
+            if y is not None and p is not None and r is not None:
+                lat = 0.0
+                lon = 0.0
+                alt = 0.0
+                if self.gps:
+                    lat = float(self.gps.get("latitude", 0.0))
+                    lon = float(self.gps.get("longitude", 0.0))
+                    alt = float(self.gps.get("altitude", 0.0))
+                opk_val = opk_from_ypr(float(y), float(p), float(r), lat=lat, lon=lon, alt=alt)
+                if opk_val:
+                    data["opk"] = opk_val
+
+        # Preserve valid extra fields, but ensure unused orientation keys are never saved
         if self.extra:
-            data.update(self.extra)
+            filtered_extra = {
+                k: v for k, v in self.extra.items()
+                if k not in ("yaw", "pitch", "roll", "ypr")
+            }
+            data.update(filtered_extra)
         return data
 
 
@@ -82,6 +214,7 @@ class ExifOverridesBuilder:
         gps: Optional[Dict[str, Any]] = None,
         orientation: Optional[int] = None,
         camera: Optional[str] = None,
+        opk: Optional[Dict[str, float]] = None,
         yaw: Optional[float] = None,
         pitch: Optional[float] = None,
         roll: Optional[float] = None,
@@ -99,6 +232,8 @@ class ExifOverridesBuilder:
                 entry.orientation = orientation
             if camera is not None:
                 entry.camera = camera
+            if opk is not None:
+                entry.opk = opk
             if yaw is not None:
                 entry.yaw = yaw
             if pitch is not None:
@@ -115,6 +250,7 @@ class ExifOverridesBuilder:
                 gps=gps,
                 orientation=orientation,
                 camera=camera,
+                opk=opk,
                 yaw=yaw,
                 pitch=pitch,
                 roll=roll,
@@ -124,6 +260,24 @@ class ExifOverridesBuilder:
             self._overrides[image_name] = entry
         return entry
 
+    def add_opk(
+        self,
+        image_name: str,
+        omega: float,
+        phi: float,
+        kappa: float,
+        accuracy: Optional[float] = None
+    ) -> ImageExifOverride:
+        """Convenience method to register OPK camera orientation prior for an image."""
+        opk_dict: Dict[str, float] = {
+            "omega": float(omega),
+            "phi": float(phi),
+            "kappa": float(kappa),
+        }
+        if accuracy is not None:
+            opk_dict["accuracy"] = float(accuracy)
+        return self.add_override(image_name, opk=opk_dict)
+
     def add_ypr(
         self,
         image_name: str,
@@ -131,13 +285,12 @@ class ExifOverridesBuilder:
         pitch: float,
         roll: float
     ) -> ImageExifOverride:
-        """Convenience method to register yaw, pitch, and roll telemetry for an image."""
+        """Convenience method to register yaw, pitch, and roll telemetry, converted to OPK."""
         return self.add_override(
             image_name,
             yaw=yaw,
             pitch=pitch,
             roll=roll,
-            ypr={"yaw": yaw, "pitch": pitch, "roll": roll}
         )
 
     def add_capture_time(self, image_name: str, capture_time: float) -> ImageExifOverride:
@@ -623,7 +776,6 @@ async def register_frames_for_video(
                 yaw=ypr.get("yaw"),
                 pitch=ypr.get("pitch"),
                 roll=ypr.get("roll"),
-                ypr=ypr
             )
             matched_logs_count += 1
         else:
