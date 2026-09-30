@@ -36,3 +36,18 @@ python download_training.py [OPTIONS]
 4. It initializes the appropriate downloader backend (AirLab, Hugging Face, or CloudFlare).
 5. It performs the download in parallel using a thread pool.
 6. Finally, if the `--unzip` flag is passed, it extracts the contents into the target directory.
+
+---
+
+## Bash Helper: `download.sh`
+
+**Script Path**: `./SeaSee-r/pyslam/scripts/download_tartanair_dataset/download.sh`
+
+A convenient helper script that sets up a Python virtual environment, installs dependencies (`boto3`, `colorama`, `huggingface_hub`), creates the target directory, and runs `download_training.py` with Hugging Face as the source.
+
+### Usage
+```bash
+./download.sh <output_directory>
+```
+
+- `<output_directory>`: The directory where the dataset will be downloaded and unzipped.

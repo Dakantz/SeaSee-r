@@ -123,8 +123,6 @@ def main():
     parser = argparse.ArgumentParser(description="Analyze log data time intervals separated by pauses.")
     parser.add_argument(
         "filepath",
-        nargs="?",
-        default="/home/tastegger/Documents/Data/KrK_2026/LogProtokolle_310726bis040826/ROV-Log-2026-07-31-2026-08-04-0807185640.json",
         help="Path to the JSON log file"
     )
     parser.add_argument(

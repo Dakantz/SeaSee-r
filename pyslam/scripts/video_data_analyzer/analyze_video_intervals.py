@@ -237,9 +237,7 @@ def main():
     parser = argparse.ArgumentParser(description="Analyze video file intervals across subfolders using file modification times.")
     parser.add_argument(
         "dirpath",
-        nargs="?",
-        default="/home/tastegger/Documents/Data/KrK_2026",
-        help="Path to root video folder (default: /home/tastegger/Documents/Data/KrK_2026)"
+        help="Path to root video folder"
     )
     parser.add_argument(
         "-g", "--gap",

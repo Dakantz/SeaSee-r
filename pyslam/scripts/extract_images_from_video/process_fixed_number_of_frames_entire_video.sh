@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Check if the correct number of arguments is provided
-if [ "$#" -ne 2 ]; then
-    echo "Usage: $0 <target_directory> <number_of_frames>"
+if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
+    echo "Usage: $0 <target_directory> <number_of_frames> [opensfm_bin_path]"
     echo "Example: $0 /path/to/videos_directory 500"
     exit 1
 fi
@@ -11,7 +11,9 @@ TARGET_DIR="$1"
 NUM_FRAMES="$2"
 
 OPENSFM_CONFIG="$(dirname "$0")/config.yaml"
-OPENSFM_BIN="/home/tastegger/Documents/SeaSee-r/openSfM/openSfM_core/bin/opensfm_run_all"
+REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+DEFAULT_OPENSFM_BIN="${REPO_ROOT}/openSfM/openSfM_core/bin/opensfm_run_all"
+OPENSFM_BIN="${3:-${OPENSFM_BIN:-$DEFAULT_OPENSFM_BIN}}"
 
 # Check if the target directory exists
 if [ ! -d "$TARGET_DIR" ]; then

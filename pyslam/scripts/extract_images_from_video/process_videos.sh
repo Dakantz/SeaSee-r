@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Check if the correct number of arguments is provided
-if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 <target_directory>"
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+    echo "Usage: $0 <target_directory> [opensfm_bin_path]"
     echo "Example: $0 /path/to/videos_directory"
     exit 1
 fi
@@ -11,7 +11,9 @@ TARGET_DIR="$1"
 # Assume the extraction script is in the same directory as this script
 EXTRACT_SCRIPT="$(dirname "$0")/extract_images.sh"
 OPENSFM_CONFIG="$(dirname "$0")/config.yaml"
-OPENSFM_BIN="/home/tastegger/Documents/SeaSee-r/openSfM/openSfM_core/bin/opensfm_run_all"
+REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+DEFAULT_OPENSFM_BIN="${REPO_ROOT}/openSfM/openSfM_core/bin/opensfm_run_all"
+OPENSFM_BIN="${2:-${OPENSFM_BIN:-$DEFAULT_OPENSFM_BIN}}"
 
 # Check if the target directory exists
 if [ ! -d "$TARGET_DIR" ]; then
