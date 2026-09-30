@@ -34,4 +34,6 @@ Example:
    - The video filter (`-vf scale=-2:"$RES"`) scales the height to the target resolution while automatically calculating the appropriate width to maintain the original aspect ratio (`-2`).
    - The video is encoded using the `libx264` codec with a Constant Rate Factor (`-crf`) of `23`, which offers a good balance between visual quality and file size.
    - The audio stream is copied exactly without re-encoding (`-c:a copy`).
-6. **Output**: Processed files are saved into the target output directory with the resolution appended to their original filenames (e.g., original `video.MP4` becomes `video_1080p.mp4`).
+6. **Output & Timestamp Synchronization**:
+   - Processed files are saved into the target output directory with the resolution appended to their original filenames (e.g., original `video.MP4` becomes `video_1080p.mp4`).
+   - The original file's accessed (`atime`) and modified (`mtime`) datetimes are synchronized with the downscaled output file.

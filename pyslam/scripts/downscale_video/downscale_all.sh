@@ -44,7 +44,25 @@ for file in "${files[@]}"; do
     if [ -f "$file" ]; then
         echo "Processing: $file"
         base="${file%.*}"
-        ffmpeg -i "$file" -vf scale=-2:"$RES" -c:v libx264 -crf 23 -c:a copy "$OUT_DIR/${base}_${RES}p.mp4"
+        out_file="$OUT_DIR/${base}_${RES}p.mp4"
+
+        # Capture original file access and modification timestamps
+        orig_atime=$(stat -c '%x' "$file" 2>/dev/null)
+        orig_mtime=$(stat -c '%y' "$file" 2>/dev/null)
+
+        ffmpeg -i "$file" -vf scale=-2:"$RES" -c:v libx264 -crf 23 -c:a copy "$out_file"
+
+        # Preserve access and modification datetimes on the downscaled file
+        if [ -f "$out_file" ]; then
+            touch -r "$file" "$out_file"
+            if [ -n "$orig_atime" ]; then
+                touch -a -d "$orig_atime" "$out_file" 2>/dev/null || true
+                touch -a -d "$orig_atime" "$file" 2>/dev/null || true
+            fi
+            if [ -n "$orig_mtime" ]; then
+                touch -m -d "$orig_mtime" "$out_file" 2>/dev/null || true
+            fi
+        fi
     fi
 done
 

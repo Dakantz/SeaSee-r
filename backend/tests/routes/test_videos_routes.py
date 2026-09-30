@@ -46,4 +46,16 @@ def test_get_batches_overview(client):
         assert "total_video_length" in first
         assert "pointcloud_count" in first
         assert "total_points" in first
+        assert "log_count" in first
+        assert "video_filenames" in first
+        assert "log_filenames" in first
         assert first["pointcloud_count"] > 0
+
+
+def test_start_batch_pipeline_not_found(client):
+    """
+    Test POST /videos/batches/{batch_id}/pipeline returns 404 for non-existent batch.
+    """
+    random_uuid = str(uuid.uuid4())
+    res = client.post(f"/videos/batches/{random_uuid}/pipeline", json={"frame_counts": [200], "blur_thresholds": [50.0]})
+    assert res.status_code == 404

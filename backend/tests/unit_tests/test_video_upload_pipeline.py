@@ -36,7 +36,7 @@ def test_video_upload_pipeline_dag_building():
                     "filename": file_name,
                     "safe_filename": f"{file_id}.mp4",
                     "video_files": [f"{file_id}.mp4", file_name],
-                    "num_frames": 500,
+                    "fps": 1.0,
                     "dataset_name": dataset_name,
                 },
                 depends_on=[]

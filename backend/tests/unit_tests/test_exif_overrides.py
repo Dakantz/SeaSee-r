@@ -195,7 +195,7 @@ async def test_frame_extraction_generates_exif_overrides_with_rejected_frames(tm
     start_iso = "2026-09-29T10:00:00+00:00"
     stop_iso = "2026-09-29T10:00:10+00:00"
     payload = {
-        "num_frames": 4,
+        "fps": 0.4,
         "blur_threshold": 50.0,
         "video_start_at": start_iso,
         "video_stop_at": stop_iso

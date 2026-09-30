@@ -205,6 +205,8 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
   const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
   const [cancellingJobId, setCancellingJobId] = useState<string | null>(null);
   const [deletingPipelineId, setDeletingPipelineId] = useState<string | null>(null);
+  const [cancellingPipelineId, setCancellingPipelineId] = useState<string | null>(null);
+  const [retryingPipelineId, setRetryingPipelineId] = useState<string | null>(null);
 
   const contentAreaRef = React.useRef<HTMLDivElement | null>(null);
   const [drawerTopOffset, setDrawerTopOffset] = useState<number>(0);
@@ -368,6 +370,146 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
       setOptimisticJobStatuses({});
     } finally {
       setCancellingJobId(null);
+    }
+  };
+
+  const handleCancelAllPipelineJobs = async (
+    pipelineId: string,
+    pipeJobs: JobResponse[],
+    e: React.MouseEvent
+  ) => {
+    e.stopPropagation();
+
+    const cancellableStatuses = new Set<JobStatus>(['RUNNING', 'BLOCKED', 'PENDING']);
+    const targetJobs = pipeJobs.filter((j) => {
+      const effectiveStatus = optimisticJobStatuses[j.id] || j.status;
+      return cancellableStatuses.has(effectiveStatus);
+    });
+
+    if (targetJobs.length === 0) return;
+
+    setCancellingPipelineId(pipelineId);
+
+    // Optimistically mark all running/blocked/pending jobs as CANCELLED
+    setOptimisticJobStatuses((prev) => {
+      const next = { ...prev };
+      targetJobs.forEach((j) => {
+        next[j.id] = 'CANCELLED';
+      });
+      return next;
+    });
+
+    try {
+      for (const job of targetJobs) {
+        try {
+          const response = await cancelJob({ path: { job_id: job.id } });
+          if (response.error) {
+            console.warn(`Cancel job ${job.id} warning:`, response.error);
+          }
+        } catch (err: any) {
+          console.warn(`Cancel job ${job.id} error:`, err);
+        }
+      }
+      await refetch();
+      if (selectedJob && targetJobs.some((j) => j.id === selectedJob.id)) {
+        const updated = jobs.find((j) => j.id === selectedJob.id);
+        if (updated) {
+          setSelectedJob(updated);
+        }
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error cancelling pipeline jobs');
+      setOptimisticJobStatuses({});
+    } finally {
+      setCancellingPipelineId(null);
+    }
+  };
+
+  const handleRetryAllPipelineJobs = async (
+    pipelineId: string,
+    pipeJobs: JobResponse[],
+    e: React.MouseEvent
+  ) => {
+    e.stopPropagation();
+
+    const retryableStatuses = new Set<JobStatus>(['CANCELLED', 'FAILED']);
+    const targetJobs = pipeJobs.filter((j) => {
+      const effectiveStatus = optimisticJobStatuses[j.id] || j.status;
+      return retryableStatuses.has(effectiveStatus);
+    });
+
+    if (targetJobs.length === 0) return;
+
+    setRetryingPipelineId(pipelineId);
+
+    // Topological depth sorting so upstream/parent jobs are retried before downstream children
+    const jobMap = new Map<string, JobResponse>();
+    pipeJobs.forEach((j) => jobMap.set(j.id, j));
+
+    const depthMap = new Map<string, number>();
+    const getDepth = (jobId: string, visited = new Set<string>()): number => {
+      if (depthMap.has(jobId)) return depthMap.get(jobId)!;
+      if (visited.has(jobId)) return 0;
+      visited.add(jobId);
+      const j = jobMap.get(jobId);
+      if (!j || !j.depends_on || j.depends_on.length === 0) {
+        depthMap.set(jobId, 0);
+        return 0;
+      }
+      let maxDepth = -1;
+      for (const parentId of j.depends_on) {
+        if (jobMap.has(String(parentId))) {
+          maxDepth = Math.max(maxDepth, getDepth(String(parentId), new Set(visited)));
+        }
+      }
+      const curDepth = maxDepth + 1;
+      depthMap.set(jobId, curDepth);
+      return curDepth;
+    };
+
+    const sortedJobsToRetry = [...targetJobs].sort((a, b) => getDepth(a.id) - getDepth(b.id));
+
+    // Optimistically update statuses:
+    // If all dependencies are already COMPLETED, job becomes PENDING; otherwise BLOCKED
+    const completedIds = new Set(
+      pipeJobs.filter((pj) => pj.status === 'COMPLETED').map((pj) => pj.id)
+    );
+    setOptimisticJobStatuses((prev) => {
+      const next = { ...prev };
+      sortedJobsToRetry.forEach((j) => {
+        const deps = j.depends_on || [];
+        if (!deps.length || deps.every((d) => completedIds.has(String(d)))) {
+          next[j.id] = 'PENDING';
+        } else {
+          next[j.id] = 'BLOCKED';
+        }
+      });
+      return next;
+    });
+
+    try {
+      for (const job of sortedJobsToRetry) {
+        try {
+          const response = await retryJob({ path: { job_id: job.id } });
+          if (response.error) {
+            console.warn(`Retry job ${job.id} warning:`, response.error);
+          }
+        } catch (err: any) {
+          console.warn(`Retry job ${job.id} error:`, err);
+        }
+      }
+      await refetch();
+      if (selectedJob && sortedJobsToRetry.some((j) => j.id === selectedJob.id)) {
+        const updated = jobs.find((j) => j.id === selectedJob.id);
+        if (updated) {
+          setSelectedJob(updated);
+        }
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error retrying pipeline jobs');
+      setOptimisticJobStatuses({});
+    } finally {
+      setRetryingPipelineId(null);
     }
   };
 
@@ -724,6 +866,21 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
             {unifiedItems.map((item) => {
               if (item.type === 'pipeline') {
                 const { pipeline, jobs: pipeJobs } = item;
+                const isCancelling = cancellingPipelineId === pipeline.id;
+                const isRetrying = retryingPipelineId === pipeline.id;
+                const isDeleting = deletingPipelineId === pipeline.id;
+                const isBusy = isCancelling || isRetrying || isDeleting;
+
+                const hasCancellableJobs = pipeJobs.some((j) => {
+                  const s = optimisticJobStatuses[j.id] || j.status;
+                  return s === 'RUNNING' || s === 'BLOCKED' || s === 'PENDING';
+                });
+
+                const hasRetryableJobs = pipeJobs.some((j) => {
+                  const s = optimisticJobStatuses[j.id] || j.status;
+                  return s === 'CANCELLED' || s === 'FAILED';
+                });
+
                 return (
                   <div key={pipeline.id} className="jso-pipeline-card">
                     {/* Pipeline Run Header */}
@@ -747,9 +904,41 @@ export const JobSystemOverview: React.FC<JobSystemOverviewProps> = ({
 
                         <button
                           type="button"
+                          className="jso-pipe-action-btn cancel"
+                          onClick={(e) => handleCancelAllPipelineJobs(pipeline.id, pipeJobs, e)}
+                          disabled={isBusy || !hasCancellableJobs}
+                          title={
+                            hasCancellableJobs
+                              ? 'Cancel all RUNNING, BLOCKED or PENDING jobs for this pipeline'
+                              : 'No active jobs to cancel'
+                          }
+                        >
+                          <span className={isCancelling ? 'jso-spin-icon' : ''}>
+                            {isCancelling ? '↻' : '⛔'}
+                          </span>
+                          <span>Cancel All</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="jso-pipe-action-btn retry"
+                          onClick={(e) => handleRetryAllPipelineJobs(pipeline.id, pipeJobs, e)}
+                          disabled={isBusy || !hasRetryableJobs}
+                          title={
+                            hasRetryableJobs
+                              ? 'Retry all CANCELLED or FAILED jobs for this pipeline'
+                              : 'No failed or cancelled jobs to retry'
+                          }
+                        >
+                          <span className={isRetrying ? 'jso-spin-icon' : ''}>↻</span>
+                          <span>Retry All</span>
+                        </button>
+
+                        <button
+                          type="button"
                           className="jso-pipe-action-btn delete"
                           onClick={(e) => handleDeletePipeline(pipeline.id, e)}
-                          disabled={deletingPipelineId === pipeline.id}
+                          disabled={isBusy}
                           title="Delete pipeline and associated jobs"
                         >
                           <span>🗑</span>

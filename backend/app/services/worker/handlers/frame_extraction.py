@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class FrameExtractionTaskHandler(BaseTaskHandler):
     """
-    Worker task handler for extracting fixed-number image frames from videos using ffmpeg,
+    Worker task handler for extracting image frames from videos at a specified FPS using ffmpeg,
     filtering out blurry/obscured frames using Laplacian variance, and saving clean output
     into settings.opensfm_ingestion_dir.
     """
@@ -64,7 +64,20 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
     async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:
         await self.update_job_status(job_id, "RUNNING", 5.0)
 
-        num_frames = int(payload.get("num_frames", 500))
+        fps_val = payload.get("fps", 1.0)
+        try:
+            fps = float(fps_val)
+        except (ValueError, TypeError):
+            fps = 1.0
+
+        if fps <= 0:
+            err_msg = f"Invalid fps value: {fps_val}. Must be greater than 0."
+            logger.error(err_msg)
+            await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)
+            raise ValueError(err_msg)
+
+        fps_arg = f"{fps:.8f}".rstrip("0").rstrip(".") if "." in f"{fps:.8f}" else str(fps)
+
         blur_threshold = float(payload.get("blur_threshold", 50.0))
         video_dir = settings.video_dir
         output_dir = settings.opensfm_ingestion_dir
@@ -100,25 +113,16 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
         logger.info(f"Job {job_id}: Found {len(video_files)} video files in {video_dir}")
         await self.update_job_status(job_id, "RUNNING", 15.0)
 
-        # Calculate total duration and individual durations
-        total_duration = 0.0
+        # Calculate individual durations
         video_durations: Dict[str, float] = {}
         for vf in video_files:
             dur = await self._get_video_duration(vf)
             video_durations[vf] = dur
-            total_duration += dur
 
-        if total_duration <= 0.0:
-            err_msg = f"Could not determine total duration of videos in '{video_dir}'."
-            logger.error(err_msg)
-            await self.update_job_status(job_id, "FAILED", 0.0, error_message=err_msg)
-            raise RuntimeError(err_msg)
-
-        fps = num_frames / total_duration
         await self.update_job_status(job_id, "RUNNING", 25.0)
 
         # Target dataset directory inside opensfm_ingestion_dir
-        dataset_name = payload.get("dataset_name") or f"video_dataset_fixed_{num_frames}_frames_entire_video"
+        dataset_name = payload.get("dataset_name") or f"video_dataset_fps_{fps}"
         dataset_dir = os.path.join(output_dir, dataset_name)
         images_dir = os.path.join(dataset_dir, "images")
         os.makedirs(images_dir, exist_ok=True)
@@ -131,17 +135,12 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
         total_extracted = 0
 
         for idx, vf in enumerate(video_files):
-            if total_extracted >= num_frames:
-                break
-
             current_start_num = start_num
-            remaining = num_frames - total_extracted
             cmd = [
                 "ffmpeg",
                 "-loglevel", "error",
                 "-i", vf,
-                "-vf", f"fps={fps:.8f}",
-                "-vframes", str(remaining),
+                "-vf", f"fps={fps_arg}",
                 "-start_number", str(current_start_num),
                 os.path.join(images_dir, "image_%05d.png")
             ]
@@ -253,7 +252,7 @@ class FrameExtractionTaskHandler(BaseTaskHandler):
             "kept_images": kept_count,
             "rejected_images": rejected_count,
             "blur_threshold": blur_threshold,
-            "num_frames_requested": num_frames,
+            "fps": fps,
             "exif_overrides_file": exif_overrides_file,
             "total_overrides": len(exif_builder.overrides)
         }

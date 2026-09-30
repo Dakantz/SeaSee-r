@@ -1,6 +1,7 @@
 import os
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Set
+import time
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import FileResponse
@@ -12,7 +13,11 @@ from app.core.config import settings
 from app.core.database import get_db_session
 from app.models.video import Video, UploadMetadata
 from app.models.pointcloud import PointCloudMetadata
-from app.schemas.video import VideoResponse, UploadMetadataResponse, BatchOverviewResponse
+from app.models.job import JobStatus
+from app.schemas.video import VideoResponse, UploadMetadataResponse, BatchOverviewResponse, StartBatchPipelineRequest
+from app.schemas.job import PipelineResponse, PipelineCreate, PipelineJobCreate
+from app.services.worker.pipeline_service import build_pipeline_and_jobs
+from app.api.routes.jobs import _enqueue_job_to_redis, _are_dependencies_satisfied, _get_pipeline_or_404
 
 router = APIRouter(
     prefix="/videos",
@@ -76,6 +81,7 @@ async def get_batch_overviews(
     - Total video length
     - Number of reconstructed point clouds
     - Total points count
+    - Log data counts and filenames
     """
     sql = text("""
         WITH batch_ids AS (
@@ -107,8 +113,24 @@ async def get_batch_overviews(
                 MAX(CASE WHEN rn = 1 THEN orig_filename END) as first_video_filename,
                 COUNT(DISTINCT video_id) as video_count,
                 COUNT(DISTINCT orig_filename) as upload_video_count,
-                SUM(GREATEST(duration, 0)) as total_video_length
+                SUM(GREATEST(duration, 0)) as total_video_length,
+                ARRAY_AGG(DISTINCT orig_filename) FILTER (WHERE orig_filename IS NOT NULL) as video_filenames
             FROM batch_videos
+            GROUP BY batch_id
+        ),
+        batch_logs AS (
+            SELECT 
+                batch_id,
+                orig_filename
+            FROM upload_metadata
+            WHERE batch_id IS NOT NULL AND (content_type LIKE '%json%' OR orig_filename LIKE '%.json')
+        ),
+        batch_log_stats AS (
+            SELECT
+                batch_id,
+                COUNT(DISTINCT orig_filename) as log_count,
+                ARRAY_AGG(DISTINCT orig_filename) FILTER (WHERE orig_filename IS NOT NULL) as log_filenames
+            FROM batch_logs
             GROUP BY batch_id
         ),
         batch_pc_stats AS (
@@ -136,9 +158,13 @@ async def get_batch_overviews(
             COALESCE(v.total_video_length, 0.0) as total_video_length,
             COALESCE(p.pointcloud_count, 0) as pointcloud_count,
             COALESCE(p.total_points, 0) as total_points,
-            COALESCE(u.first_upload_created_at, p.first_pc_created_at) as created_at
+            COALESCE(u.first_upload_created_at, p.first_pc_created_at) as created_at,
+            COALESCE(l.log_count, 0) as log_count,
+            COALESCE(v.video_filenames, ARRAY[]::varchar[]) as video_filenames,
+            COALESCE(l.log_filenames, ARRAY[]::varchar[]) as log_filenames
         FROM batch_ids b
         LEFT JOIN batch_video_stats v ON b.batch_id = v.batch_id
+        LEFT JOIN batch_log_stats l ON b.batch_id = l.batch_id
         LEFT JOIN batch_pc_stats p ON b.batch_id = p.batch_id
         LEFT JOIN batch_earliest_upload u ON b.batch_id = u.batch_id
         WHERE (:processed_only = FALSE OR COALESCE(p.pointcloud_count, 0) > 0)
@@ -156,10 +182,183 @@ async def get_batch_overviews(
             total_video_length=float(row.total_video_length or 0.0),
             pointcloud_count=int(row.pointcloud_count or 0),
             total_points=int(row.total_points or 0),
-            created_at=row.created_at
+            created_at=row.created_at,
+            log_count=int(getattr(row, "log_count", 0) or 0),
+            video_filenames=list(getattr(row, "video_filenames", []) or []),
+            log_filenames=list(getattr(row, "log_filenames", []) or []),
         )
         for row in rows
     ]
+
+
+@router.post("/batches/{batch_id}/pipeline", response_model=List[PipelineResponse])
+async def start_batch_pipeline(
+    batch_id: uuid.UUID,
+    req: StartBatchPipelineRequest = StartBatchPipelineRequest(),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Start an OpenSfM reconstruction pipeline for an already uploaded batch.
+    Works for any batch, even if previous pipelines have already been run.
+    """
+    stmt = (
+        select(UploadMetadata)
+        .options(selectinload(UploadMetadata.videos))
+        .where(UploadMetadata.batch_id == batch_id)
+        .order_by(UploadMetadata.created_at.asc(), UploadMetadata.orig_filename.asc())
+    )
+    res = await db.execute(stmt)
+    records = list(res.scalars().all())
+    if not records:
+        raise HTTPException(status_code=404, detail=f"No uploads found for batch {batch_id}")
+
+    video_records = [
+        r for r in records 
+        if (r.content_type and r.content_type.startswith("video/")) 
+        or (r.orig_filename and r.orig_filename.lower().endswith((".mp4", ".mov", ".avi", ".mkv")))
+        or (r.videos and len(r.videos) > 0)
+    ]
+    if not video_records:
+        raise HTTPException(status_code=400, detail=f"Batch {batch_id} does not contain any video files.")
+
+    def get_sort_key(u: UploadMetadata):
+        if u.videos and u.videos[0].video_start_at:
+            return (0, u.videos[0].video_start_at)
+        return (1, u.created_at)
+
+    video_records.sort(key=get_sort_key)
+
+    video_safe_filenames = [
+        r.safe_filename or (f"{r.id}.mp4" if not r.orig_filename else f"{r.id}{os.path.splitext(r.orig_filename)[1]}")
+        for r in video_records
+    ]
+    primary_file = video_records[0]
+    primary_file_id = str(primary_file.id)
+    primary_safe_filename = primary_file.safe_filename or video_safe_filenames[0]
+    primary_orig_filename = primary_file.orig_filename
+
+    if len(video_records) == 1:
+        file_names_summary = primary_orig_filename
+    else:
+        first_two = ", ".join(r.orig_filename for r in video_records[:2])
+        extra = f", +{len(video_records) - 2} more" if len(video_records) > 2 else ""
+        file_names_summary = f"{len(video_records)} videos ({first_two}{extra})"
+
+    created_pipelines = []
+    if req.fps_list:
+        fps_list = [float(f) for f in req.fps_list if float(f) > 0]
+    elif req.frame_counts:
+        fps_list = [1.0 for _ in req.frame_counts]
+    else:
+        fps_list = [1.0]
+
+    blur_thresholds = req.blur_thresholds if req.blur_thresholds else [50.0]
+
+    for fps in fps_list:
+        for blur_threshold in blur_thresholds:
+            batch_slug = str(batch_id).replace("-", "_")
+            run_tag = int(time.time() * 1000) % 1000000
+            fps_str = str(fps).replace(".", "_")
+            dataset_name = f"dataset_{batch_slug}_fps{fps_str}_b{int(blur_threshold)}_{run_tag}"
+
+            def truncate_str(s: str, max_len: int = 220) -> str:
+                return s if len(s) <= max_len else s[:max_len - 3] + "..."
+
+            pipe_create = PipelineCreate(
+                name=truncate_str(f"Video OpenSfM Pipeline: {file_names_summary} (fps={fps}, blur={blur_threshold})"),
+                jobs=[
+                    PipelineJobCreate(
+                        id_key="video_upload",
+                        name=truncate_str(f"Log Ingestion: {file_names_summary}"),
+                        task_type="video_upload",
+                        payload={
+                            "file_id": primary_file_id,
+                            "batch_id": str(batch_id),
+                            "filename": primary_orig_filename,
+                            "safe_filename": primary_safe_filename,
+                            "video_files": video_safe_filenames,
+                        },
+                        depends_on=[]
+                    ),
+                    PipelineJobCreate(
+                        id_key="frame_extraction",
+                        name=truncate_str(f"Frame Extraction: {file_names_summary} (fps={fps}, blur={blur_threshold})"),
+                        task_type="frame_extraction",
+                        payload={
+                            "filename": primary_orig_filename,
+                            "safe_filename": primary_safe_filename,
+                            "video_files": video_safe_filenames,
+                            "fps": fps,
+                            "blur_threshold": blur_threshold,
+                            "dataset_name": dataset_name,
+                            "batch_id": str(batch_id),
+                        },
+                        depends_on=["video_upload"]
+                    ),
+                    PipelineJobCreate(
+                        id_key="opensfm_sparse",
+                        name=truncate_str(f"OpenSfM Sparse: {file_names_summary} (fps={fps}, blur={blur_threshold})"),
+                        task_type="opensfm_sparse",
+                        payload={
+                            "dataset_name": dataset_name,
+                            "file_id": primary_file_id,
+                            "batch_id": str(batch_id),
+                        },
+                        depends_on=["frame_extraction"]
+                    ),
+                    PipelineJobCreate(
+                        id_key="opensfm_dense",
+                        name=truncate_str(f"OpenSfM Dense Component 0: {dataset_name}"),
+                        task_type="opensfm_dense",
+                        payload={
+                            "dataset_name": dataset_name,
+                            "file_id": primary_file_id,
+                            "batch_id": str(batch_id),
+                            "reconstruction_index": 0,
+                            "subfolder": "undistorted",
+                        },
+                        depends_on=["opensfm_sparse"]
+                    ),
+                    PipelineJobCreate(
+                        id_key="opensfm_ingest",
+                        name=truncate_str(f"OpenSfM Ingest Component 0: {dataset_name}"),
+                        task_type="opensfm_ingest",
+                        payload={
+                            "dataset_name": dataset_name,
+                            "file_id": primary_file_id,
+                            "batch_id": str(batch_id),
+                            "reconstruction_index": 0,
+                            "subfolder": "undistorted",
+                        },
+                        depends_on=["opensfm_dense"]
+                    )
+                ]
+            )
+
+            pipeline_model, jobs = build_pipeline_and_jobs(pipe_create)
+            db.add(pipeline_model)
+            for j in jobs:
+                db.add(j)
+            await db.commit()
+
+            pipeline_db = await _get_pipeline_or_404(pipeline_model.id, db)
+
+            completed_cache: Set[str] = set()
+            for j in pipeline_db.jobs:
+                if j.status == JobStatus.BLOCKED and j.depends_on:
+                    if await _are_dependencies_satisfied(db, j.depends_on, completed_cache):
+                        j.status = JobStatus.PENDING
+
+            await db.commit()
+
+            for j in pipeline_db.jobs:
+                if j.status == JobStatus.PENDING:
+                    await _enqueue_job_to_redis(j.id, j.task_type)
+
+            created_pipelines.append(pipeline_db)
+
+    return created_pipelines
+
 
 
 # ==========================================

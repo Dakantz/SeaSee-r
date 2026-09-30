@@ -24,7 +24,7 @@ async def test_frame_extraction_no_videos_raises(tmp_path):
         mock_settings.opensfm_ingestion_dir = output_dir
 
         with pytest.raises(RuntimeError, match="No .mp4 or .MP4 video files found"):
-            await handler.execute(dummy_job_id, payload={"num_frames": 10})
+            await handler.execute(dummy_job_id, payload={"fps": 1.0})
 
         mock_update.assert_any_call(dummy_job_id, "FAILED", 0.0, error_message=f"No .mp4 or .MP4 video files found in '{video_dir}'.")
 
@@ -74,10 +74,17 @@ async def test_frame_extraction_success(tmp_path):
         mock_settings.opensfm_ingestion_dir = output_dir
         mock_settings.opensfm_config = str(tmp_path / "config.yaml")
 
-        res = await handler.execute(dummy_job_id, payload={"num_frames": 50})
+        start_iso = "2026-09-30T10:00:00+00:00"
+        stop_iso = "2026-09-30T10:00:10+00:00"
+        res = await handler.execute(dummy_job_id, payload={
+            "fps": 5.0,
+            "video_start_at": start_iso,
+            "video_stop_at": stop_iso
+        })
 
         assert res["status"] == "success"
         assert res["job_id"] == dummy_job_id
+        assert res["fps"] == 5.0
         assert res["total_extracted"] == 1
         assert res["kept_images"] == 1
         assert res["rejected_images"] == 0
@@ -132,9 +139,17 @@ async def test_frame_extraction_blur_filtering(tmp_path):
         mock_settings.opensfm_ingestion_dir = output_dir
         mock_settings.opensfm_config = str(tmp_path / "config.yaml")
 
-        res = await handler.execute(dummy_job_id, payload={"num_frames": 50, "blur_threshold": 100.0})
+        start_iso = "2026-09-30T10:00:00+00:00"
+        stop_iso = "2026-09-30T10:00:10+00:00"
+        res = await handler.execute(dummy_job_id, payload={
+            "fps": 5.0,
+            "blur_threshold": 100.0,
+            "video_start_at": start_iso,
+            "video_stop_at": stop_iso
+        })
 
         assert res["status"] == "success"
+        assert res["fps"] == 5.0
         assert res["total_extracted"] == 2
         assert res["kept_images"] == 1
         assert res["rejected_images"] == 1

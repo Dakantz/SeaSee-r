@@ -15,40 +15,14 @@ export default function Toolbar() {
                     color: "white",
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "space-between",
+                    justifyContent: "flex-end",
                     paddingLeft: "20px",
                     paddingRight: "20px",
                     fontWeight: "bold",
                     zIndex: 100
                 }}
             >
-                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                    <span style={{ fontSize: "16px", color: "#38bdf8", letterSpacing: "0.5px" }}>
-                        SeaSeer Dashboard
-                    </span>
-                    <button
-                        type="button"
-                        onClick={() => setIsVideoModalOpen(true)}
-                        style={{
-                            background: "linear-gradient(135deg, rgba(56, 189, 248, 0.2) 0%, rgba(14, 165, 233, 0.2) 100%)",
-                            border: "1px solid rgba(56, 189, 248, 0.4)",
-                            color: "#38bdf8",
-                            padding: "4px 10px",
-                            borderRadius: "6px",
-                            fontSize: "12px",
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "6px",
-                            transition: "all 0.2s ease"
-                        }}
-                    >
-                        <span>📹</span> Upload Video
-                    </button>
-                </div>
-
-                <nav style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <nav style={{ display: "flex", alignItems: "center", gap: "8px", marginLeft: "auto" }}>
                     <NavLink
                         to="/"
                         end
@@ -100,7 +74,7 @@ export default function Toolbar() {
 
 
                     <NavLink
-                        to="/video-upload-test"
+                        to="/video-uploader"
                         style={({ isActive }) => ({
                             color: isActive ? "#38bdf8" : "#94a3b8",
                             textDecoration: "none",

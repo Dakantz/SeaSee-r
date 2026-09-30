@@ -50,6 +50,24 @@ Returns an aggregated list of upload batches with their video metrics and point 
 | `pointcloud_count` | `integer` | Count of reconstructed `pointcloud_metadata` datasets linked to this batch. |
 | `total_points` | `integer` | Cumulative sum of points across all reconstructions for this batch. |
 | `created_at` | `datetime \| null` | Earliest creation timestamp of the batch upload or reconstruction. |
+| `log_count` | `integer` | Count of JSON telemetry log files uploaded in this batch. |
+| `video_filenames` | `string[]` | List of all original video filenames in this batch. |
+| `log_filenames` | `string[]` | List of all telemetry / log filenames in this batch. |
+
+---
+
+### `POST /videos/batches/{batch_id}/pipeline`
+
+Triggers an OpenSfM 3D reconstruction pipeline on demand for any uploaded batch (whether previously run or pending).
+
+#### Request Body (`StartBatchPipelineRequest`):
+```json
+{
+  "frame_counts": [200],
+  "blur_thresholds": [50.0]
+}
+```
+Accepts arrays of numbers to allow executing a parameter sweep matrix.
 
 ---
 
@@ -158,6 +176,21 @@ The `Batch Catalog` section is integrated into `DebugControls`:
    ```
 4. **Deduplication**:
    `addCustomQuery` in `PLYPointCloudContext.tsx` verifies whether a query with `field === "batch_id"` matching the target batch ID already exists before creating a new query card, preventing redundant duplicate entries.
+
+### `UploadedBatchesManager.tsx` (`/video-uploader` Page)
+
+Displays all uploaded batches of videos and telemetry log data with real-time management:
+1. **Batch Information**:
+   - Monospace batch UUID with one-click clipboard copy.
+   - Status badge indicating whether the batch has already been reconstructed (`Reconstructed`) or is pending execution (`Ready for Pipeline`).
+   - Video metrics: count of videos, total video duration, and expandable file names list.
+   - Telemetry log metrics: count and names of JSON telemetry logs uploaded in the batch.
+   - Point cloud metrics: reconstructed dataset count and total points.
+2. **On-Demand Pipeline Launcher**:
+   - Allows users to specify arbitrary frame counts (e.g., `100, 200`) and blur thresholds (e.g., `30, 50`).
+   - Supports 1-click presets: Fast, Standard, Dense, and Sweep Matrix.
+   - Users can trigger or re-run the pipeline on any batch regardless of whether a pipeline has previously been run.
+   - Seamlessly dispatches `job-system-updated` to notify `JobSystemOverview` to show live DAG progression.
 
 ---
 

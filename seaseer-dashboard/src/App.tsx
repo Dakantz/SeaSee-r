@@ -4,7 +4,7 @@ import "./App.css";
 import Toolbar from "./components/Toolbar";
 import Workspace from "./components/Workspace/Workspace";
 import HealthPage from "./components/HealthPage.tsx";
-import VideoUploadTestPage from "./components/VideoUploader/VideoUploadTestPage.tsx";
+import VideoUploaderPage from "./components/VideoUploader/VideoUploaderPage.tsx";
 import PointCloudUploadTestPage from "./components/PointCloudUploader/PointCloudUploadTestPage.tsx";
 import PointCloudEditorPage from "./components/PointCloudEditor/PointCloudEditorPage.tsx";
 import LogsPage from "./components/Logs/LogsPage.tsx";
@@ -24,7 +24,8 @@ function App() {
                 <Route path="/logs" element={<LogsPage />} />
                 <Route path="/lod-algorithm-analyzer" element={<LodAlgorithmAnalyzerPage />} />
                 <Route path="/health" element={<HealthPage />} />
-                <Route path="/video-upload-test" element={<VideoUploadTestPage />} />
+                <Route path="/video-uploader" element={<VideoUploaderPage />} />
+                <Route path="/video-upload-test" element={<Navigate to="/video-uploader" replace />} />
                 <Route path="/pointcloud-upload-test" element={<PointCloudUploadTestPage />} />
                 <Route path="/pointcloud-editor" element={<PointCloudEditorPage />} />
                 <Route path="/pointcloud-editor/:id" element={<PointCloudEditorPage />} />

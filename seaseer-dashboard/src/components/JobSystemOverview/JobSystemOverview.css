@@ -534,6 +534,24 @@
   transform: translateY(-1px);
 }
 
+.jso-pipe-action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.jso-pipe-action-btn.cancel {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: var(--jso-color-rose-light);
+}
+
+.jso-pipe-action-btn.cancel:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.3);
+  box-shadow: var(--jso-shadow-glow-rose);
+}
+
 .jso-pipe-action-btn.retry {
   background: rgba(245, 158, 11, 0.15);
   border-color: rgba(245, 158, 11, 0.5);

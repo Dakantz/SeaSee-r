@@ -50,6 +50,8 @@ Integrated with the custom [`useJobSystemStatus`](file:///home/tastegger/Documen
 
 - **Retry Job (`handleRetryJob`)**: Optimistically updates local state to `PENDING` (or `BLOCKED` if parent dependencies remain unfulfilled), then triggers backend `retryJob` API.
 - **Cancel Job (`handleCancelJob`)**: Optimistically marks target and downstream pipeline jobs as `CANCELLED`, calling backend `cancelJob` API.
+- **Pipeline Cancel All (`handleCancelAllPipelineJobs`)**: Cancels all jobs that are `RUNNING`, `BLOCKED`, or `PENDING` for a single pipeline, applying optimistic status updates and invoking `cancelJob` across target jobs.
+- **Pipeline Retry All (`handleRetryAllPipelineJobs`)**: Retries all jobs that are `CANCELLED` or `FAILED` for a single pipeline, topologically sorting jobs by DAG dependency depth to ensure upstream parents execute before downstream dependencies.
 - **Delete Pipeline (`handleDeletePipeline`)**: Confirms deletion and deletes pipeline along with associated jobs (`deleteJob`).
 - **Download Full Logs (`handleDownloadFullLogs`)**: Aggregates job execution metadata, error messages, and raw output JSON payloads across pipeline jobs into a downloadable text log file (`pipeline_logs_<timestamp>.txt`).
 

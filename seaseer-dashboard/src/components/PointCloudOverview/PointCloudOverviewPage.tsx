@@ -5,13 +5,12 @@ import PointCloudOverviewContainer from "./PointCloudOverviewContainer";
 import CustomQueryManagerContainer from "../PointCloudPanel/CustomQueryManagerContainer";
 import { JobSystemOverview } from "../JobSystemOverview/JobSystemOverview";
 import PLYPointCloudSidebar from "../PointCloudPanel/PLYPointCloudSidebar";
-import { OpenSfMConfigPanel } from "../OpenSfMConfigModal/OpenSfMConfigModal";
 import { VideoLogsPanel } from "../Logs/VideoLogsPanel";
 import { useTrajectoryLogSync } from "../Logs/hooks/useTrajectoryLogSync";
 import "../Workspace/Workspace.css";
 import "./PointCloudOverview.css";
 
-export type ActiveRightPanel = "jobs" | "debug" | "opensfm" | "videologs" | null;
+export type ActiveRightPanel = "jobs" | "debug" | "videologs" | null;
 
 export default function PointCloudOverviewPage() {
     const [isQueriesOpen, setIsQueriesOpen] = useState<boolean>(true);
@@ -38,19 +37,6 @@ export default function PointCloudOverviewPage() {
                     <circle cx="12" cy="12" r="3"></circle>
                 </svg>
                 <span>Debug Controls</span>
-            </button>
-
-            <button
-                type="button"
-                className={`pco-toggle-btn ${activeRightPanel === "opensfm" ? "active" : ""}`}
-                onClick={() => setActiveRightPanel(prev => prev === "opensfm" ? null : "opensfm")}
-                title="Toggle OpenSfM Settings"
-            >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="3"></circle>
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                </svg>
-                <span>OpenSfM Settings</span>
             </button>
 
             <button
@@ -186,31 +172,6 @@ export default function PointCloudOverviewPage() {
                                         </div>
                                         <div className="right-sidebar-content">
                                             <PLYPointCloudSidebar />
-                                        </div>
-                                    </>
-                                )}
-
-                                {activeRightPanel === "opensfm" && (
-                                    <>
-                                        <div className="right-sidebar-header">
-                                            <span className="right-sidebar-title">
-                                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                    <circle cx="12" cy="12" r="3"></circle>
-                                                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                                                </svg>
-                                                OpenSfM Settings
-                                            </span>
-                                            <button
-                                                type="button"
-                                                className="right-sidebar-toggle-btn"
-                                                onClick={() => setActiveRightPanel(null)}
-                                                title="Collapse Right Sidebar"
-                                            >
-                                                ✕
-                                            </button>
-                                        </div>
-                                        <div className="right-sidebar-content">
-                                            <OpenSfMConfigPanel />
                                         </div>
                                     </>
                                 )}
