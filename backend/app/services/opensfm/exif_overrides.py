@@ -130,7 +130,8 @@ def opk_from_ypr(
 class ImageExifOverride:
     """
     Data model representing EXIF override parameters for an individual image.
-    Supports capture_time, gps, orientation, camera, and OPK camera orientation.
+    Supports capture_time, gps, orientation, camera, OPK camera orientation,
+    and altitude / relative_altitude (used as guideline for real-world metric scale in OpenSfM).
     Telemetric yaw/pitch/roll angles are automatically converted into OPK priors,
     and unused telemetry fields (yaw, pitch, roll, ypr) are excluded from serialized output.
     """
@@ -139,6 +140,10 @@ class ImageExifOverride:
     orientation: Optional[int] = None
     camera: Optional[str] = None
     opk: Optional[Dict[str, float]] = None
+    altitude: Optional[float] = None
+    relative_altitude: Optional[float] = None
+    altitude_std: Optional[float] = None
+    dop: Optional[float] = None
     yaw: Optional[float] = None
     pitch: Optional[float] = None
     roll: Optional[float] = None
@@ -150,12 +155,33 @@ class ImageExifOverride:
         data: Dict[str, Any] = {}
         if self.capture_time is not None:
             data["capture_time"] = float(self.capture_time)
-        if self.gps is not None:
-            data["gps"] = self.gps
         if self.orientation is not None:
             data["orientation"] = self.orientation
         if self.camera is not None:
             data["camera"] = self.camera
+
+        # Format relative altitude for OpenSfM orientation-based pair matching and scale
+        rel_alt = self.relative_altitude
+        if rel_alt is None and self.altitude is not None and self.altitude >= 0:
+            rel_alt = self.altitude
+        if rel_alt is not None and rel_alt >= 0:
+            data["relative_altitude"] = round(float(rel_alt), 4)
+
+        # Build GPS dictionary incorporating altitude / precision if available
+        gps_dict: Dict[str, Any] = {}
+        if self.gps is not None:
+            gps_dict.update(self.gps)
+
+        # Inject altitude into GPS dictionary if valid (>= 0) and not already present
+        if self.altitude is not None and self.altitude >= 0 and "altitude" not in gps_dict:
+            gps_dict["altitude"] = round(float(self.altitude), 4)
+        if self.altitude_std is not None and "altitude_std" not in gps_dict:
+            gps_dict["altitude_std"] = round(float(self.altitude_std), 4)
+        if self.dop is not None and "dop" not in gps_dict:
+            gps_dict["dop"] = round(float(self.dop), 4)
+
+        if gps_dict:
+            data["gps"] = gps_dict
 
         # Format camera orientation into OPK (omega, phi, kappa)
         if self.opk is not None:
@@ -176,19 +202,24 @@ class ImageExifOverride:
                 lat = 0.0
                 lon = 0.0
                 alt = 0.0
-                if self.gps:
-                    lat = float(self.gps.get("latitude", 0.0))
-                    lon = float(self.gps.get("longitude", 0.0))
-                    alt = float(self.gps.get("altitude", 0.0))
+                if "gps" in data:
+                    lat = float(data["gps"].get("latitude", 0.0))
+                    lon = float(data["gps"].get("longitude", 0.0))
+                    alt = float(data["gps"].get("altitude", 0.0))
+                elif self.altitude is not None and self.altitude >= 0:
+                    alt = float(self.altitude)
+                elif self.relative_altitude is not None and self.relative_altitude >= 0:
+                    alt = float(self.relative_altitude)
+
                 opk_val = opk_from_ypr(float(y), float(p), float(r), lat=lat, lon=lon, alt=alt)
                 if opk_val:
                     data["opk"] = opk_val
 
-        # Preserve valid extra fields, but ensure unused orientation keys are never saved
+        # Preserve valid extra fields, but ensure unused orientation/raw telemetry keys are never saved
         if self.extra:
             filtered_extra = {
                 k: v for k, v in self.extra.items()
-                if k not in ("yaw", "pitch", "roll", "ypr")
+                if k not in ("yaw", "pitch", "roll", "ypr", "altitude", "relative_altitude", "altitude_std")
             }
             data.update(filtered_extra)
         return data
@@ -215,6 +246,10 @@ class ExifOverridesBuilder:
         orientation: Optional[int] = None,
         camera: Optional[str] = None,
         opk: Optional[Dict[str, float]] = None,
+        altitude: Optional[float] = None,
+        relative_altitude: Optional[float] = None,
+        altitude_std: Optional[float] = None,
+        dop: Optional[float] = None,
         yaw: Optional[float] = None,
         pitch: Optional[float] = None,
         roll: Optional[float] = None,
@@ -234,6 +269,14 @@ class ExifOverridesBuilder:
                 entry.camera = camera
             if opk is not None:
                 entry.opk = opk
+            if altitude is not None:
+                entry.altitude = altitude
+            if relative_altitude is not None:
+                entry.relative_altitude = relative_altitude
+            if altitude_std is not None:
+                entry.altitude_std = altitude_std
+            if dop is not None:
+                entry.dop = dop
             if yaw is not None:
                 entry.yaw = yaw
             if pitch is not None:
@@ -251,6 +294,10 @@ class ExifOverridesBuilder:
                 orientation=orientation,
                 camera=camera,
                 opk=opk,
+                altitude=altitude,
+                relative_altitude=relative_altitude,
+                altitude_std=altitude_std,
+                dop=dop,
                 yaw=yaw,
                 pitch=pitch,
                 roll=roll,
@@ -259,6 +306,23 @@ class ExifOverridesBuilder:
             )
             self._overrides[image_name] = entry
         return entry
+
+    def add_altitude(
+        self,
+        image_name: str,
+        altitude: float,
+        relative_altitude: Optional[float] = None,
+        altitude_std: Optional[float] = None,
+        dop: Optional[float] = None,
+    ) -> ImageExifOverride:
+        """Convenience method to register altitude telemetry as scale guideline."""
+        return self.add_override(
+            image_name,
+            altitude=altitude,
+            relative_altitude=relative_altitude,
+            altitude_std=altitude_std,
+            dop=dop
+        )
 
     def add_opk(
         self,
@@ -571,64 +635,95 @@ def lerp_angle(a1: float, a2: float, alpha: float) -> float:
     return (a1 + alpha * diff) % 360.0
 
 
-def interpolate_ypr_from_logs(
+def interpolate_scalar(
+    v1: Optional[float],
+    v2: Optional[float],
+    alpha: float,
+    min_val: Optional[float] = None,
+    max_val: Optional[float] = None
+) -> Optional[float]:
+    """
+    Interpolates between two optional scalar values taking validity bounds into account.
+    If both values are within [min_val, max_val], returns their linear interpolation (lerp).
+    If only one value is valid, returns that valid value if alpha is closer to its timestamp (alpha < 0.5 for v1, alpha >= 0.5 for v2).
+    If neither is valid, returns None.
+    """
+    def _is_valid(v: Optional[float]) -> bool:
+        if v is None:
+            return False
+        if min_val is not None and v < min_val:
+            return False
+        if max_val is not None and v > max_val:
+            return False
+        return True
+
+    val1_valid = _is_valid(v1)
+    val2_valid = _is_valid(v2)
+
+    if val1_valid and val2_valid:
+        return lerp_value(float(v1), float(v2), alpha)
+    elif val1_valid and alpha < 0.5:
+        return float(v1)
+    elif val2_valid and alpha >= 0.5:
+        return float(v2)
+    return None
+
+
+def interpolate_telemetry_from_logs(
     target_timestamp_ms: int,
-    log_entries: List[Tuple[int, Dict[str, Any]]]
+    log_entries: List[Tuple[int, Dict[str, Any]]],
+    max_time_diff_ms: int = 1000
 ) -> Optional[Dict[str, float]]:
     """
-    Finds the 2 nearest timestamps in log_data that are within 1 second (1000 ms) of
-    target_timestamp_ms, and computes the linear interpolation (lerp) of yaw, pitch, and roll.
+    Finds the 2 nearest timestamps in log_data that are within max_time_diff_ms (default 1000 ms) of
+    target_timestamp_ms, and computes the linear interpolation (lerp) of telemetry parameters:
+    - yaw (angular lerp along shortest path)
+    - pitch, roll (linear lerp)
+    - altitude (distance above seabed in meters, only valid when >= 0; negative values like -1 indicate out-of-range sonar ping and are filtered out)
+    - depth (depth below water surface in meters)
+    - distance (forward/sonar obstacle distance in meters, only valid when >= 0)
+    - temperature (degrees Celsius)
 
-    If only 1 entry is within 1 second, uses that entry's values.
-    If no entries are within 1 second, returns None.
+    If only 1 entry is within max_time_diff_ms, uses that entry's valid values.
+    If no entries are within max_time_diff_ms, returns None.
     """
     if not log_entries:
         return None
 
-    # 1. Filter log_data entries within 1 second (1000 ms)
-    within_one_sec = [
+    # 1. Filter log_data entries within time window
+    within_window = [
         (ts, payload)
         for ts, payload in log_entries
-        if abs(ts - target_timestamp_ms) <= 1000
+        if abs(ts - target_timestamp_ms) <= max_time_diff_ms
     ]
 
-    if not within_one_sec:
+    if not within_window:
         return None
 
     # 2. Find the 2 nearest timestamps to target_timestamp_ms
-    within_one_sec.sort(key=lambda item: abs(item[0] - target_timestamp_ms))
-    nearest = within_one_sec[:2]
+    within_window.sort(key=lambda item: abs(item[0] - target_timestamp_ms))
+    nearest = within_window[:2]
 
-    def _extract_ypr(p: Dict[str, Any]) -> Tuple[Optional[float], Optional[float], Optional[float]]:
-        y = p.get("yaw")
-        pi = p.get("pitch")
-        r = p.get("roll")
+    def _safe_float(val: Any) -> Optional[float]:
+        if val is None:
+            return None
         try:
-            y_val = float(y) if y is not None else None
+            return float(val)
         except (ValueError, TypeError):
-            y_val = None
-        try:
-            pi_val = float(pi) if pi is not None else None
-        except (ValueError, TypeError):
-            pi_val = None
-        try:
-            r_val = float(r) if r is not None else None
-        except (ValueError, TypeError):
-            r_val = None
-        return y_val, pi_val, r_val
+            return None
 
     if len(nearest) == 1:
-        y, pi, r = _extract_ypr(nearest[0][1])
-        if y is None and pi is None and r is None:
-            return None
+        p = nearest[0][1]
         res: Dict[str, float] = {}
-        if y is not None:
-            res["yaw"] = round(y, 4)
-        if pi is not None:
-            res["pitch"] = round(pi, 4)
-        if r is not None:
-            res["roll"] = round(r, 4)
-        return res
+        for key in ("yaw", "pitch", "roll", "temperature", "depth"):
+            v = _safe_float(p.get(key))
+            if v is not None:
+                res[key] = round(v, 4)
+        for key in ("altitude", "distance"):
+            v = _safe_float(p.get(key))
+            if v is not None and v >= 0:
+                res[key] = round(v, 4)
+        return res if res else None
 
     # 3. Sort the 2 nearest chronologically: t1 <= t2
     nearest.sort(key=lambda item: item[0])
@@ -640,12 +735,11 @@ def interpolate_ypr_from_logs(
         alpha = (target_timestamp_ms - t1) / (t2 - t1)
         alpha = min(max(alpha, 0.0), 1.0)
 
-    y1, pi1, r1 = _extract_ypr(p1)
-    y2, pi2, r2 = _extract_ypr(p2)
-
     res: Dict[str, float] = {}
 
-    # Lerp yaw
+    # Lerp yaw (angular)
+    y1 = _safe_float(p1.get("yaw"))
+    y2 = _safe_float(p2.get("yaw"))
     if y1 is not None and y2 is not None:
         res["yaw"] = round(lerp_angle(y1, y2, alpha), 4)
     elif y1 is not None:
@@ -653,22 +747,63 @@ def interpolate_ypr_from_logs(
     elif y2 is not None:
         res["yaw"] = round(y2, 4)
 
-    # Lerp pitch
-    if pi1 is not None and pi2 is not None:
-        res["pitch"] = round(lerp_value(pi1, pi2, alpha), 4)
-    elif pi1 is not None:
-        res["pitch"] = round(pi1, 4)
-    elif pi2 is not None:
-        res["pitch"] = round(pi2, 4)
+    # Lerp pitch and roll
+    for key in ("pitch", "roll"):
+        v1 = _safe_float(p1.get(key))
+        v2 = _safe_float(p2.get(key))
+        val = interpolate_scalar(v1, v2, alpha)
+        if val is not None:
+            res[key] = round(val, 4)
 
-    # Lerp roll
-    if r1 is not None and r2 is not None:
-        res["roll"] = round(lerp_value(r1, r2, alpha), 4)
-    elif r1 is not None:
-        res["roll"] = round(r1, 4)
-    elif r2 is not None:
-        res["roll"] = round(r2, 4)
+    # Lerp altitude (valid >= 0, filtering out negative values such as -1)
+    alt1 = _safe_float(p1.get("altitude"))
+    alt2 = _safe_float(p2.get("altitude"))
+    alt_val = interpolate_scalar(alt1, alt2, alpha, min_val=0.0)
+    if alt_val is not None:
+        res["altitude"] = round(alt_val, 4)
 
+    # Lerp depth
+    depth1 = _safe_float(p1.get("depth"))
+    depth2 = _safe_float(p2.get("depth"))
+    depth_val = interpolate_scalar(depth1, depth2, alpha)
+    if depth_val is not None:
+        res["depth"] = round(depth_val, 4)
+
+    # Lerp distance (valid >= 0)
+    dist1 = _safe_float(p1.get("distance"))
+    dist2 = _safe_float(p2.get("distance"))
+    dist_val = interpolate_scalar(dist1, dist2, alpha, min_val=0.0)
+    if dist_val is not None:
+        res["distance"] = round(dist_val, 4)
+
+    # Lerp temperature
+    temp1 = _safe_float(p1.get("temperature"))
+    temp2 = _safe_float(p2.get("temperature"))
+    temp_val = interpolate_scalar(temp1, temp2, alpha)
+    if temp_val is not None:
+        res["temperature"] = round(temp_val, 4)
+
+    return res if res else None
+
+
+def interpolate_ypr_from_logs(
+    target_timestamp_ms: int,
+    log_entries: List[Tuple[int, Dict[str, Any]]]
+) -> Optional[Dict[str, float]]:
+    """
+    Finds the 2 nearest timestamps in log_data that are within 1 second (1000 ms) of
+    target_timestamp_ms, and computes the linear interpolation (lerp) of yaw, pitch, and roll.
+
+    If only 1 entry is within 1 second, uses that entry's values.
+    If no entries are within 1 second, returns None.
+    """
+    telemetry = interpolate_telemetry_from_logs(target_timestamp_ms, log_entries)
+    if not telemetry:
+        return None
+    res: Dict[str, float] = {}
+    for k in ("yaw", "pitch", "roll"):
+        if k in telemetry:
+            res[k] = telemetry[k]
     return res if res else None
 
 
@@ -724,12 +859,13 @@ async def register_frames_for_video(
     video_duration: float,
     payload: Optional[Dict[str, Any]] = None,
     session: Optional[AsyncSession] = None,
-    log_entries: Optional[List[Tuple[int, Dict[str, Any]]]] = None
+    log_entries: Optional[List[Tuple[int, Dict[str, Any]]]] = None,
+    default_altitude_std: Optional[float] = None
 ) -> None:
     """
     Computes exact capture_time for all frame filenames belonging to a video segment,
-    interpolates yaw, pitch, and roll telemetry from log_data (within 1 second),
-    and records them into the ExifOverridesBuilder.
+    interpolates orientation (yaw, pitch, roll) and scale guideline (altitude) from log_data (within 1 second),
+    and records them into the ExifOverridesBuilder for OpenSfM reconstruction.
     """
     start_at, stop_at = await get_video_metadata_timestamps(
         video_path=video_path,
@@ -764,24 +900,56 @@ async def register_frames_for_video(
             session=session
         )
 
-    matched_logs_count = 0
+    matched_orientation_count = 0
+    matched_altitude_count = 0
+
+    base_gps = payload.get("gps") if payload and isinstance(payload.get("gps"), dict) else {}
+    payload_lat = payload.get("latitude") if payload else None
+    payload_lon = payload.get("longitude") if payload else None
+    payload_alt_std = payload.get("altitude_std", default_altitude_std) if payload else default_altitude_std
+
     for fname, capture_time in zip(frame_filenames, frame_timestamps):
         frame_ts_ms = int(capture_time * 1000) if capture_time < 1e11 else int(capture_time)
-        ypr = interpolate_ypr_from_logs(frame_ts_ms, logs) if logs else None
+        telemetry = interpolate_telemetry_from_logs(frame_ts_ms, logs) if logs else None
 
-        if ypr:
+        if telemetry:
+            yaw = telemetry.get("yaw")
+            pitch = telemetry.get("pitch")
+            roll = telemetry.get("roll")
+            alt = telemetry.get("altitude")
+
+            frame_gps = dict(base_gps)
+            if payload_lat is not None and "latitude" not in frame_gps:
+                frame_gps["latitude"] = float(payload_lat)
+            if payload_lon is not None and "longitude" not in frame_gps:
+                frame_gps["longitude"] = float(payload_lon)
+
+            extra_meta: Dict[str, Any] = {}
+            for extra_k in ("depth", "distance", "temperature"):
+                if extra_k in telemetry:
+                    extra_meta[extra_k] = telemetry[extra_k]
+
             builder.add_override(
                 image_name=fname,
                 capture_time=capture_time,
-                yaw=ypr.get("yaw"),
-                pitch=ypr.get("pitch"),
-                roll=ypr.get("roll"),
+                gps=frame_gps if frame_gps else None,
+                yaw=yaw,
+                pitch=pitch,
+                roll=roll,
+                altitude=alt,
+                relative_altitude=alt,
+                altitude_std=payload_alt_std,
+                **extra_meta
             )
-            matched_logs_count += 1
+            if yaw is not None and pitch is not None and roll is not None:
+                matched_orientation_count += 1
+            if alt is not None and alt >= 0:
+                matched_altitude_count += 1
         else:
             builder.add_capture_time(fname, capture_time)
 
     logger.info(
         f"Registered {total_frames} frame timestamps for video '{os.path.basename(video_path)}' "
-        f"({matched_logs_count} matched telemetry from log_data, Start: {start_at.isoformat()}, Stop: {stop_at.isoformat()})"
+        f"({matched_orientation_count} matched orientation OPK, {matched_altitude_count} matched scale altitude from log_data, "
+        f"Start: {start_at.isoformat()}, Stop: {stop_at.isoformat()})"
     )

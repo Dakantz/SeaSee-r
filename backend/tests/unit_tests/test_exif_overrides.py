@@ -443,3 +443,207 @@ def test_opk_from_ypr_and_omits_unused():
         "accuracy": 0.5,
     }
 
+
+def test_interpolate_scalar():
+    from app.services.opensfm.exif_overrides import interpolate_scalar
+
+    # Both valid
+    assert interpolate_scalar(10.0, 20.0, 0.5) == 15.0
+
+    # Bounds checking: min_val=0.0 filters negative out-of-range values like -1
+    assert interpolate_scalar(-1.0, 3.5, 0.0, min_val=0.0) is None
+    assert interpolate_scalar(-1.0, 3.5, 0.5, min_val=0.0) == 3.5
+    assert interpolate_scalar(4.0, -1.0, 0.2, min_val=0.0) == 4.0
+    assert interpolate_scalar(4.0, -1.0, 0.8, min_val=0.0) is None
+    assert interpolate_scalar(-1.0, -1.0, 0.5, min_val=0.0) is None
+    assert interpolate_scalar(2.0, 4.0, 0.25, min_val=0.0) == 2.5
+
+
+def test_interpolate_telemetry_altitude_scale():
+    from app.services.opensfm.exif_overrides import interpolate_telemetry_from_logs
+
+    # Log 1: user payload example with altitude = -1 (invalid altimeter reading)
+    log_1 = (
+        1777974510000,
+        {
+            "yaw": 324.1468,
+            "left": 0,
+            "roll": 9.359772,
+            "depth": 0,
+            "pitch": 0.6206665,
+            "right": 0,
+            "altitude": -1,
+            "distance": 0,
+            "temperature": 23.37
+        }
+    )
+
+    # Log 2: 1000 ms later with valid altitude = 3.58 meters
+    log_2 = (
+        1777974511000,
+        {
+            "yaw": 326.1468,
+            "left": 0,
+            "roll": 9.4000,
+            "depth": 1.2,
+            "pitch": 0.7000,
+            "right": 0,
+            "altitude": 3.58,
+            "distance": 1.5,
+            "temperature": 23.30
+        }
+    )
+
+    logs = [log_1, log_2]
+
+    # Exactly at log_1: altitude is -1 so should be omitted/None, but ypr, depth, temp should be present
+    res_t1 = interpolate_telemetry_from_logs(1777974510000, logs)
+    assert res_t1 is not None
+    assert "altitude" not in res_t1
+    assert pytest.approx(res_t1["yaw"], 1e-4) == 324.1468
+    assert pytest.approx(res_t1["depth"], 1e-4) == 0.0
+    assert pytest.approx(res_t1["temperature"], 1e-4) == 23.37
+
+    # At midpoint (500 ms in): since log_1 had -1 and log_2 had 3.58, only valid altitude 3.58 is retained
+    res_mid = interpolate_telemetry_from_logs(1777974510500, logs)
+    assert res_mid is not None
+    assert pytest.approx(res_mid["altitude"], 1e-4) == 3.58
+    assert pytest.approx(res_mid["yaw"], 1e-4) == 325.1468
+    assert pytest.approx(res_mid["depth"], 1e-4) == 0.6
+
+    # Test between two valid altitudes
+    log_3 = (
+        1777974512000,
+        {
+            "yaw": 328.0,
+            "pitch": 1.0,
+            "roll": 9.0,
+            "altitude": 4.58
+        }
+    )
+    logs_valid = [log_2, log_3]
+    res_mid_valid = interpolate_telemetry_from_logs(1777974511500, logs_valid)
+    assert res_mid_valid is not None
+    assert pytest.approx(res_mid_valid["altitude"], 1e-4) == 4.08
+
+
+def test_image_exif_override_altitude_serialization():
+    # 1. Valid altitude creates relative_altitude and gps.altitude
+    override = ImageExifOverride(
+        capture_time=1777974510.0,
+        altitude=3.58,
+        altitude_std=0.05
+    )
+    d = override.to_dict()
+    assert d["relative_altitude"] == 3.58
+    assert d["gps"] == {"altitude": 3.58, "altitude_std": 0.05}
+
+    # 2. Existing GPS coordinates merge with altitude
+    override_with_gps = ImageExifOverride(
+        capture_time=1777974510.0,
+        gps={"latitude": 42.1234, "longitude": 11.5678},
+        altitude=2.75,
+        altitude_std=0.1,
+        dop=2.0
+    )
+    d_gps = override_with_gps.to_dict()
+    assert d_gps["relative_altitude"] == 2.75
+    assert d_gps["gps"]["latitude"] == 42.1234
+    assert d_gps["gps"]["longitude"] == 11.5678
+    assert d_gps["gps"]["altitude"] == 2.75
+    assert d_gps["gps"]["altitude_std"] == 0.1
+    assert d_gps["gps"]["dop"] == 2.0
+
+    # 3. Invalid negative altitude (-1) is not serialized
+    override_invalid = ImageExifOverride(
+        capture_time=1777974510.0,
+        altitude=-1.0
+    )
+    d_inv = override_invalid.to_dict()
+    assert "relative_altitude" not in d_inv
+    assert "gps" not in d_inv
+
+
+def test_builder_add_altitude():
+    builder = ExifOverridesBuilder()
+    builder.add_altitude(
+        image_name="frame_001.png",
+        altitude=4.25,
+        altitude_std=0.05
+    )
+    overrides = builder.to_dict()
+    assert "frame_001.png" in overrides
+    assert overrides["frame_001.png"]["relative_altitude"] == 4.25
+    assert overrides["frame_001.png"]["gps"]["altitude"] == 4.25
+    assert overrides["frame_001.png"]["gps"]["altitude_std"] == 0.05
+
+
+@pytest.mark.anyio
+async def test_register_frames_for_video_with_altitude_scale():
+    builder = ExifOverridesBuilder()
+    video_path = "/fake/underwater_rov.mp4"
+    frame_filenames = ["image_00001.png", "image_00002.png"]
+    fps = 1.0
+    dur = 2.0
+
+    start_iso = "2026-05-05T11:48:30+00:00"
+    stop_iso = "2026-05-05T11:48:32+00:00"
+    payload = {
+        "video_start_at": start_iso,
+        "video_stop_at": stop_iso,
+        "altitude_std": 0.05
+    }
+
+    start_dt = datetime.fromisoformat(start_iso)
+    base_ts_ms = int(start_dt.timestamp() * 1000)
+
+    # Frame 1: altitude = -1 (invalid), Frame 2: altitude = 2.45m (valid scale)
+    mock_logs = [
+        (
+            base_ts_ms,
+            {
+                "yaw": 324.14,
+                "pitch": 0.62,
+                "roll": 9.35,
+                "altitude": -1,
+                "depth": 0.0
+            }
+        ),
+        (
+            base_ts_ms + 1000,
+            {
+                "yaw": 325.0,
+                "pitch": 0.65,
+                "roll": 9.30,
+                "altitude": 2.45,
+                "depth": 0.5
+            }
+        ),
+    ]
+
+    await register_frames_for_video(
+        builder=builder,
+        video_path=video_path,
+        frame_filenames=frame_filenames,
+        fps=fps,
+        video_duration=dur,
+        payload=payload,
+        log_entries=mock_logs
+    )
+
+    overrides = builder.to_dict()
+    assert len(overrides) == 2
+
+    # Frame 1 at base_ts_ms: altitude was -1 so no relative_altitude/gps altitude
+    f1 = overrides["image_00001.png"]
+    assert "opk" in f1
+    assert "relative_altitude" not in f1
+
+    # Frame 2 at base_ts_ms + 1000: altitude was 2.45 so relative_altitude and gps.altitude are registered
+    f2 = overrides["image_00002.png"]
+    assert "opk" in f2
+    assert f2["relative_altitude"] == 2.45
+    assert f2["gps"]["altitude"] == 2.45
+    assert f2["gps"]["altitude_std"] == 0.05
+    assert f2["depth"] == 0.5
+
