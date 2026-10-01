@@ -528,7 +528,7 @@ def test_interpolate_telemetry_altitude_scale():
 
 
 def test_image_exif_override_altitude_serialization():
-    # 1. Valid altitude creates relative_altitude and gps.altitude
+    # 1. Valid altitude without full GPS coordinates creates relative_altitude but omits incomplete gps dictionary
     override = ImageExifOverride(
         capture_time=1777974510.0,
         altitude=3.58,
@@ -536,9 +536,9 @@ def test_image_exif_override_altitude_serialization():
     )
     d = override.to_dict()
     assert d["relative_altitude"] == 3.58
-    assert d["gps"] == {"altitude": 3.58, "altitude_std": 0.05}
+    assert "gps" not in d
 
-    # 2. Existing GPS coordinates merge with altitude
+    # 2. Existing full GPS coordinates (latitude and longitude) merge with altitude
     override_with_gps = ImageExifOverride(
         capture_time=1777974510.0,
         gps={"latitude": 42.1234, "longitude": 11.5678},
@@ -548,6 +548,7 @@ def test_image_exif_override_altitude_serialization():
     )
     d_gps = override_with_gps.to_dict()
     assert d_gps["relative_altitude"] == 2.75
+    assert "gps" in d_gps
     assert d_gps["gps"]["latitude"] == 42.1234
     assert d_gps["gps"]["longitude"] == 11.5678
     assert d_gps["gps"]["altitude"] == 2.75
@@ -574,8 +575,19 @@ def test_builder_add_altitude():
     overrides = builder.to_dict()
     assert "frame_001.png" in overrides
     assert overrides["frame_001.png"]["relative_altitude"] == 4.25
-    assert overrides["frame_001.png"]["gps"]["altitude"] == 4.25
-    assert overrides["frame_001.png"]["gps"]["altitude_std"] == 0.05
+    assert "gps" not in overrides["frame_001.png"]
+
+    # When full GPS is provided, gps dictionary is included
+    builder.add_override(
+        image_name="frame_002.png",
+        altitude=4.25,
+        gps={"latitude": 45.0, "longitude": 10.0},
+        altitude_std=0.05
+    )
+    overrides2 = builder.to_dict()
+    assert "gps" in overrides2["frame_002.png"]
+    assert overrides2["frame_002.png"]["gps"]["latitude"] == 45.0
+    assert overrides2["frame_002.png"]["gps"]["altitude"] == 4.25
 
 
 @pytest.mark.anyio
@@ -638,12 +650,13 @@ async def test_register_frames_for_video_with_altitude_scale():
     f1 = overrides["image_00001.png"]
     assert "opk" in f1
     assert "relative_altitude" not in f1
+    assert "gps" not in f1
+    assert "depth" not in f1 and "distance" not in f1 and "temperature" not in f1
 
-    # Frame 2 at base_ts_ms + 1000: altitude was 2.45 so relative_altitude and gps.altitude are registered
+    # Frame 2 at base_ts_ms + 1000: altitude was 2.45 so relative_altitude is registered, but gps is omitted without lat/lon
     f2 = overrides["image_00002.png"]
     assert "opk" in f2
     assert f2["relative_altitude"] == 2.45
-    assert f2["gps"]["altitude"] == 2.45
-    assert f2["gps"]["altitude_std"] == 0.05
-    assert f2["depth"] == 0.5
+    assert "gps" not in f2
+    assert "depth" not in f2 and "distance" not in f2 and "temperature" not in f2
 

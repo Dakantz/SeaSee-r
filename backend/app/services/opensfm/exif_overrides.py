@@ -180,7 +180,8 @@ class ImageExifOverride:
         if self.dop is not None and "dop" not in gps_dict:
             gps_dict["dop"] = round(float(self.dop), 4)
 
-        if gps_dict:
+        # Only include "gps" if full GPS coordinates (latitude and longitude) are available
+        if "latitude" in gps_dict and "longitude" in gps_dict:
             data["gps"] = gps_dict
 
         # Format camera orientation into OPK (omega, phi, kappa)
@@ -219,7 +220,10 @@ class ImageExifOverride:
         if self.extra:
             filtered_extra = {
                 k: v for k, v in self.extra.items()
-                if k not in ("yaw", "pitch", "roll", "ypr", "altitude", "relative_altitude", "altitude_std")
+                if k not in (
+                    "yaw", "pitch", "roll", "ypr", "altitude", "relative_altitude",
+                    "altitude_std", "dop", "depth", "distance", "temperature"
+                )
             }
             data.update(filtered_extra)
         return data
@@ -924,11 +928,6 @@ async def register_frames_for_video(
             if payload_lon is not None and "longitude" not in frame_gps:
                 frame_gps["longitude"] = float(payload_lon)
 
-            extra_meta: Dict[str, Any] = {}
-            for extra_k in ("depth", "distance", "temperature"):
-                if extra_k in telemetry:
-                    extra_meta[extra_k] = telemetry[extra_k]
-
             builder.add_override(
                 image_name=fname,
                 capture_time=capture_time,
@@ -939,7 +938,6 @@ async def register_frames_for_video(
                 altitude=alt,
                 relative_altitude=alt,
                 altitude_std=payload_alt_std,
-                **extra_meta
             )
             if yaw is not None and pitch is not None and roll is not None:
                 matched_orientation_count += 1
