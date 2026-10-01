@@ -53,17 +53,32 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
 
     const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+    // Explicitly sort videos chronologically by video_start_at
+    const sortedVideos = useMemo(() => {
+        if (!videos || videos.length === 0) return [];
+        return [...videos].sort((a, b) => {
+            const tA = new Date(a.video_start_at).getTime();
+            const tB = new Date(b.video_start_at).getTime();
+            if (!isNaN(tA) && !isNaN(tB) && tA !== tB) {
+                return tA - tB;
+            }
+            const nameA = a.upload_metadata?.orig_filename || a.upload_metadata?.safe_filename || a.id;
+            const nameB = b.upload_metadata?.orig_filename || b.upload_metadata?.safe_filename || b.id;
+            return nameA.localeCompare(nameB, undefined, { numeric: true });
+        });
+    }, [videos]);
+
     // Resolve batch_id from props or from videos metadata
     const resolvedBatchId = useMemo(() => {
         if (propBatchId) return propBatchId;
-        if (videos && videos.length > 0) {
-            const found = videos.find((v) => v.upload_metadata?.batch_id);
+        if (sortedVideos && sortedVideos.length > 0) {
+            const found = sortedVideos.find((v) => v.upload_metadata?.batch_id);
             if (found && found.upload_metadata?.batch_id) {
                 return found.upload_metadata.batch_id;
             }
         }
         return null;
-    }, [propBatchId, videos]);
+    }, [propBatchId, sortedVideos]);
 
     // Determine timerange across videos or points if not explicitly passed
     const { effectiveStart, effectiveEnd } = useMemo(() => {
@@ -72,9 +87,9 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
         }
 
         // Try from videos
-        if (videos && videos.length > 0) {
-            const starts = videos.map((v) => new Date(v.video_start_at).getTime()).filter((t) => !isNaN(t) && t > 0);
-            const stops = videos.map((v) => new Date(v.video_stop_at).getTime()).filter((t) => !isNaN(t) && t > 0);
+        if (sortedVideos && sortedVideos.length > 0) {
+            const starts = sortedVideos.map((v) => new Date(v.video_start_at).getTime()).filter((t) => !isNaN(t) && t > 0);
+            const stops = sortedVideos.map((v) => new Date(v.video_stop_at).getTime()).filter((t) => !isNaN(t) && t > 0);
             if (starts.length > 0 && stops.length > 0) {
                 return {
                     effectiveStart: propStartTime ?? Math.min(...starts),
@@ -99,7 +114,7 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             effectiveStart: propStartTime ?? null,
             effectiveEnd: propEndTime ?? null,
         };
-    }, [propStartTime, propEndTime, videos, points]);
+    }, [propStartTime, propEndTime, sortedVideos, points]);
 
     // Backend route state for log_data
     const [logData, setLogData] = useState<LogDataItem[]>([]);
@@ -172,11 +187,11 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
 
     // Compute combined duration and start offsets across all videos
     const videoTimeline = useMemo(() => {
-        if (!videos || videos.length === 0) return null;
-        const durations = videos.map(getVideoDuration);
+        if (!sortedVideos || sortedVideos.length === 0) return null;
+        const durations = sortedVideos.map(getVideoDuration);
         const offsets: number[] = [];
         let runningOffset = 0;
-        for (let i = 0; i < videos.length; i++) {
+        for (let i = 0; i < sortedVideos.length; i++) {
             offsets.push(runningOffset);
             runningOffset += durations[i];
         }
@@ -185,15 +200,15 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             offsets,
             totalDuration: runningOffset,
         };
-    }, [videos]);
+    }, [sortedVideos]);
 
     // Compute log data points mapped to timeline
     const computedLogPoints = useMemo<ComputedLogPoint[]>(() => {
         if (!logData || logData.length === 0) return [];
 
         let t0: number | null = null;
-        if (videos && videos.length > 0) {
-            const vStart = new Date(videos[0].video_start_at).getTime();
+        if (sortedVideos && sortedVideos.length > 0) {
+            const vStart = new Date(sortedVideos[0].video_start_at).getTime();
             if (!isNaN(vStart) && vStart > 0) {
                 t0 = vStart;
             }
@@ -208,23 +223,41 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             t0 = logData[0].timestamp;
         }
 
-        return logData.map((item, idx) => {
-            let relTime = t0 !== null ? Math.max(0, (item.timestamp - t0) / 1000.0) : idx * 0.1;
+        const result: ComputedLogPoint[] = [];
+        let prevRelTime = 0;
+
+        for (let idx = 0; idx < logData.length; idx++) {
+            const item = logData[idx];
             let vidIdx: number | undefined = undefined;
             let vidTime: number | undefined = undefined;
+            let relTime = 0;
 
-            if (videoTimeline && videos && videos.length > 0) {
-                for (let i = 0; i < videos.length; i++) {
-                    const s = new Date(videos[i].video_start_at).getTime();
-                    const e = new Date(videos[i].video_stop_at).getTime();
+            if (videoTimeline && sortedVideos && sortedVideos.length > 0) {
+                for (let i = 0; i < sortedVideos.length; i++) {
+                    const s = new Date(sortedVideos[i].video_start_at).getTime();
+                    const e = new Date(sortedVideos[i].video_stop_at).getTime();
                     if (!isNaN(s) && !isNaN(e) && item.timestamp >= s && item.timestamp <= e) {
                         vidIdx = i;
-                        vidTime = Math.max(0, (item.timestamp - s) / 1000.0);
+                        vidTime = Math.max(0, Math.min(videoTimeline.durations[i], (item.timestamp - s) / 1000.0));
                         relTime = videoTimeline.offsets[i] + vidTime;
                         break;
                     }
                 }
+
+                // If videos are present, filter out points in recording gaps outside all video windows
+                // to align the chart 1:1 with video playback and eliminate backtracking loops.
+                if (vidIdx === undefined) {
+                    continue;
+                }
+            } else {
+                relTime = t0 !== null ? Math.max(0, (item.timestamp - t0) / 1000.0) : idx * 0.1;
             }
+
+            // Clamp relTime to adjacent boundaries to ensure strict monotonicity
+            if (relTime < prevRelTime) {
+                relTime = prevRelTime;
+            }
+            prevRelTime = relTime;
 
             const rawDepth = item.payload?.depth ?? item.payload?.Depth;
             const depth = typeof rawDepth === "number" && !isNaN(rawDepth) ? rawDepth : null;
@@ -238,9 +271,9 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             const rawDistance = item.payload?.distance ?? item.payload?.Distance;
             const distance = typeof rawDistance === "number" && !isNaN(rawDistance) ? rawDistance : null;
 
-            return {
+            result.push({
                 raw: item,
-                index: idx,
+                index: result.length,
                 relativeTime: relTime,
                 videoIndex: vidIdx,
                 videoTime: vidTime,
@@ -248,9 +281,11 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                 temperature,
                 altitude,
                 distance,
-            };
-        });
-    }, [logData, videos, points, videoTimeline]);
+            });
+        }
+
+        return result;
+    }, [logData, sortedVideos, points, videoTimeline]);
 
     const isLogMode =
         chartMode === "log_depth" ||
