@@ -14,6 +14,7 @@ import {
 } from "react-icons/fi";
 import { useTrajectoryLogSync } from "./hooks";
 import type { ComputedTelemetryPoint, VideoItem } from "./types";
+import { getCumulativeTime, findClosestPointIndex } from "./types";
 
 export interface VideoPlayerProps {
     pointCloudId?: string | null;
@@ -25,41 +26,6 @@ export interface VideoPlayerProps {
     onSelectVideoIndex?: (index: number, autoPlay?: boolean) => void;
     autoPlayNext?: boolean;
     loadingVideos?: boolean;
-}
-
-function findClosestPointIndex(points: ComputedTelemetryPoint[], t: number, currentVideoIndex?: number): number {
-    if (!points || points.length === 0) return -1;
-    if (points.length === 1) return 0;
-
-    const hasVideoIndices = points.some((p) => p.videoIndex !== undefined);
-    let candidateIndices: number[] = [];
-    if (hasVideoIndices && currentVideoIndex !== undefined) {
-        for (let i = 0; i < points.length; i++) {
-            if (points[i].videoIndex === currentVideoIndex) {
-                candidateIndices.push(i);
-            }
-        }
-        if (candidateIndices.length === 0) {
-            return -1;
-        }
-    } else {
-        candidateIndices = points.map((_, i) => i);
-    }
-
-    const getTime = (p: ComputedTelemetryPoint) =>
-        p.videoTime !== undefined ? p.videoTime : p.relativeTime;
-
-    let closestIdx = candidateIndices[0];
-    let minDiff = Infinity;
-    for (const idx of candidateIndices) {
-        const diff = Math.abs(getTime(points[idx]) - t);
-        if (diff < minDiff) {
-            minDiff = diff;
-            closestIdx = idx;
-        }
-    }
-
-    return closestIdx;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -201,6 +167,56 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         }
     }, [videoSrc, resolvedAutoPlay]);
 
+    // Reference to track last active index and prevent redundant dispatches
+    const lastActiveIdxRef = useRef<number | null>(null);
+
+    // Reset cached index when telemetryPoints changes
+    useEffect(() => {
+        lastActiveIdxRef.current = null;
+    }, [telemetryPoints]);
+
+    const syncPointAtTime = useCallback(
+        (timeSec: number, forceSource: "video" = "video") => {
+            const cumulativeRelTime = getCumulativeTime(resolvedVideos, resolvedIndex, timeSec);
+            const closestIdx = findClosestPointIndex(telemetryPoints, timeSec, resolvedIndex);
+
+            if (closestIdx !== -1 && closestIdx !== lastActiveIdxRef.current) {
+                lastActiveIdxRef.current = closestIdx;
+                if (onPointSelect) {
+                    onPointSelect(closestIdx);
+                }
+            }
+
+            const closest = closestIdx !== -1 && telemetryPoints ? telemetryPoints[closestIdx] : null;
+
+            selectPoint(
+                {
+                    ...(closest
+                        ? {
+                              id: closest.id,
+                              index: closest.index,
+                              frameNumber: closest.frameNumber,
+                              filename: closest.filename,
+                              x: closest.x,
+                              y: closest.y,
+                              z: closest.z,
+                              rotation: closest.rotation,
+                              direction: closest.direction,
+                              cameraHeaderId: closest.cameraHeaderId || closest.id,
+                          }
+                        : {}),
+                    relativeTime: cumulativeRelTime,
+                    videoTime: timeSec,
+                    videoIndex: resolvedIndex,
+                    pointCloudId: closest?.pointCloudId || pointCloudId || undefined,
+                    reconstructionIndex: closest?.reconstructionIndex,
+                },
+                forceSource
+            );
+        },
+        [resolvedVideos, resolvedIndex, telemetryPoints, onPointSelect, selectPoint, pointCloudId]
+    );
+
     // Apply pending seek timestamp when video element is ready
     const applyPendingSeek = useCallback(() => {
         if (pendingSeekTimeRef.current !== null && videoRef.current) {
@@ -210,9 +226,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             videoRef.current.pause();
             setIsPlaying(false);
             setCurrentTime(clamped);
+            syncPointAtTime(clamped);
             pendingSeekTimeRef.current = null;
         }
-    }, []);
+    }, [syncPointAtTime]);
 
     // Synchronize video seeking and video file switching when triggered from 3D or Chart
     useEffect(() => {
@@ -261,53 +278,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 setIsPlaying(false);
                 setCurrentTime(clamped);
                 pendingSeekTimeRef.current = null;
+                lastActiveIdxRef.current = findClosestPointIndex(telemetryPoints, clamped, resolvedIndex);
             } else {
                 pendingSeekTimeRef.current = targetTime;
             }
         }
-    }, [activeSyncPoint, seekTimestamp, syncSource, resolvedIndex, resolvedVideos.length, onSelectVideoIndex, isControlled]);
+    }, [activeSyncPoint, seekTimestamp, syncSource, resolvedIndex, resolvedVideos.length, onSelectVideoIndex, isControlled, telemetryPoints]);
 
-    // Reference to track last active index and prevent redundant dispatches
-    const lastActiveIdxRef = useRef<number | null>(null);
-
-    // Reset cached index when telemetryPoints changes
+    // Synchronize active point and logs-point-active when resolved video index changes (e.g. sequence switched)
     useEffect(() => {
-        lastActiveIdxRef.current = null;
-    }, [telemetryPoints]);
-
-    const syncPointAtTime = useCallback(
-        (timeSec: number) => {
-            if (!telemetryPoints || telemetryPoints.length === 0) return;
-            const closestIdx = findClosestPointIndex(telemetryPoints, timeSec, resolvedIndex);
-            if (closestIdx !== -1 && closestIdx !== lastActiveIdxRef.current) {
-                lastActiveIdxRef.current = closestIdx;
-                if (onPointSelect) {
-                    onPointSelect(closestIdx);
-                }
-                const closest = telemetryPoints[closestIdx];
-                if (closest) {
-                    selectPoint(
-                        {
-                            id: closest.id,
-                            index: closest.index,
-                            relativeTime: closest.relativeTime,
-                            videoTime: closest.videoTime,
-                            videoIndex: closest.videoIndex,
-                            frameNumber: closest.frameNumber,
-                            filename: closest.filename,
-                            x: closest.x,
-                            y: closest.y,
-                            z: closest.z,
-                            rotation: closest.rotation,
-                            direction: closest.direction,
-                        },
-                        "video"
-                    );
-                }
-            }
-        },
-        [telemetryPoints, onPointSelect, selectPoint, resolvedIndex]
-    );
+        if (!pointCloudId) return;
+        const targetTime = pendingSeekTimeRef.current !== null ? pendingSeekTimeRef.current : 0;
+        syncPointAtTime(targetTime);
+    }, [resolvedIndex, pointCloudId, syncPointAtTime]);
 
     // Continuous smooth synchronization while video is playing
     useEffect(() => {

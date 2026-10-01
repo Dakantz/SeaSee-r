@@ -66,7 +66,12 @@ export default function LogsPage() {
             )}
 
             <div className="logs-content-scroll">
-                <LogsSummaryCards summary={summary} activePoint={activePoint} />
+                <LogsSummaryCards
+                    summary={summary}
+                    activePoint={activePoint}
+                    points={telemetryPoints}
+                    activeIndex={activeIndex}
+                />
 
                 <div className="logs-visualization-grid">
                     <Logs3DViewer

@@ -15,6 +15,15 @@ export interface TrajectorySyncPoint {
     direction?: [number, number, number];
     cameraHeaderId?: string;
     pointCloudId?: string;
+    reconstructionIndex?: number;
+}
+
+export interface ActiveTabValues {
+    logDepth: number | null;
+    logTemp: number | null;
+    sonarAltitude: number | null;
+    sonarFront: number | null;
+    distance: number | null;
 }
 
 interface TrajectoryLogSyncStore {
@@ -25,12 +34,14 @@ interface TrajectoryLogSyncStore {
     syncSource: "3d" | "chart" | "video" | null;
     seekTimestamp: number | null; // Trigger to seek video player
     requestOpenLogsPanel: number;
+    activeTabValues: ActiveTabValues | null;
 
     // Actions
     selectPoint: (point: TrajectorySyncPoint | null, source?: "3d" | "chart" | "video") => void;
     focusTrajectory: (trajectoryId: string | null, openPanel?: boolean) => void;
     openLogsPanel: () => void;
     setSeekTimestamp: (timestamp: number | null) => void;
+    setActiveTabValues: (values: ActiveTabValues | null) => void;
     clearSync: () => void;
 }
 
@@ -41,6 +52,7 @@ export const useTrajectoryLogSync = create<TrajectoryLogSyncStore>((set) => ({
     syncSource: null,
     seekTimestamp: null,
     requestOpenLogsPanel: 0,
+    activeTabValues: null,
 
     selectPoint: (point, source = "3d") => {
         set({
@@ -72,6 +84,10 @@ export const useTrajectoryLogSync = create<TrajectoryLogSyncStore>((set) => ({
         set({ seekTimestamp: timestamp, syncSource: "video" });
     },
 
+    setActiveTabValues: (values) => {
+        set({ activeTabValues: values });
+    },
+
     clearSync: () => {
         set({
             activePoint: null,
@@ -79,6 +95,7 @@ export const useTrajectoryLogSync = create<TrajectoryLogSyncStore>((set) => ({
             focusedTrajectoryId: null,
             syncSource: null,
             seekTimestamp: null,
+            activeTabValues: null,
         });
     },
 }));

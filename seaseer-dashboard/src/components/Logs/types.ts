@@ -12,6 +12,7 @@ export interface PointCloudOption {
     max_z?: number | null;
     center?: [number, number, number] | null;
     batch_id?: string | null;
+    reconstruction_index?: number | null;
 }
 
 export interface LogDataPayload {
@@ -55,6 +56,8 @@ export interface ComputedTelemetryPoint {
     rotation?: [number, number, number, number];
     filename?: string | null;
     cameraHeaderId?: string;
+    pointCloudId?: string;
+    reconstructionIndex?: number;
 }
 
 export interface MissionSummary {
@@ -115,3 +118,54 @@ export function getVideoDuration(v: VideoItem): number {
     }
     return 180.0; // Standard fallback duration
 }
+
+export function getCumulativeTime(videos: VideoItem[] | undefined, videoIndex: number, timeSec: number): number {
+    if (!videos || videos.length === 0) return timeSec;
+    let offset = 0;
+    for (let i = 0; i < videoIndex && i < videos.length; i++) {
+        offset += getVideoDuration(videos[i]);
+    }
+    return offset + timeSec;
+}
+
+export function findClosestPointIndex(
+    points: ComputedTelemetryPoint[],
+    t: number,
+    currentVideoIndex?: number
+): number {
+    if (!points || points.length === 0) return -1;
+    if (points.length === 1) return 0;
+
+    const hasVideoIndices = points.some((p) => p.videoIndex !== undefined);
+    let candidateIndices: number[] = [];
+    if (hasVideoIndices && currentVideoIndex !== undefined) {
+        for (let i = 0; i < points.length; i++) {
+            if (points[i].videoIndex === currentVideoIndex) {
+                candidateIndices.push(i);
+            }
+        }
+        if (candidateIndices.length === 0) {
+            candidateIndices = points.map((_, i) => i);
+        }
+    } else {
+        candidateIndices = points.map((_, i) => i);
+    }
+
+    const getTime = (p: ComputedTelemetryPoint) =>
+        p.videoTime !== undefined ? p.videoTime : p.relativeTime;
+
+    let lastIdx = candidateIndices[0];
+    let foundBeforeOrAtT = false;
+    for (const idx of candidateIndices) {
+        const ptTime = getTime(points[idx]);
+        if (ptTime <= t) {
+            lastIdx = idx;
+            foundBeforeOrAtT = true;
+        } else if (foundBeforeOrAtT) {
+            break;
+        }
+    }
+
+    return lastIdx;
+}
+

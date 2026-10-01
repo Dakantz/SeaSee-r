@@ -210,6 +210,14 @@ export const Logs3DViewer: React.FC<Logs3DViewerProps> = ({
         }
     };
 
+    useEffect(() => {
+        if (activeIndex !== null && points[activeIndex] && controlsRef.current) {
+            const pt = points[activeIndex];
+            controlsRef.current.target.set(pt.x, pt.y, pt.z);
+            controlsRef.current.update();
+        }
+    }, [activeIndex, points]);
+
     return (
         <div className="logs-3d-viewer-card">
             <div className="logs-3d-viewer-header">

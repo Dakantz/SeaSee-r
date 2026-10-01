@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { FiAlertCircle, FiFilm, FiChevronLeft, FiChevronRight } from "react-icons/fi";
 import { VideoPlayer } from "./VideoPlayer";
 import { LogsSummaryCards } from "./LogsSummaryCards";
 import { LogsCharts } from "./LogsCharts";
 import { usePLYPointCloudContext } from "../PointCloudPanel/PLYPointCloudContext";
 import { useLogsData, useTrajectoryLogSync, useRoverFocus } from "./hooks";
+import { findClosestPointIndex, type ComputedTelemetryPoint } from "./types";
 
 import "./LogsPage.css";
 import "./VideoLogsPanel.css";
@@ -109,6 +110,27 @@ export const VideoLogsPanel: React.FC = () => {
 
     const activeMap = maps.find((m) => m.id === selectedMapId);
 
+    // Ref to track last focused point to prevent redundant setCameraView calls
+    const lastFocusedPointIdRef = useRef<string | number | null>(null);
+
+    // Whenever logs-point-active gets changed (by chart click, video playing, video changing, or scrubbing),
+    // move to the associated camera position inside of the Three.js scene
+    useEffect(() => {
+        if (activeIndex === null || !telemetryPoints || telemetryPoints.length === 0) {
+            lastFocusedPointIdRef.current = null;
+            return;
+        }
+
+        const pt = telemetryPoints[activeIndex];
+        if (!pt) return;
+
+        const pointKey = pt.id || pt.index;
+        if (lastFocusedPointIdRef.current === pointKey) return;
+        lastFocusedPointIdRef.current = pointKey;
+
+        focusOnRover(pt);
+    }, [activeIndex, telemetryPoints, focusOnRover]);
+
     // When a point is selected on the chart, update chart, seek video, and focus 3D camera
     const handleChartPointSelect = useCallback(
         (index: number) => {
@@ -138,12 +160,14 @@ export const VideoLogsPanel: React.FC = () => {
                     rotation: pt.rotation,
                     direction: pt.direction,
                     cameraHeaderId: pt.cameraHeaderId || pt.id,
-                    pointCloudId: selectedMapId || undefined,
+                    pointCloudId: pt.pointCloudId || selectedMapId || undefined,
+                    reconstructionIndex: pt.reconstructionIndex,
                 },
                 "chart"
             );
 
-            // 2. Focus 3D camera on rover at that position using the EXACT same hook!
+            // 2. Focus 3D camera on rover at that position
+            lastFocusedPointIdRef.current = pt.id || pt.index;
             focusOnRover(pt);
         },
         [telemetryPoints, setActiveIndex, selectedMapId, focusOnRover, currentVideoIndex, handleSelectVideoIndex]
@@ -151,22 +175,37 @@ export const VideoLogsPanel: React.FC = () => {
 
     // When an empty section of the timeline is clicked, seek video player directly
     const handleChartSeekTime = useCallback(
-        (timeSec: number, targetVideoIndex?: number) => {
+        (timeSec: number, targetVideoIndex?: number, fullRelativeTime?: number) => {
             if (typeof targetVideoIndex === "number" && targetVideoIndex !== currentVideoIndex) {
                 handleSelectVideoIndex(targetVideoIndex);
             }
-            setActiveIndex(null);
+            const relTime = typeof fullRelativeTime === "number" ? fullRelativeTime : timeSec;
+            let closestPt: ComputedTelemetryPoint | undefined;
+            if (telemetryPoints.length > 0) {
+                const closestIdx = findClosestPointIndex(telemetryPoints, timeSec, targetVideoIndex ?? currentVideoIndex);
+                if (closestIdx !== -1) {
+                    setActiveIndex(closestIdx);
+                    closestPt = telemetryPoints[closestIdx];
+                }
+            }
             useTrajectoryLogSync.getState().selectPoint(
                 {
-                    relativeTime: timeSec,
+                    id: closestPt?.id,
+                    index: closestPt?.index,
+                    relativeTime: relTime,
                     videoTime: timeSec,
                     videoIndex: targetVideoIndex ?? currentVideoIndex,
-                    pointCloudId: selectedMapId || undefined,
+                    pointCloudId: closestPt?.pointCloudId || selectedMapId || undefined,
+                    reconstructionIndex: closestPt?.reconstructionIndex,
                 },
                 "chart"
             );
+            if (closestPt) {
+                lastFocusedPointIdRef.current = closestPt.id || closestPt.index;
+                focusOnRover(closestPt);
+            }
         },
-        [currentVideoIndex, handleSelectVideoIndex, selectedMapId, setActiveIndex]
+        [currentVideoIndex, handleSelectVideoIndex, selectedMapId, setActiveIndex, telemetryPoints, focusOnRover]
     );
 
     return (
@@ -270,7 +309,12 @@ export const VideoLogsPanel: React.FC = () => {
 
             {/* Summary KPI Cards */}
             <div className="video-logs-summary-wrapper">
-                <LogsSummaryCards summary={summary} activePoint={activePoint} />
+                <LogsSummaryCards
+                    summary={summary}
+                    activePoint={activePoint}
+                    points={telemetryPoints}
+                    activeIndex={activeIndex}
+                />
             </div>
 
             {/* Trajectory & Dive Profile Charts */}
