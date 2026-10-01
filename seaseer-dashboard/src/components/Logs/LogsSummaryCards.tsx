@@ -62,10 +62,10 @@ export const LogsSummaryCards: React.FC<LogsSummaryCardsProps> = ({
 
     return (
         <div className="logs-summary-grid">
-            {/* 1. Log Depth */}
+            {/* 1. Depth */}
             <div className="logs-kpi-card">
                 <div className="logs-kpi-header">
-                    <span className="logs-kpi-title">Log Depth</span>
+                    <span className="logs-kpi-title">Depth</span>
                     <div className="logs-kpi-icon logs-icon-cyan">
                         <FiDroplet size={15} />
                     </div>
@@ -84,10 +84,10 @@ export const LogsSummaryCards: React.FC<LogsSummaryCardsProps> = ({
                 </div>
             </div>
 
-            {/* 2. Log Temp */}
+            {/* 2. Temp */}
             <div className="logs-kpi-card">
                 <div className="logs-kpi-header">
-                    <span className="logs-kpi-title">Log Temp</span>
+                    <span className="logs-kpi-title">Temp</span>
                     <div className="logs-kpi-icon" style={{ background: "rgba(249, 115, 22, 0.15)", color: "#fb923c" }}>
                         <FiThermometer size={15} />
                     </div>
@@ -150,10 +150,10 @@ export const LogsSummaryCards: React.FC<LogsSummaryCardsProps> = ({
                 </div>
             </div>
 
-            {/* 5. Distance */}
+            {/* 5. Calculated Distance */}
             <div className="logs-kpi-card">
                 <div className="logs-kpi-header">
-                    <span className="logs-kpi-title">Distance</span>
+                    <span className="logs-kpi-title">Calculated Distance</span>
                     <div className="logs-kpi-icon" style={{ background: "rgba(139, 92, 246, 0.15)", color: "#c084fc" }}>
                         <FiNavigation size={15} />
                     </div>

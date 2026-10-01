@@ -932,14 +932,14 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                         onClick={() => setChartMode("log_depth")}
                     >
                         <FiDroplet size={12} style={{ marginRight: 4 }} />
-                        Log Depth
+                        Depth
                     </button>
                     <button
                         className={`logs-chart-tab ${chartMode === "log_temperature" ? "active" : ""}`}
                         onClick={() => setChartMode("log_temperature")}
                     >
                         <FiThermometer size={12} style={{ marginRight: 4 }} />
-                        Log Temp
+                        Temp
                     </button>
                     <button
                         className={`logs-chart-tab ${chartMode === "log_sonar_altitude" ? "active" : ""}`}
@@ -960,7 +960,7 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                         onClick={() => setChartMode("distance")}
                     >
                         <FiNavigation size={12} style={{ marginRight: 4 }} />
-                        Distance
+                        Calculated Distance
                     </button>
                 </div>
             </div>
@@ -1299,7 +1299,7 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                             <span className="logs-tooltip-val">{pt.depth.toFixed(2)}m</span>
                         </div>
                         <div className="logs-tooltip-item">
-                            <span className="logs-tooltip-label">Distance:</span>
+                            <span className="logs-tooltip-label">Calculated Distance:</span>
                             <span className="logs-tooltip-val">{pt.distanceTravelled.toFixed(1)}m</span>
                         </div>
                         <div className="logs-tooltip-item" style={{ marginLeft: "auto", color: "#38bdf8", opacity: 0.85 }}>
