@@ -34,8 +34,6 @@ export interface PLYPointCloudSidebarProps {
     setAmbientLightIntensity?: (val: number) => void;
     showOutlines?: boolean;
     setShowOutlines?: (show: boolean) => void;
-    pauseCubicLodUpdate?: boolean;
-    setPauseCubicLodUpdate?: (pause: boolean) => void;
 }
 
 import { getApiBaseUrl } from "../../utils/apiConfig";
@@ -79,8 +77,6 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const setAmbientLightIntensity = props.setAmbientLightIntensity ?? contextState?.setAmbientLightIntensity ?? (() => {});
     const showOutlines = props.showOutlines ?? contextState?.showOutlines ?? false;
     const setShowOutlines = props.setShowOutlines ?? contextState?.setShowOutlines ?? (() => {});
-    const pauseCubicLodUpdate = props.pauseCubicLodUpdate ?? contextState?.pauseCubicLodUpdate ?? false;
-    const setPauseCubicLodUpdate = props.setPauseCubicLodUpdate ?? contextState?.setPauseCubicLodUpdate ?? (() => {});
     const startPerfTest = contextState?.startPerfTest ?? (() => {});
     const stopPerfTest = contextState?.stopPerfTest ?? (() => {});
     const isPerfTestRunning = contextState?.isPerfTestRunning ?? false;
@@ -441,16 +437,6 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                         className="pointcloud-sidebar__checkbox"
                     />
                     Show Chunk Outlines
-                </label>
-
-                <label className="pointcloud-sidebar__checkbox-label" style={{ marginTop: "8px" }}>
-                    <input
-                        type="checkbox"
-                        checked={pauseCubicLodUpdate}
-                        onChange={(e) => setPauseCubicLodUpdate(e.target.checked)}
-                        className="pointcloud-sidebar__checkbox"
-                    />
-                    Freeze Cubic LOD Updates
                 </label>
 
                 {/* Geo-Three Heightmap Controls */}

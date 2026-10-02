@@ -148,8 +148,7 @@ export class HybridWholeDomainLodManager {
     }
 
     if (isInside) {
-      if (this.wholeDomainTile) {
-        this.disposeTileMesh(this.wholeDomainTile);
+      if (this.wholeDomainTile && !this.wholeDomainTile.mesh) {
         this.wholeDomainTile = null;
       }
 
@@ -159,12 +158,35 @@ export class HybridWholeDomainLodManager {
 
       const nowMs = performance.now();
       for (const node of this.activeLeaves) {
-        this.processTileLoading(node, nowMs, 0);
+        this.processTileLoading(node, nowMs, node.depth * 0.002);
         this.animateNodeVisuals(node, timeSeconds);
       }
 
       for (const node of this.nodesToEvict) {
         this.evictQuadtreeSubtree(node);
+      }
+
+      // Check all pending split nodes in quadtree:
+      // Keep old LOD until all newer more detailed LODs (descendant leaves) are finished loading.
+      this.processPendingEvictions(this.quadtreeRoot, timeSeconds);
+
+      // Transition from wholeDomainTile (outside) to quadtree (inside):
+      // Keep wholeDomainTile until all active quadtree leaves are finished loading.
+      if (this.wholeDomainTile) {
+        const allQuadtreeLoaded =
+          this.activeLeaves.length > 0 &&
+          this.activeLeaves.every((leaf) => leaf.status === "LOADED");
+
+        if (allQuadtreeLoaded) {
+          this.disposeTileMesh(this.wholeDomainTile);
+          this.wholeDomainTile = null;
+        } else {
+          if (this.wholeDomainTile.status !== "NEEDS_EVICT") {
+            this.wholeDomainTile.status = "NEEDS_EVICT";
+            this.updateTileMaterials(this.wholeDomainTile);
+          }
+          this.animateNodeVisuals(this.wholeDomainTile, timeSeconds);
+        }
       }
     } else {
       if (!this.quadtreeRoot.isLeaf || this.quadtreeRoot.mesh !== null) {
@@ -208,10 +230,17 @@ export class HybridWholeDomainLodManager {
         } else if (this.wholeDomainTile.lod !== targetLod) {
           this.wholeDomainTile.lod = targetLod;
           this.wholeDomainTile.status = "NEEDS_REFRESH";
+        } else if (this.wholeDomainTile.status === "NEEDS_EVICT") {
+          if (this.wholeDomainTile.mesh) {
+            this.wholeDomainTile.status = "LOADED";
+            this.updateTileMaterials(this.wholeDomainTile);
+          } else {
+            this.wholeDomainTile.status = "NEEDS_LOAD";
+          }
         }
       }
 
-      this.processTileLoading(this.wholeDomainTile, performance.now(), 0.02, 10);
+      this.processTileLoading(this.wholeDomainTile, performance.now(), -0.01, 1);
       this.animateNodeVisuals(this.wholeDomainTile, timeSeconds);
     }
   }
@@ -230,10 +259,16 @@ export class HybridWholeDomainLodManager {
     const shouldSplit = node.depth < this.insideMaxDepth && distSq < threshold * threshold;
 
     if (shouldSplit) {
-      if (node.mesh) this.disposeTileMesh(node);
-      if (node.isLeaf) this.splitQuadtreeNode(node);
-      node.status = "NEEDS_EVICT";
-      delete node.loadStartTime;
+      if (node.isLeaf) {
+        this.splitQuadtreeNode(node);
+      }
+      if (node.status !== "NEEDS_EVICT") {
+        node.status = "NEEDS_EVICT";
+        delete node.loadStartTime;
+        if (node.mesh) {
+          this.updateTileMaterials(node);
+        }
+      }
 
       for (const child of node.children) {
         this.evaluateQuadtreeNode(child as HybridTileNode, focalPos, activeLeaves, nodesToEvict);
@@ -245,14 +280,23 @@ export class HybridWholeDomainLodManager {
         }
         node.children = [];
         node.isLeaf = true;
-        if (node.status !== "LOADED") {
+        if (node.mesh) {
+          node.status = "LOADED";
+          delete node.loadStartTime;
+          this.updateTileMaterials(node);
+        } else if (node.status !== "LOADED") {
           node.status = "NEEDS_LOAD";
           delete node.loadStartTime;
         }
       }
 
       if (node.status === "NEEDS_EVICT") {
-        node.status = "NEEDS_LOAD";
+        if (node.mesh) {
+          node.status = "LOADED";
+          this.updateTileMaterials(node);
+        } else {
+          node.status = "NEEDS_LOAD";
+        }
         delete node.loadStartTime;
       }
 
@@ -266,8 +310,6 @@ export class HybridWholeDomainLodManager {
     const midZ = (minZ + maxZ) / 2;
     const nextDepth = node.depth + 1;
 
-    node.status = "NEEDS_EVICT";
-    delete node.loadStartTime;
     node.children = [
       this.createQuadtreeNode(nextDepth, { minX, minZ, maxX: midX, maxZ: midZ }, node),
       this.createQuadtreeNode(nextDepth, { minX: midX, minZ, maxX, maxZ: midZ }, node),
@@ -275,6 +317,41 @@ export class HybridWholeDomainLodManager {
       this.createQuadtreeNode(nextDepth, { minX: midX, minZ: midZ, maxX, maxZ }, node),
     ];
     node.isLeaf = false;
+  }
+
+  private areAllDescendantLeavesLoaded(node: HybridTileNode): boolean {
+    if (node.isLeaf) {
+      return node.status === "LOADED";
+    }
+    if (node.children.length === 0) {
+      return true;
+    }
+    for (const child of node.children) {
+      if (!this.areAllDescendantLeavesLoaded(child as HybridTileNode)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private processPendingEvictions(node: HybridTileNode, timeSeconds: number): void {
+    if (node.isLeaf) return;
+
+    for (const child of node.children) {
+      this.processPendingEvictions(child as HybridTileNode, timeSeconds);
+    }
+
+    if (node.mesh) {
+      if (this.areAllDescendantLeavesLoaded(node)) {
+        this.disposeTileMesh(node);
+      } else {
+        if (node.status !== "NEEDS_EVICT") {
+          node.status = "NEEDS_EVICT";
+          this.updateTileMaterials(node);
+        }
+        this.animateNodeVisuals(node, timeSeconds);
+      }
+    }
   }
 
   private processTileLoading(tile: BaseTileNode, nowMs: number, yOffset: number = 0, baseRenderOrder?: number): void {
@@ -429,6 +506,8 @@ export class HybridWholeDomainLodManager {
       overlayMat.opacity = Math.sin(timeSeconds * 8) * 0.25 + 0.45;
     } else if (node.status === "NEEDS_REFRESH") {
       overlayMat.opacity = Math.sin(timeSeconds * 6) * 0.2 + 0.4;
+    } else if (node.status === "NEEDS_EVICT") {
+      overlayMat.opacity = Math.sin(timeSeconds * 6) * 0.15 + 0.7;
     }
   }
 
@@ -584,13 +663,19 @@ export class HybridWholeDomainLodManager {
 
   public markAllNeedsRefresh(): void {
     const traverse = (node: HybridTileNode) => {
-      if (node.status === "LOADED") node.status = "NEEDS_REFRESH";
+      if (node.status === "LOADED") {
+        node.status = "NEEDS_REFRESH";
+      } else if (node.mesh) {
+        this.updateTileMaterials(node);
+      }
       for (const child of node.children) traverse(child as HybridTileNode);
     };
     traverse(this.quadtreeRoot);
 
     if (this.wholeDomainTile?.status === "LOADED") {
       this.wholeDomainTile.status = "NEEDS_REFRESH";
+    } else if (this.wholeDomainTile?.mesh) {
+      this.updateTileMaterials(this.wholeDomainTile);
     }
     this.rebuildThresholdVisuals();
   }

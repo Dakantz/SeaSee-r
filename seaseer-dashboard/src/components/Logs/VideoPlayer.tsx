@@ -139,7 +139,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             setVideoSrc(targetUrl);
             setVideoTitle(title);
             if (pendingSeekTimeRef.current === null) {
-                setCurrentTime(0);
+                if (activeSyncPoint?.videoIndex === resolvedIndex && typeof activeSyncPoint?.videoTime === "number") {
+                    pendingSeekTimeRef.current = activeSyncPoint.videoTime;
+                    setCurrentTime(activeSyncPoint.videoTime);
+                } else {
+                    setCurrentTime(0);
+                }
             } else {
                 setCurrentTime(pendingSeekTimeRef.current);
             }
@@ -226,10 +231,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             videoRef.current.pause();
             setIsPlaying(false);
             setCurrentTime(clamped);
-            syncPointAtTime(clamped);
+            if (syncSource !== "chart") {
+                syncPointAtTime(clamped);
+            }
             pendingSeekTimeRef.current = null;
         }
-    }, [syncPointAtTime]);
+    }, [syncPointAtTime, syncSource]);
 
     // Synchronize video seeking and video file switching when triggered from 3D or Chart
     useEffect(() => {
@@ -270,7 +277,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
         // 2. On the correct video file -> seek to exact target frame time and pause
         if (typeof targetTime === "number" && Number.isFinite(targetTime) && targetTime >= 0) {
-            if (videoRef.current && videoRef.current.readyState >= 1) {
+            pendingSeekTimeRef.current = targetTime;
+            const currentSrc = videoRef.current?.getAttribute("src") || videoRef.current?.src || "";
+            const isTargetSrcLoaded = videoSrc && (currentSrc.includes(videoSrc) || currentSrc === videoSrc);
+
+            if (videoRef.current && videoRef.current.readyState >= 1 && isTargetSrcLoaded) {
                 const maxT = videoRef.current.duration || 10000;
                 const clamped = Math.min(Math.max(0, targetTime), maxT);
                 videoRef.current.currentTime = clamped;
@@ -279,18 +290,27 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 setCurrentTime(clamped);
                 pendingSeekTimeRef.current = null;
                 lastActiveIdxRef.current = findClosestPointIndex(telemetryPoints, clamped, resolvedIndex);
-            } else {
-                pendingSeekTimeRef.current = targetTime;
             }
         }
-    }, [activeSyncPoint, seekTimestamp, syncSource, resolvedIndex, resolvedVideos.length, onSelectVideoIndex, isControlled, telemetryPoints]);
+    }, [activeSyncPoint, seekTimestamp, syncSource, resolvedIndex, resolvedVideos.length, onSelectVideoIndex, isControlled, telemetryPoints, videoSrc]);
 
     // Synchronize active point and logs-point-active when resolved video index changes (e.g. sequence switched)
     useEffect(() => {
         if (!pointCloudId) return;
-        const targetTime = pendingSeekTimeRef.current !== null ? pendingSeekTimeRef.current : 0;
-        syncPointAtTime(targetTime);
-    }, [resolvedIndex, pointCloudId, syncPointAtTime]);
+        const targetTime =
+            pendingSeekTimeRef.current !== null
+                ? pendingSeekTimeRef.current
+                : activeSyncPoint?.videoIndex === resolvedIndex && typeof activeSyncPoint?.videoTime === "number"
+                ? activeSyncPoint.videoTime
+                : 0;
+
+        if (
+            activeSyncPoint?.videoIndex !== resolvedIndex ||
+            Math.abs((activeSyncPoint?.videoTime ?? -1) - targetTime) > 0.05
+        ) {
+            syncPointAtTime(targetTime);
+        }
+    }, [resolvedIndex, pointCloudId, syncPointAtTime, activeSyncPoint]);
 
     // Continuous smooth synchronization while video is playing
     useEffect(() => {

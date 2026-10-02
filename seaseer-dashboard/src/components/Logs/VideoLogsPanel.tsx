@@ -176,13 +176,14 @@ export const VideoLogsPanel: React.FC = () => {
     // When an empty section of the timeline is clicked, seek video player directly
     const handleChartSeekTime = useCallback(
         (timeSec: number, targetVideoIndex?: number, fullRelativeTime?: number) => {
-            if (typeof targetVideoIndex === "number" && targetVideoIndex !== currentVideoIndex) {
-                handleSelectVideoIndex(targetVideoIndex);
+            const actualVideoIndex = typeof targetVideoIndex === "number" ? targetVideoIndex : currentVideoIndex;
+            if (actualVideoIndex !== currentVideoIndex) {
+                handleSelectVideoIndex(actualVideoIndex);
             }
             const relTime = typeof fullRelativeTime === "number" ? fullRelativeTime : timeSec;
             let closestPt: ComputedTelemetryPoint | undefined;
             if (telemetryPoints.length > 0) {
-                const closestIdx = findClosestPointIndex(telemetryPoints, timeSec, targetVideoIndex ?? currentVideoIndex);
+                const closestIdx = findClosestPointIndex(telemetryPoints, timeSec, actualVideoIndex);
                 if (closestIdx !== -1) {
                     setActiveIndex(closestIdx);
                     closestPt = telemetryPoints[closestIdx];
@@ -194,7 +195,7 @@ export const VideoLogsPanel: React.FC = () => {
                     index: closestPt?.index,
                     relativeTime: relTime,
                     videoTime: timeSec,
-                    videoIndex: targetVideoIndex ?? currentVideoIndex,
+                    videoIndex: actualVideoIndex,
                     pointCloudId: closestPt?.pointCloudId || selectedMapId || undefined,
                     reconstructionIndex: closestPt?.reconstructionIndex,
                 },

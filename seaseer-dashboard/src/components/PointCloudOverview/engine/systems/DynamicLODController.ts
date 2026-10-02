@@ -128,6 +128,7 @@ class TargetLODManager {
     private chunkCache: Map<string, CachedChunk> = new Map();
     private worldTransformMatrix: THREE.Matrix4 = new THREE.Matrix4();
     private invWorldTransformMatrix: THREE.Matrix4 = new THREE.Matrix4();
+    private lastFrustum: THREE.Frustum = new THREE.Frustum();
 
     constructor(
         target: PointCloudTarget,
@@ -276,6 +277,8 @@ class TargetLODManager {
         newActiveKeys: Set<string>,
         tasksToQueue: FetchTask[]
     ): void {
+        this.lastFrustum.copy(frustum);
+
         if (this.target.query && !isConnectedPointCloudSelected(this.target.query, this.target.pcId)) {
             return;
         }
@@ -299,11 +302,6 @@ class TargetLODManager {
             // ==========================================
             // INSIDE REGIME: 3D OCTREE SPATIAL REFINEMENT
             // ==========================================
-            if (this.wholeDomainChunk) {
-                this.disposeChunk(this.wholeDomainChunk);
-                this.wholeDomainChunk = null;
-            }
-
             const activeLeaves: OctreeNode[] = [];
             const nodesToPrune: OctreeNode[] = [];
 
@@ -354,6 +352,10 @@ class TargetLODManager {
                     });
                 }
             }
+
+            // Check all pending split nodes in octree and wholeDomainChunk:
+            // Keep old LOD until all newer more detailed LODs in view are finished loading.
+            this.checkPendingEvictions(frustum, newActiveKeys);
         } else {
             // ==========================================
             // OUTSIDE REGIME: WHOLE DOMAIN MACRO CHUNK
@@ -376,9 +378,9 @@ class TargetLODManager {
             }
 
             if (!this.wholeDomainChunk || this.wholeDomainChunk.lod !== targetLod) {
-                if (this.wholeDomainChunk) {
-                    this.disposeChunk(this.wholeDomainChunk);
-                    this.wholeDomainChunk = null;
+                // Keep existing wholeDomainChunk displayed while new targetLod is loading
+                if (this.wholeDomainChunk && this.wholeDomainChunk.status === "loaded") {
+                    newActiveKeys.add(this.wholeDomainChunk.key);
                 }
 
                 // If moving at/outside max LOD, ensure any disposed whole domain chunks other than wholeDomainKey are evicted
@@ -388,9 +390,16 @@ class TargetLODManager {
 
                 const existing = this.loadedChunks.get(wholeDomainKey);
                 if (existing && (existing.status === "loaded" || existing.status === "loading")) {
-                    // Already in progress or displayed
+                    if (existing.status === "loaded" && this.wholeDomainChunk && this.wholeDomainChunk.key !== wholeDomainKey) {
+                        this.disposeChunk(this.wholeDomainChunk);
+                        this.wholeDomainChunk = existing;
+                    }
                 } else if (this.activateCachedChunk(wholeDomainKey)) {
                     // Restored instantly from background cache without network fetch
+                    if (this.wholeDomainChunk && this.wholeDomainChunk.key !== wholeDomainKey) {
+                        this.disposeChunk(this.wholeDomainChunk);
+                    }
+                    this.wholeDomainChunk = this.loadedChunks.get(wholeDomainKey) || null;
                 } else if (!existing) {
                     tasksToQueue.push({
                         key: wholeDomainKey,
@@ -431,13 +440,7 @@ class TargetLODManager {
         const shouldSplit = node.depth < this.insideMaxDepth && dist < splitThreshold;
 
         if (shouldSplit) {
-            // If this node previously held a loaded mesh, dispose it so children render
-            const existing = this.loadedChunks.get(node.id);
-            if (existing) {
-                this.disposeChunk(existing);
-                this.loadedChunks.delete(node.id);
-            }
-
+            // Keep old node's loaded chunk visible until all newer more detailed child chunks finish loading!
             if (node.isLeaf) {
                 this.splitOctreeNode(node);
             }
@@ -456,6 +459,79 @@ class TargetLODManager {
             }
             activeLeaves.push(node);
         }
+    }
+
+    public checkPendingEvictions(frustum?: THREE.Frustum, activeKeys?: Set<string>): void {
+        const f = frustum || this.lastFrustum;
+
+        if (this.isCurrentlyInside) {
+            // 1. Bottom-up traversal of octree nodes: unload old LOD chunks only when all visible descendant leaves are loaded
+            this.checkOctreePendingEvictions(this.octreeRoot, f, activeKeys);
+
+            // 2. Transition from wholeDomainChunk (outside) to octree (inside):
+            // Keep wholeDomainChunk until all active octree leaves in view are finished loading!
+            if (this.wholeDomainChunk && this.wholeDomainChunk.status === "loaded") {
+                const allOctreeLoaded = this.areAllDescendantLeavesLoaded(this.octreeRoot, f);
+                if (allOctreeLoaded) {
+                    this.disposeChunk(this.wholeDomainChunk);
+                    this.wholeDomainChunk = null;
+                } else {
+                    if (activeKeys) {
+                        activeKeys.add(this.wholeDomainChunk.key);
+                    }
+                }
+            }
+        }
+    }
+
+    private checkOctreePendingEvictions(
+        node: OctreeNode,
+        frustum: THREE.Frustum,
+        activeKeys?: Set<string>
+    ): void {
+        if (node.isLeaf) return;
+
+        for (const child of node.children) {
+            this.checkOctreePendingEvictions(child, frustum, activeKeys);
+        }
+
+        const chunk = this.loadedChunks.get(node.id);
+        if (chunk && chunk.status === "loaded") {
+            if (this.areAllDescendantLeavesLoaded(node, frustum)) {
+                // All newer more detailed LODs in view are finished loading! Safe to unload old LOD chunk.
+                this.disposeChunk(chunk);
+                this.loadedChunks.delete(node.id);
+            } else {
+                // Still waiting for newer LODs to finish loading. Keep displayed to prevent flickering!
+                if (activeKeys) {
+                    activeKeys.add(node.id);
+                }
+            }
+        }
+    }
+
+    private areAllDescendantLeavesLoaded(node: OctreeNode, frustum?: THREE.Frustum): boolean {
+        // In 3D: if node is completely outside the camera frustum, it is not visible or fetched
+        if (frustum && !frustum.intersectsBox(node.worldBox)) {
+            return true;
+        }
+
+        if (node.isLeaf) {
+            const chunk = this.loadedChunks.get(node.id);
+            return chunk !== undefined && (chunk.status === "loaded" || chunk.status === "empty");
+        }
+
+        if (node.children.length === 0) {
+            return true;
+        }
+
+        for (const child of node.children) {
+            if (!this.areAllDescendantLeavesLoaded(child, frustum)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private calculateOutsideLod(distToCenter: number): number {
@@ -484,7 +560,9 @@ class TargetLODManager {
         };
         this.loadedChunks.set(key, chunk);
         if (key.includes("whole_domain")) {
-            this.wholeDomainChunk = chunk;
+            if (!this.wholeDomainChunk || this.wholeDomainChunk.status !== "loaded") {
+                this.wholeDomainChunk = chunk;
+            }
         }
     }
 
@@ -518,8 +596,13 @@ class TargetLODManager {
         }
 
         if (key.includes("whole_domain")) {
+            if (this.wholeDomainChunk && this.wholeDomainChunk.key !== key) {
+                this.disposeChunk(this.wholeDomainChunk);
+            }
             this.wholeDomainChunk = chunk;
         }
+
+        this.checkPendingEvictions();
     }
 
     /**
@@ -614,8 +697,13 @@ class TargetLODManager {
         }
 
         if (key.includes("whole_domain")) {
+            if (this.wholeDomainChunk && this.wholeDomainChunk.key !== key) {
+                this.disposeChunk(this.wholeDomainChunk);
+            }
             this.wholeDomainChunk = chunk;
         }
+
+        this.checkPendingEvictions();
 
         return true;
     }
@@ -737,6 +825,7 @@ class TargetLODManager {
             chunk.status = "empty";
             chunk.abortController = undefined;
         }
+        this.checkPendingEvictions();
     }
 
     public evictStaleChunks(activeKeys: Set<string>): void {

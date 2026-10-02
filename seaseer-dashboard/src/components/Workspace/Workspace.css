@@ -110,7 +110,8 @@
 /* ==========================================
    Unified Viewport Floating Reopen Buttons
    ========================================== */
-.workspace-reopen-left {
+.workspace-reopen-left,
+.left-sidebar-reopen-btn {
     position: absolute;
     top: var(--spacing-lg);
     left: var(--spacing-lg);

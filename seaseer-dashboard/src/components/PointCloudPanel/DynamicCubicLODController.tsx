@@ -228,7 +228,6 @@ export function DynamicCubicLODController() {
         wireframe,
         pointSize,
         showOutlines,
-        pauseCubicLodUpdate,
         setPointCount,
     } = usePLYPointCloudContext();
 
@@ -248,15 +247,6 @@ export function DynamicCubicLODController() {
     const activeKeysRef = useRef<Set<string>>(new Set());
     const lastCamPosRef = useRef<THREE.Vector3>(new THREE.Vector3(NaN, NaN, NaN));
     const lastLoadedChunksCountRef = useRef<number>(0);
-    const prevPauseRef = useRef<boolean>(pauseCubicLodUpdate);
-
-    useEffect(() => {
-        if (prevPauseRef.current && !pauseCubicLodUpdate) {
-            // When unpausing, force update on next frame by clearing last saved camera position
-            lastCamPosRef.current.set(NaN, NaN, NaN);
-        }
-        prevPauseRef.current = pauseCubicLodUpdate;
-    }, [pauseCubicLodUpdate]);
 
     const activeTargetQueries = useMemo(() => {
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -378,7 +368,6 @@ export function DynamicCubicLODController() {
     }, [renderMode]);
 
     useFrame(() => {
-        if (pauseCubicLodUpdate) return;
         if (activeTargetQueries.length === 0) return;
 
         const camPos = camera.position;

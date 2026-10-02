@@ -59,7 +59,7 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
         return [...videos].sort((a, b) => {
             const tA = new Date(a.video_start_at).getTime();
             const tB = new Date(b.video_start_at).getTime();
-            if (!isNaN(tA) && !isNaN(tB) && tA !== tB) {
+            if (!isNaN(tA) && !isNaN(tB) && Math.abs(tA - tB) > 5000) {
                 return tA - tB;
             }
             const nameA = a.upload_metadata?.orig_filename || a.upload_metadata?.safe_filename || a.id;
@@ -237,7 +237,8 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                     const s = new Date(sortedVideos[i].video_start_at).getTime();
                     const e = new Date(sortedVideos[i].video_stop_at).getTime();
                     if (!isNaN(s) && !isNaN(e) && item.timestamp >= s && item.timestamp <= e) {
-                        vidIdx = i;
+                        const origIdx = videos ? videos.indexOf(sortedVideos[i]) : i;
+                        vidIdx = origIdx !== -1 ? origIdx : i;
                         vidTime = Math.max(0, Math.min(videoTimeline.durations[i], (item.timestamp - s) / 1000.0));
                         relTime = videoTimeline.offsets[i] + vidTime;
                         break;
@@ -810,12 +811,16 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                 const start = videoTimeline.offsets[i];
                 const dur = videoTimeline.durations[i];
                 if (clickedTime >= start && clickedTime < start + dur) {
-                    targetVidIdx = i;
+                    const sortedVid = sortedVideos[i];
+                    const origIdx = videos ? videos.indexOf(sortedVid) : i;
+                    targetVidIdx = origIdx !== -1 ? origIdx : i;
                     timeWithinVid = clickedTime - start;
                     break;
                 }
                 if (i === videoTimeline.offsets.length - 1 && clickedTime >= start) {
-                    targetVidIdx = i;
+                    const sortedVid = sortedVideos[i];
+                    const origIdx = videos ? videos.indexOf(sortedVid) : i;
+                    targetVidIdx = origIdx !== -1 ? origIdx : i;
                     timeWithinVid = Math.min(dur, clickedTime - start);
                 }
             }
@@ -824,19 +829,20 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
         // Case 1: Hovering a specific log point in log mode
         if (isLogMode && hoveredLogIndex !== null && computedLogPoints[hoveredLogIndex]) {
             const pt = computedLogPoints[hoveredLogIndex];
-            const ptVidIdx = pt.videoIndex ?? targetVidIdx;
-            const ptVidTime = pt.videoTime ?? timeWithinVid;
+            const ptVidIdx = pt.videoIndex !== undefined ? pt.videoIndex : targetVidIdx;
+            const ptVidTime = pt.videoTime !== undefined ? pt.videoTime : timeWithinVid;
             if (onSeekTime) {
                 onSeekTime(ptVidTime, ptVidIdx, pt.relativeTime);
+            } else {
+                useTrajectoryLogSync.getState().selectPoint(
+                    {
+                        relativeTime: pt.relativeTime,
+                        videoTime: ptVidTime,
+                        videoIndex: ptVidIdx,
+                    },
+                    "chart"
+                );
             }
-            useTrajectoryLogSync.getState().selectPoint(
-                {
-                    relativeTime: pt.relativeTime,
-                    videoTime: ptVidTime,
-                    videoIndex: ptVidIdx,
-                },
-                "chart"
-            );
             return;
         }
 
@@ -844,34 +850,37 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
         if (!isLogMode && hoveredIndex !== null && points[hoveredIndex]) {
             const pt = points[hoveredIndex];
             onSelectIndex(hoveredIndex);
-            const ptVidIdx = pt.videoIndex ?? targetVidIdx;
+            const ptVidIdx = pt.videoIndex !== undefined ? pt.videoIndex : targetVidIdx;
             const ptVidTime = pt.videoTime !== undefined ? pt.videoTime : pt.relativeTime;
             if (onSeekTime) {
                 onSeekTime(ptVidTime, ptVidIdx, pt.relativeTime);
+            } else {
+                useTrajectoryLogSync.getState().selectPoint(
+                    {
+                        id: pt.id,
+                        index: pt.index,
+                        relativeTime: pt.relativeTime,
+                        videoTime: ptVidTime,
+                        videoIndex: ptVidIdx,
+                        frameNumber: pt.frameNumber,
+                        filename: pt.filename,
+                        x: pt.x,
+                        y: pt.y,
+                        z: pt.z,
+                        rotation: pt.rotation,
+                        direction: pt.direction,
+                        cameraHeaderId: pt.cameraHeaderId || pt.id,
+                    },
+                    "chart"
+                );
             }
-            useTrajectoryLogSync.getState().selectPoint(
-                {
-                    id: pt.id,
-                    index: pt.index,
-                    relativeTime: pt.relativeTime,
-                    videoTime: ptVidTime,
-                    videoIndex: ptVidIdx,
-                    frameNumber: pt.frameNumber,
-                    filename: pt.filename,
-                    x: pt.x,
-                    y: pt.y,
-                    z: pt.z,
-                    rotation: pt.rotation,
-                    direction: pt.direction,
-                    cameraHeaderId: pt.cameraHeaderId || pt.id,
-                },
-                "chart"
-            );
             return;
         }
 
         // Case 3: Clicked anywhere on the timeline / chart curve
-        if (points && points.length > 0) {
+        if (onSeekTime) {
+            onSeekTime(timeWithinVid, targetVidIdx, clickedTime);
+        } else if (points && points.length > 0) {
             let closestIdx = 0;
             let minDiff = Infinity;
             for (let i = 0; i < points.length; i++) {
@@ -883,9 +892,6 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             }
             onSelectIndex(closestIdx);
             const pt = points[closestIdx];
-            if (onSeekTime) {
-                onSeekTime(timeWithinVid, targetVidIdx, clickedTime);
-            }
             useTrajectoryLogSync.getState().selectPoint(
                 {
                     id: pt.id,
@@ -905,9 +911,6 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                 "chart"
             );
         } else {
-            if (onSeekTime) {
-                onSeekTime(timeWithinVid, targetVidIdx, clickedTime);
-            }
             useTrajectoryLogSync.getState().selectPoint(
                 {
                     relativeTime: clickedTime,

@@ -72,15 +72,23 @@ export default function PointCloudOverviewPage() {
     return (
         <PLYPointCloudProvider>
             <div className="workspace-container">
+                {/* Top-Left Floating Toolbar when queries panel is collapsed */}
                 {!isQueriesOpen && (
-                    <button
-                        type="button"
-                        className="left-sidebar-reopen-btn"
-                        onClick={() => setIsQueriesOpen(true)}
-                        title="Show Custom Queries"
-                    >
-                        ☰ Custom Queries
-                    </button>
+                    <div className="pco-top-left-toolbar pco-top-left-toolbar--floating">
+                        <button
+                            type="button"
+                            className="pco-toggle-btn"
+                            onClick={() => setIsQueriesOpen(true)}
+                            title="Show Custom Queries"
+                        >
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="3" y1="12" x2="21" y2="12"></line>
+                                <line x1="3" y1="6" x2="21" y2="6"></line>
+                                <line x1="3" y1="18" x2="21" y2="18"></line>
+                            </svg>
+                            <span>Custom Queries</span>
+                        </button>
+                    </div>
                 )}
 
                 {/* Top-Right Floating Toolbar when right panel is collapsed */}
@@ -95,7 +103,14 @@ export default function PointCloudOverviewPage() {
                         <>
                             <Panel defaultSize="25%" minSize="15%" maxSize="45%" className="left-sidebar-panel">
                                 <div className="left-sidebar-header">
-                                    <span className="left-sidebar-title">Custom Queries</span>
+                                    <span className="left-sidebar-title">
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                                            <line x1="3" y1="18" x2="21" y2="18"></line>
+                                        </svg>
+                                        Custom Queries
+                                    </span>
                                     <button
                                         type="button"
                                         className="left-sidebar-toggle-btn"
