@@ -131,10 +131,10 @@ export function getCumulativeTime(videos: VideoItem[] | undefined, videoIndex: n
 export function findClosestPointIndex(
     points: ComputedTelemetryPoint[],
     t: number,
-    currentVideoIndex?: number
+    currentVideoIndex?: number,
+    maxTimeDiff: number = 0.15
 ): number {
     if (!points || points.length === 0) return -1;
-    if (points.length === 1) return 0;
 
     const hasVideoIndices = points.some((p) => p.videoIndex !== undefined);
     let candidateIndices: number[] = [];
@@ -144,8 +144,9 @@ export function findClosestPointIndex(
                 candidateIndices.push(i);
             }
         }
+        // If current video has no camera positions, never fall back to other video parts
         if (candidateIndices.length === 0) {
-            candidateIndices = points.map((_, i) => i);
+            return -1;
         }
     } else {
         candidateIndices = points.map((_, i) => i);
@@ -154,18 +155,21 @@ export function findClosestPointIndex(
     const getTime = (p: ComputedTelemetryPoint) =>
         p.videoTime !== undefined ? p.videoTime : p.relativeTime;
 
-    let lastIdx = candidateIndices[0];
-    let foundBeforeOrAtT = false;
+    let bestIdx = -1;
+    let minDiff = Infinity;
     for (const idx of candidateIndices) {
         const ptTime = getTime(points[idx]);
-        if (ptTime <= t) {
-            lastIdx = idx;
-            foundBeforeOrAtT = true;
-        } else if (foundBeforeOrAtT) {
-            break;
+        const diff = Math.abs(ptTime - t);
+        if (diff < minDiff) {
+            minDiff = diff;
+            bestIdx = idx;
         }
     }
 
-    return lastIdx;
+    if (minDiff <= maxTimeDiff) {
+        return bestIdx;
+    }
+
+    return -1;
 }
 

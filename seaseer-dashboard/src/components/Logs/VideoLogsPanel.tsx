@@ -5,7 +5,7 @@ import { LogsSummaryCards } from "./LogsSummaryCards";
 import { LogsCharts } from "./LogsCharts";
 import { usePLYPointCloudContext } from "../PointCloudPanel/PLYPointCloudContext";
 import { useLogsData, useTrajectoryLogSync, useRoverFocus } from "./hooks";
-import { findClosestPointIndex, type ComputedTelemetryPoint } from "./types";
+import type { ComputedTelemetryPoint } from "./types";
 
 import "./LogsPage.css";
 import "./VideoLogsPanel.css";
@@ -181,29 +181,50 @@ export const VideoLogsPanel: React.FC = () => {
                 handleSelectVideoIndex(actualVideoIndex);
             }
             const relTime = typeof fullRelativeTime === "number" ? fullRelativeTime : timeSec;
-            let closestPt: ComputedTelemetryPoint | undefined;
+
+            // Only move to camera-position if there exists one at that exact time
+            let exactPt: ComputedTelemetryPoint | undefined;
             if (telemetryPoints.length > 0) {
-                const closestIdx = findClosestPointIndex(telemetryPoints, timeSec, actualVideoIndex);
-                if (closestIdx !== -1) {
-                    setActiveIndex(closestIdx);
-                    closestPt = telemetryPoints[closestIdx];
-                }
+                exactPt = telemetryPoints.find((p) => {
+                    if (typeof actualVideoIndex === "number" && typeof p.videoIndex === "number") {
+                        if (p.videoIndex !== actualVideoIndex) return false;
+                        if (typeof p.videoTime === "number") {
+                            return Math.abs(p.videoTime - timeSec) < 0.05;
+                        }
+                    }
+                    return Math.abs(p.relativeTime - relTime) < 0.05;
+                });
             }
-            useTrajectoryLogSync.getState().selectPoint(
-                {
-                    id: closestPt?.id,
-                    index: closestPt?.index,
-                    relativeTime: relTime,
-                    videoTime: timeSec,
-                    videoIndex: actualVideoIndex,
-                    pointCloudId: closestPt?.pointCloudId || selectedMapId || undefined,
-                    reconstructionIndex: closestPt?.reconstructionIndex,
-                },
-                "chart"
-            );
-            if (closestPt) {
-                lastFocusedPointIdRef.current = closestPt.id || closestPt.index;
-                focusOnRover(closestPt);
+
+            if (exactPt) {
+                setActiveIndex(exactPt.index);
+                useTrajectoryLogSync.getState().selectPoint(
+                    {
+                        id: exactPt.id,
+                        index: exactPt.index,
+                        relativeTime: relTime,
+                        videoTime: timeSec,
+                        videoIndex: actualVideoIndex,
+                        pointCloudId: exactPt.pointCloudId || selectedMapId || undefined,
+                        reconstructionIndex: exactPt.reconstructionIndex,
+                    },
+                    "chart"
+                );
+                lastFocusedPointIdRef.current = exactPt.id || exactPt.index;
+                focusOnRover(exactPt);
+            } else {
+                // When selecting or moving to a time where no camera-position exists,
+                // the camera position should stay the same.
+                setActiveIndex(null);
+                useTrajectoryLogSync.getState().selectPoint(
+                    {
+                        relativeTime: relTime,
+                        videoTime: timeSec,
+                        videoIndex: actualVideoIndex,
+                        pointCloudId: selectedMapId || undefined,
+                    },
+                    "chart"
+                );
             }
         },
         [currentVideoIndex, handleSelectVideoIndex, selectedMapId, setActiveIndex, telemetryPoints, focusOnRover]

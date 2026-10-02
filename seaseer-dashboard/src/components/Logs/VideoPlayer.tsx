@@ -19,7 +19,7 @@ import { getCumulativeTime, findClosestPointIndex } from "./types";
 export interface VideoPlayerProps {
     pointCloudId?: string | null;
     telemetryPoints?: ComputedTelemetryPoint[];
-    onPointSelect?: (index: number) => void;
+    onPointSelect?: (index: number | null) => void;
     videos?: VideoItem[];
     currentVideoIndex?: number;
     onVideoEnded?: () => void;
@@ -185,10 +185,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             const cumulativeRelTime = getCumulativeTime(resolvedVideos, resolvedIndex, timeSec);
             const closestIdx = findClosestPointIndex(telemetryPoints, timeSec, resolvedIndex);
 
-            if (closestIdx !== -1 && closestIdx !== lastActiveIdxRef.current) {
-                lastActiveIdxRef.current = closestIdx;
-                if (onPointSelect) {
-                    onPointSelect(closestIdx);
+            if (closestIdx !== -1) {
+                if (closestIdx !== lastActiveIdxRef.current) {
+                    lastActiveIdxRef.current = closestIdx;
+                    if (onPointSelect) {
+                        onPointSelect(closestIdx);
+                    }
+                }
+            } else {
+                if (lastActiveIdxRef.current !== null) {
+                    lastActiveIdxRef.current = null;
+                    if (onPointSelect) {
+                        onPointSelect(null);
+                    }
                 }
             }
 
@@ -289,7 +298,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 setIsPlaying(false);
                 setCurrentTime(clamped);
                 pendingSeekTimeRef.current = null;
-                lastActiveIdxRef.current = findClosestPointIndex(telemetryPoints, clamped, resolvedIndex);
+                const foundIdx = findClosestPointIndex(telemetryPoints, clamped, resolvedIndex);
+                lastActiveIdxRef.current = foundIdx !== -1 ? foundIdx : null;
             }
         }
     }, [activeSyncPoint, seekTimestamp, syncSource, resolvedIndex, resolvedVideos.length, onSelectVideoIndex, isControlled, telemetryPoints, videoSrc]);

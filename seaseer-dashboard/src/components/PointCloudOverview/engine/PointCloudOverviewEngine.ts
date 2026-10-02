@@ -50,7 +50,10 @@ export class PointCloudOverviewEngine {
     private perfSecTimer: number = 0;
     private perfSecondCount: number = 0;
     private perfMetrics: PerfTestMetric[] = [];
+    private lastCameraTargetRef: { x: number; y: number; z: number; offset?: [number, number, number] | number; timestamp?: number } | null = null;
     private lastCameraTargetTimestamp: number | null = null;
+    private lastCameraViewTargetRef: CameraViewTarget | null = null;
+    private lastCameraViewTargetTimestamp: number | null = null;
 
     constructor(container: HTMLElement, callbacks: EngineCallbacks = {}, initialConfig: Partial<EngineConfig> = {}) {
         this.container = container;
@@ -114,11 +117,14 @@ export class PointCloudOverviewEngine {
             this.cameraMovementSystem.isFixedUp = initialConfig.isCameraUpFixed;
         }
         if (initialConfig.cameraViewTarget) {
+            this.lastCameraViewTargetTimestamp = initialConfig.cameraViewTarget.timestamp ?? Date.now();
+            this.lastCameraViewTargetRef = initialConfig.cameraViewTarget;
             this.applyCameraViewTarget(initialConfig.cameraViewTarget);
         }
         if (initialConfig.cameraTarget) {
             const { x, y, z, offset, timestamp } = initialConfig.cameraTarget;
             this.lastCameraTargetTimestamp = timestamp ?? Date.now();
+            this.lastCameraTargetRef = initialConfig.cameraTarget;
             if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
                 this.focusCameraTarget([x, y, z], offset);
             }
@@ -191,18 +197,34 @@ export class PointCloudOverviewEngine {
 
     public updateConfig(newConfig: Partial<EngineConfig>): void {
         if (newConfig.cameraViewTarget) {
-            this.applyCameraViewTarget(newConfig.cameraViewTarget);
+            const target = newConfig.cameraViewTarget;
+            const hasNewTimestamp = target.timestamp !== undefined && target.timestamp !== this.lastCameraViewTargetTimestamp;
+            const hasNewRef = target.timestamp === undefined && target !== this.lastCameraViewTargetRef;
+            if (hasNewTimestamp || hasNewRef) {
+                this.lastCameraViewTargetTimestamp = target.timestamp ?? Date.now();
+                this.lastCameraViewTargetRef = target;
+                this.applyCameraViewTarget(target);
+            }
+        } else if (newConfig.cameraViewTarget === null) {
+            this.lastCameraViewTargetTimestamp = null;
+            this.lastCameraViewTargetRef = null;
         }
+
         if (newConfig.cameraTarget) {
-            const { x, y, z, offset, timestamp } = newConfig.cameraTarget;
-            if (timestamp === undefined || timestamp !== this.lastCameraTargetTimestamp) {
-                this.lastCameraTargetTimestamp = timestamp ?? Date.now();
+            const target = newConfig.cameraTarget;
+            const hasNewTimestamp = target.timestamp !== undefined && target.timestamp !== this.lastCameraTargetTimestamp;
+            const hasNewRef = target.timestamp === undefined && target !== this.lastCameraTargetRef;
+            if (hasNewTimestamp || hasNewRef) {
+                this.lastCameraTargetTimestamp = target.timestamp ?? Date.now();
+                this.lastCameraTargetRef = target;
+                const { x, y, z, offset } = target;
                 if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
                     this.focusCameraTarget([x, y, z], offset);
                 }
             }
         } else if (newConfig.cameraTarget === null) {
             this.lastCameraTargetTimestamp = null;
+            this.lastCameraTargetRef = null;
         }
         if (newConfig.isCameraUpFixed !== undefined) {
             this.cameraMovementSystem.isFixedUp = newConfig.isCameraUpFixed;

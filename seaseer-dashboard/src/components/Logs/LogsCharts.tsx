@@ -826,14 +826,70 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             }
         }
 
+        // Helper to find exact camera-position in points at target time if one exists
+        const findExactCameraPoint = (relT: number, vidT: number, vidIdx: number, rawTs?: number) => {
+            if (!points || points.length === 0) return null;
+            for (let i = 0; i < points.length; i++) {
+                const p = points[i];
+                if (typeof rawTs === "number" && typeof p.timestamp === "number" && rawTs > 1e8 && p.timestamp > 1e8) {
+                    const pMs = p.timestamp > 1e11 ? p.timestamp : p.timestamp * 1000;
+                    const rMs = rawTs > 1e11 ? rawTs : rawTs * 1000;
+                    if (Math.abs(pMs - rMs) < 50) {
+                        return { point: p, index: i };
+                    }
+                }
+                if (typeof p.videoIndex === "number" && typeof vidIdx === "number") {
+                    if (p.videoIndex !== vidIdx) {
+                        continue;
+                    }
+                    if (typeof p.videoTime === "number") {
+                        if (Math.abs(p.videoTime - vidT) < 0.05) {
+                            return { point: p, index: i };
+                        }
+                        continue;
+                    }
+                }
+                if (Math.abs(p.relativeTime - relT) < 0.05) {
+                    return { point: p, index: i };
+                }
+            }
+            return null;
+        };
+
         // Case 1: Hovering a specific log point in log mode
         if (isLogMode && hoveredLogIndex !== null && computedLogPoints[hoveredLogIndex]) {
             const pt = computedLogPoints[hoveredLogIndex];
             const ptVidIdx = pt.videoIndex !== undefined ? pt.videoIndex : targetVidIdx;
             const ptVidTime = pt.videoTime !== undefined ? pt.videoTime : timeWithinVid;
-            if (onSeekTime) {
-                onSeekTime(ptVidTime, ptVidIdx, pt.relativeTime);
+            const exactMatch = findExactCameraPoint(pt.relativeTime, ptVidTime, ptVidIdx, pt.raw?.timestamp);
+
+            if (exactMatch) {
+                onSelectIndex(exactMatch.index);
+                if (onSeekTime) {
+                    onSeekTime(ptVidTime, ptVidIdx, pt.relativeTime);
+                }
+                useTrajectoryLogSync.getState().selectPoint(
+                    {
+                        id: exactMatch.point.id,
+                        index: exactMatch.point.index,
+                        relativeTime: pt.relativeTime,
+                        videoTime: ptVidTime,
+                        videoIndex: ptVidIdx,
+                        frameNumber: exactMatch.point.frameNumber,
+                        filename: exactMatch.point.filename,
+                        x: exactMatch.point.x,
+                        y: exactMatch.point.y,
+                        z: exactMatch.point.z,
+                        rotation: exactMatch.point.rotation,
+                        direction: exactMatch.point.direction,
+                        cameraHeaderId: exactMatch.point.cameraHeaderId || exactMatch.point.id,
+                    },
+                    "chart"
+                );
             } else {
+                if (onSeekTime) {
+                    onSeekTime(ptVidTime, ptVidIdx, pt.relativeTime);
+                }
                 useTrajectoryLogSync.getState().selectPoint(
                     {
                         relativeTime: pt.relativeTime,
@@ -854,51 +910,14 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             const ptVidTime = pt.videoTime !== undefined ? pt.videoTime : pt.relativeTime;
             if (onSeekTime) {
                 onSeekTime(ptVidTime, ptVidIdx, pt.relativeTime);
-            } else {
-                useTrajectoryLogSync.getState().selectPoint(
-                    {
-                        id: pt.id,
-                        index: pt.index,
-                        relativeTime: pt.relativeTime,
-                        videoTime: ptVidTime,
-                        videoIndex: ptVidIdx,
-                        frameNumber: pt.frameNumber,
-                        filename: pt.filename,
-                        x: pt.x,
-                        y: pt.y,
-                        z: pt.z,
-                        rotation: pt.rotation,
-                        direction: pt.direction,
-                        cameraHeaderId: pt.cameraHeaderId || pt.id,
-                    },
-                    "chart"
-                );
             }
-            return;
-        }
-
-        // Case 3: Clicked anywhere on the timeline / chart curve
-        if (onSeekTime) {
-            onSeekTime(timeWithinVid, targetVidIdx, clickedTime);
-        } else if (points && points.length > 0) {
-            let closestIdx = 0;
-            let minDiff = Infinity;
-            for (let i = 0; i < points.length; i++) {
-                const diff = Math.abs(points[i].relativeTime - clickedTime);
-                if (diff < minDiff) {
-                    minDiff = diff;
-                    closestIdx = i;
-                }
-            }
-            onSelectIndex(closestIdx);
-            const pt = points[closestIdx];
             useTrajectoryLogSync.getState().selectPoint(
                 {
                     id: pt.id,
                     index: pt.index,
-                    relativeTime: clickedTime,
-                    videoTime: timeWithinVid,
-                    videoIndex: targetVidIdx,
+                    relativeTime: pt.relativeTime,
+                    videoTime: ptVidTime,
+                    videoIndex: ptVidIdx,
                     frameNumber: pt.frameNumber,
                     filename: pt.filename,
                     x: pt.x,
@@ -910,7 +929,38 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                 },
                 "chart"
             );
+            return;
+        }
+
+        // Case 3: Clicked anywhere on the timeline / chart curve
+        const exactMatch = findExactCameraPoint(clickedTime, timeWithinVid, targetVidIdx);
+        if (exactMatch) {
+            onSelectIndex(exactMatch.index);
+            if (onSeekTime) {
+                onSeekTime(timeWithinVid, targetVidIdx, clickedTime);
+            }
+            useTrajectoryLogSync.getState().selectPoint(
+                {
+                    id: exactMatch.point.id,
+                    index: exactMatch.point.index,
+                    relativeTime: clickedTime,
+                    videoTime: timeWithinVid,
+                    videoIndex: targetVidIdx,
+                    frameNumber: exactMatch.point.frameNumber,
+                    filename: exactMatch.point.filename,
+                    x: exactMatch.point.x,
+                    y: exactMatch.point.y,
+                    z: exactMatch.point.z,
+                    rotation: exactMatch.point.rotation,
+                    direction: exactMatch.point.direction,
+                    cameraHeaderId: exactMatch.point.cameraHeaderId || exactMatch.point.id,
+                },
+                "chart"
+            );
         } else {
+            if (onSeekTime) {
+                onSeekTime(timeWithinVid, targetVidIdx, clickedTime);
+            }
             useTrajectoryLogSync.getState().selectPoint(
                 {
                     relativeTime: clickedTime,

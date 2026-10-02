@@ -14,11 +14,16 @@ export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
     onPreviewPointcloudTransform, onUpdatePointcloudTransform, onCameraViewChange,
     onSetIsGizmoDragging, onToggleCameraUpFixed, onSetIsCameraUpFixed, onPointCountChange,
     onPerfTestProgress, onPerfTestComplete, onPerfTestCancel,
-    perfTestTrigger, isPerfTestRunning, cameraTarget,
+    perfTestTrigger, isPerfTestRunning, cameraTarget, cameraViewTarget,
     defaultShowJobOverview = false, ...configProps
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const engineRef = useRef<PointCloudOverviewEngine | null>(null);
+
+    const lastCameraTargetRef = useRef<any>(null);
+    const lastCameraTargetTimestampRef = useRef<number | null>(null);
+    const lastCameraViewTargetRef = useRef<any>(null);
+    const lastCameraViewTargetTimestampRef = useRef<number | null>(null);
 
     const callbacksRef = useRef<EngineCallbacks>({
         onSelectPointcloud, onHoverPointcloud, onFocusCameraTarget,
@@ -58,7 +63,11 @@ export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
             onPerfTestComplete: (s) => callbacksRef.current.onPerfTestComplete?.(s),
             onPerfTestCancel: () => callbacksRef.current.onPerfTestCancel?.(),
         };
-        const engine = new PointCloudOverviewEngine(containerRef.current, proxyCallbacks, configProps);
+        const engine = new PointCloudOverviewEngine(containerRef.current, proxyCallbacks, {
+            ...configProps,
+            cameraTarget,
+            cameraViewTarget,
+        });
         engineRef.current = engine;
         return () => {
             engine.destroy();
@@ -80,11 +89,31 @@ export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
 
     useEffect(() => {
         if (!engineRef.current || !cameraTarget) return;
-        const { x, y, z, offset } = cameraTarget;
+        const { x, y, z, offset, timestamp } = cameraTarget;
+        const hasNewTimestamp = timestamp !== undefined && timestamp !== lastCameraTargetTimestampRef.current;
+        const hasNewRef = timestamp === undefined && cameraTarget !== lastCameraTargetRef.current;
+        if (!hasNewTimestamp && !hasNewRef) return;
+
+        lastCameraTargetTimestampRef.current = timestamp ?? Date.now();
+        lastCameraTargetRef.current = cameraTarget;
+
         if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
             engineRef.current.focusCameraTarget([x, y, z], offset);
         }
     }, [cameraTarget]);
+
+    useEffect(() => {
+        if (!engineRef.current || !cameraViewTarget) return;
+        const timestamp = cameraViewTarget.timestamp;
+        const hasNewTimestamp = timestamp !== undefined && timestamp !== lastCameraViewTargetTimestampRef.current;
+        const hasNewRef = timestamp === undefined && cameraViewTarget !== lastCameraViewTargetRef.current;
+        if (!hasNewTimestamp && !hasNewRef) return;
+
+        lastCameraViewTargetTimestampRef.current = timestamp ?? Date.now();
+        lastCameraViewTargetRef.current = cameraViewTarget;
+
+        engineRef.current.applyCameraViewTarget(cameraViewTarget);
+    }, [cameraViewTarget]);
 
     useEffect(() => {
         if (!engineRef.current) return;
