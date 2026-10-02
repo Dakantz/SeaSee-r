@@ -23,6 +23,8 @@ export interface QuerySelectorProps {
   summaryError?: string | null;
   /** Handler to update query fields (name, filters, etc.) */
   onUpdateQuery: (id: string, field: string, value: any) => void;
+  /** Handler triggered when selected connected point cloud IDs change */
+  onSelectedConnectedChange?: (queryId: string, selectedIds: string[]) => void;
   /** Handler to delete a query */
   onDeleteQuery: (id: string) => void;
   /** Optional handler to run/stream a query */
@@ -45,6 +47,8 @@ export interface QuerySelectorProps {
   onToggleExpand?: (expanded: boolean) => void;
   /** Optional override for number of points loaded */
   loadedPointCount?: number;
+  /** Callback triggered when pointcloud editing is toggled */
+  onEdit?: (pointcloudId: string | null) => void;
 }
 
 /**
@@ -64,6 +68,7 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
   summaryLoading,
   summaryError,
   onUpdateQuery,
+  onSelectedConnectedChange,
   onDeleteQuery,
   onRunQuery: _onRunQuery,
   onUnloadQuery,
@@ -74,6 +79,7 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
   isExpanded: externalIsExpanded,
   onToggleExpand,
   loadedPointCount: propLoadedPointCount,
+  onEdit,
 }) => {
   const [internalIsExpanded, setInternalIsExpanded] = React.useState<boolean>(defaultExpanded);
 
@@ -149,37 +155,6 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
             🎯 Focus
           </button>
 
-          <button
-            type="button"
-            title={ctx?.editingPointcloudId === query.id ? "Stop editing transform" : "Edit spatial transform (Move/Rotate/Scale)"}
-            onClick={() => {
-              if (!ctx) return;
-              if (ctx.editingPointcloudId === query.id) {
-                ctx.setEditingPointcloudId(null);
-                ctx.setGizmoMode(null);
-              } else {
-                ctx.setEditingPointcloudId(query.id);
-                ctx.setGizmoMode("translate");
-              }
-            }}
-            style={{
-              padding: '4px 8px',
-              borderRadius: '4px',
-              border: '1px solid #475569',
-              backgroundColor: ctx?.editingPointcloudId === query.id ? '#2563eb' : '#1e293b',
-              color: 'white',
-              cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: 500,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              transition: 'all 0.2s',
-            }}
-          >
-            ✏️ {ctx?.editingPointcloudId === query.id ? "Editing" : "Edit"}
-          </button>
-
           {(isLoadedStream || isLoadingStream) && (
             <button
               type="button"
@@ -239,6 +214,9 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
             loadedPoints={loadedPoints}
             isLoadingStream={isLoadingStream}
             isLoadedStream={isLoadedStream}
+            onUpdateQuery={onUpdateQuery}
+            onSelectedConnectedChange={onSelectedConnectedChange}
+            onEdit={onEdit}
           />
 
           {/* Card Controls & Status Bar */}

@@ -6,6 +6,7 @@ import GizmoRollRing from "../../../PointCloudPanel/GizmoRollRing";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 import type { EngineCallbacks, EngineConfig } from "../types";
 import { getPointCloudTransform } from "../../../PointCloudPanel/utils/pointCloudTransform";
+import { isConnectedPointCloudSelected, type CustomQuery } from "../../../PointCloudPanel/CustomQueryManager";
 import { TARGET_X, TARGET_Y } from "../PointCloudOverviewEngine";
 
 export class TransformGizmoSystem {
@@ -33,6 +34,7 @@ export class TransformGizmoSystem {
     private gizmoMode: "translate" | "rotate" | "scale" | null = null;
     private summaryMap: Record<string, any> = {};
     private catalog: any[] = [];
+    private queries: CustomQuery[] = [];
 
     private boundMouseDown: () => void;
     private boundMouseUp: () => void;
@@ -249,6 +251,10 @@ export class TransformGizmoSystem {
             this.catalog = config.catalog;
             dirtyTransform = true;
         }
+        if (config.queries !== undefined) {
+            this.queries = config.queries;
+            dirtyTransform = true;
+        }
 
         if (dirtyTransform) {
             this.syncGizmoState();
@@ -264,11 +270,38 @@ export class TransformGizmoSystem {
             return;
         }
 
+        const query = this.queries?.find((q) => q.id === this.editingPointcloudId);
+        if (query) {
+            const summary = this.summaryMap?.[query.id];
+            const connectedPcs = summary?.connected_pointclouds || [];
+            if (connectedPcs.length > 0) {
+                const selectedPcs = connectedPcs.filter((pc: any) => isConnectedPointCloudSelected(query, pc.id));
+                if (selectedPcs.length === 0) {
+                    this.transformControls.detach();
+                    this.activeTargetId = null;
+                    return;
+                }
+            }
+        } else if (this.queries && this.queries.length > 0) {
+            for (const q of this.queries) {
+                const summary = this.summaryMap?.[q.id];
+                const isConnected = summary?.connected_pointclouds?.some((pc: any) => pc && String(pc.id) === this.editingPointcloudId);
+                const isFiltered = q.filters?.some((f) => f.field === "pointcloud_id" && String(f.value) === this.editingPointcloudId);
+                if (isConnected || isFiltered) {
+                    if (!isConnectedPointCloudSelected(q, this.editingPointcloudId)) {
+                        this.transformControls.detach();
+                        this.activeTargetId = null;
+                        return;
+                    }
+                }
+            }
+        }
+
         this.activeTargetId = this.editingPointcloudId;
         this.transformControls.setMode(this.gizmoMode);
 
         // Retrieve initial transformation matrix (M_world) and center point (c)
-        const { matrixArr, center } = getPointCloudTransform(this.activeTargetId, this.summaryMap, this.catalog);
+        const { matrixArr, center } = getPointCloudTransform(this.activeTargetId, this.summaryMap, this.catalog, query);
         const [cx, cy, cz] = center;
 
         const matWorld = (matrixArr && matrixArr.length === 16)
@@ -295,7 +328,8 @@ export class TransformGizmoSystem {
 
         if (!this.activeTargetId) return;
 
-        const { center } = getPointCloudTransform(this.activeTargetId, this.summaryMap, this.catalog);
+        const query = this.queries?.find((q) => q.id === this.activeTargetId);
+        const { center } = getPointCloudTransform(this.activeTargetId, this.summaryMap, this.catalog, query);
         const [cx, cy, cz] = center;
 
         const matPivot = this.pivotGroup.matrix;
@@ -314,7 +348,8 @@ export class TransformGizmoSystem {
 
         this.pivotGroup.updateMatrix();
 
-        const { center } = getPointCloudTransform(this.activeTargetId, this.summaryMap, this.catalog);
+        const query = this.queries?.find((q) => q.id === this.activeTargetId);
+        const { center } = getPointCloudTransform(this.activeTargetId, this.summaryMap, this.catalog, query);
         const [cx, cy, cz] = center;
 
         // Convert pivot delta matrix (matPivot) back to full world matrix (matWorld):

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { EngineCallbacks, EngineConfig } from "../types";
 import type { CustomQuery, QuerySummaryData } from "../../../PointCloudPanel/CustomQueryManager";
+import { isConnectedPointCloudSelected } from "../../../PointCloudPanel/CustomQueryManager";
 import type { PointCloudMetadataResponse } from "../../../../client";
 import type { FilterRule } from "../../../PointCloudPanel/utils/filterUtils";
 import { getPointCloudTransform } from "../../../PointCloudPanel/utils/pointCloudTransform";
@@ -201,6 +202,7 @@ export class PointCloudSystem {
                             targets.push({
                                 key,
                                 pcId,
+                                query,
                                 filters: cleanFilters,
                                 bounds,
                                 matrixArr,
@@ -226,6 +228,7 @@ export class PointCloudSystem {
                             targets.push({
                                 key,
                                 pcId,
+                                query,
                                 filters: cleanFilters,
                                 bounds,
                                 matrixArr,
@@ -237,7 +240,7 @@ export class PointCloudSystem {
             }
         }
 
-        this.dynamicLodController.syncTargets(targets);
+        this.dynamicLodController.syncTargets(targets, this.queries);
     }
 
     public update(camera: THREE.Camera): void {
@@ -258,25 +261,44 @@ export class PointCloudSystem {
     public updateTargetTransform(id: string, matrixArray: number[]): void {
         const targetKeys = new Set<string>();
 
-        // 1. Direct match with target key
-        targetKeys.add(id);
+        const query = this.queries?.find((q) => q.id === id);
 
-        // 2. If id is query ID, resolve connected pointclouds
-        const summary = this.summaryMap ? this.summaryMap[id] : undefined;
-        if (summary?.connected_pointclouds) {
-            for (const pc of summary.connected_pointclouds) {
-                if (pc?.id) targetKeys.add(String(pc.id));
+        // 1. If id is query ID, resolve ONLY selected connected pointclouds
+        if (query) {
+            const summary = this.summaryMap ? this.summaryMap[id] : undefined;
+            if (summary?.connected_pointclouds) {
+                for (const pc of summary.connected_pointclouds) {
+                    if (pc?.id && isConnectedPointCloudSelected(query, String(pc.id))) {
+                        targetKeys.add(String(pc.id));
+                    }
+                }
+            }
+            const pcFilter = query.filters?.find((f) => f.field === "pointcloud_id")?.value;
+            if (pcFilter && isConnectedPointCloudSelected(query, String(pcFilter))) {
+                targetKeys.add(String(pcFilter));
+            }
+        } else {
+            // Direct pointcloud ID: check if it belongs to any query where it is selected
+            let isAllowed = true;
+            if (this.queries && this.queries.length > 0) {
+                for (const q of this.queries) {
+                    const summary = this.summaryMap ? this.summaryMap[q.id] : undefined;
+                    const isConnected = summary?.connected_pointclouds?.some((pc) => pc && String(pc.id) === id);
+                    const isFiltered = q.filters?.some((f) => f.field === "pointcloud_id" && String(f.value) === id);
+                    if (isConnected || isFiltered) {
+                        if (!isConnectedPointCloudSelected(q, id)) {
+                            isAllowed = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (isAllowed) {
+                targetKeys.add(id);
             }
         }
 
-        // 3. Query filters
-        const query = this.queries?.find((q) => q.id === id);
-        const pcFilter = query?.filters?.find((f) => f.field === "pointcloud_id")?.value;
-        if (pcFilter) {
-            targetKeys.add(String(pcFilter));
-        }
-
-        // 4. Update targets in dynamicLodController
+        // Update targets in dynamicLodController
         for (const key of targetKeys) {
             this.dynamicLodController.updateTargetTransform(key, matrixArray);
         }

@@ -17,6 +17,9 @@ export interface QuerySummaryProps {
   loadedPoints?: number;
   isLoadingStream?: boolean;
   isLoadedStream?: boolean;
+  onUpdateQuery?: (id: string, field: string, value: any) => void;
+  onSelectedConnectedChange?: (queryId: string, selectedIds: string[]) => void;
+  onEdit?: (pointcloudId: string | null) => void;
 }
 
 /**
@@ -90,10 +93,39 @@ const ConnectedMetadataCard: React.FC<{
   queryId?: string;
   queryFilters?: FilterRule[];
   onRefreshSummary?: (queryId: string, filters?: FilterRule[]) => void;
-}> = ({ meta, cameraHeaders = [], defaultExpanded = false, queryId, queryFilters, onRefreshSummary }) => {
+  isChecked?: boolean;
+  onToggleSelect?: (id: string) => void;
+  onEdit?: (id: string | null) => void;
+}> = ({
+  meta,
+  cameraHeaders = [],
+  defaultExpanded = false,
+  queryId,
+  queryFilters,
+  onRefreshSummary,
+  isChecked = true,
+  onToggleSelect,
+  onEdit,
+}) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(defaultExpanded);
 
   const ctx = useContext(PLYPointCloudContext);
+
+  const isEditing = Boolean(meta.id && ctx?.editingPointcloudId === meta.id);
+
+  const handleToggleEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!meta.id) return;
+    if (isEditing) {
+      ctx?.setEditingPointcloudId(null);
+      ctx?.setGizmoMode(null);
+      onEdit?.(null);
+    } else {
+      ctx?.setEditingPointcloudId(meta.id);
+      ctx?.setGizmoMode("translate");
+      onEdit?.(meta.id);
+    }
+  };
 
   const handleResetPointcloudTransform = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -186,14 +218,26 @@ const ConnectedMetadataCard: React.FC<{
   };
 
   return (
-    <div className={`query-summary__connected-card ${isSelected ? "query-summary__connected-card--selected" : ""}`}>
+    <div className={`query-summary__connected-card ${isSelected ? "query-summary__connected-card--selected" : ""} ${isEditing ? "query-summary__connected-card--editing" : ""}`}>
       <div
         className="query-summary__connected-card-header"
         onClick={() => setIsExpanded(!isExpanded)}
         title="Click to toggle metadata details"
       >
         <div className="query-summary__connected-card-title">
-          <span>📁 {meta.orig_filename || meta.safe_filename || meta.id.substring(0, 8)}</span>
+          <input
+            type="checkbox"
+            checked={isChecked}
+            onChange={(e) => {
+              e.stopPropagation();
+              onToggleSelect?.(meta.id);
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="query-summary__connected-checkbox"
+            title={isChecked ? "Deselect this point cloud" : "Select this point cloud"}
+            aria-label={`Select point cloud ${meta.orig_filename || meta.safe_filename || meta.id}`}
+          />
+          <span>{meta.orig_filename || meta.safe_filename || meta.id.substring(0, 8)}</span>
           <span className="query-summary__connected-badge">
             {(meta.number_of_points ?? 0).toLocaleString()} pts
           </span>
@@ -214,6 +258,14 @@ const ConnectedMetadataCard: React.FC<{
             title={isSelected ? "Click to deselect dataset" : "Click to select dataset for video logs and telemetry"}
           >
             {isSelected ? "✓ Selected" : "Select"}
+          </button>
+          <button
+            type="button"
+            className={`query-summary__connected-edit-btn ${isEditing ? "query-summary__connected-edit-btn--active" : ""}`}
+            onClick={handleToggleEdit}
+            title={isEditing ? `Stop editing transform for ${meta.orig_filename || meta.safe_filename || meta.id}` : `Edit spatial transform (Move/Rotate/Scale) for ${meta.orig_filename || meta.safe_filename || meta.id}`}
+          >
+            ✏️ {isEditing ? "Editing" : "Edit"}
           </button>
           {meta.id && (
             <Link
@@ -366,14 +418,24 @@ const ConnectedMetadataCard: React.FC<{
             <div className="query-summary__matrix-section">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                 <span className="query-summary__connected-field-label">Transform Matrix (4x4):</span>
-                <button
-                  type="button"
-                  title={`Reset transform matrix for pointcloud ${meta.id} to identity matrix`}
-                  onClick={handleResetPointcloudTransform}
-                  className="query-summary__btn--reset-matrix"
-                >
-                  ↺ Reset Matrix
-                </button>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    type="button"
+                    title={isEditing ? `Stop editing transform for ${meta.orig_filename || meta.safe_filename || meta.id}` : `Edit spatial transform (Move/Rotate/Scale) for ${meta.orig_filename || meta.safe_filename || meta.id}`}
+                    onClick={handleToggleEdit}
+                    className={`query-summary__connected-edit-btn ${isEditing ? "query-summary__connected-edit-btn--active" : ""}`}
+                  >
+                    ✏️ {isEditing ? "Editing Transform" : "Edit Transform"}
+                  </button>
+                  <button
+                    type="button"
+                    title={`Reset transform matrix for pointcloud ${meta.id} to identity matrix`}
+                    onClick={handleResetPointcloudTransform}
+                    className="query-summary__btn--reset-matrix"
+                  >
+                    ↺ Reset Matrix
+                  </button>
+                </div>
               </div>
               <div className="query-summary__matrix-grid">
                 {meta.transform_matrix.map((val, idx) => (
@@ -425,6 +487,9 @@ export const QuerySummary: React.FC<QuerySummaryProps> = ({
   loadedPoints = 0,
   isLoadingStream = false,
   isLoadedStream = false,
+  onUpdateQuery,
+  onSelectedConnectedChange,
+  onEdit,
 }) => {
   const sortedConnectedPointclouds = useMemo(() => {
     if (!summary?.connected_pointclouds || summary.connected_pointclouds.length === 0) {
@@ -458,6 +523,57 @@ export const QuerySummary: React.FC<QuerySummaryProps> = ({
       return (a.orig_filename || a.id || "").localeCompare(b.orig_filename || b.id || "");
     });
   }, [summary?.connected_pointclouds]);
+
+  const allConnectedIds = useMemo(() => {
+    return (summary?.connected_pointclouds ?? []).map((pc) => pc.id);
+  }, [summary?.connected_pointclouds]);
+
+  const [internalSelectedIds, setInternalSelectedIds] = useState<string[] | undefined>(
+    query.selectedConnectedPointCloudIds
+  );
+
+  React.useEffect(() => {
+    if (query.selectedConnectedPointCloudIds !== undefined) {
+      setInternalSelectedIds(query.selectedConnectedPointCloudIds);
+    }
+  }, [query.selectedConnectedPointCloudIds]);
+
+  const selectedIds = useMemo(() => {
+    if (query.selectedConnectedPointCloudIds !== undefined) {
+      return query.selectedConnectedPointCloudIds;
+    }
+    if (internalSelectedIds !== undefined) {
+      return internalSelectedIds;
+    }
+    return allConnectedIds;
+  }, [query.selectedConnectedPointCloudIds, internalSelectedIds, allConnectedIds]);
+
+  const updateSelection = (newSelectedIds: string[]) => {
+    setInternalSelectedIds(newSelectedIds);
+    if (onSelectedConnectedChange) {
+      onSelectedConnectedChange(query.id, newSelectedIds);
+    } else if (onUpdateQuery) {
+      onUpdateQuery(query.id, "selectedConnectedPointCloudIds", newSelectedIds);
+    }
+  };
+
+  const handleToggleMetadata = (metadataId: string) => {
+    const isCurrentlySelected = selectedIds.includes(metadataId);
+    const newSelectedIds = isCurrentlySelected
+      ? selectedIds.filter((id) => id !== metadataId)
+      : [...selectedIds, metadataId];
+    updateSelection(newSelectedIds);
+  };
+
+  const handleSelectAll = () => {
+    updateSelection([...allConnectedIds]);
+  };
+
+  const handleDeselectAll = () => {
+    updateSelection([]);
+  };
+
+  const allSelected = allConnectedIds.length > 0 && selectedIds.length === allConnectedIds.length;
   return (
     <div className="query-summary">
       <div className="query-summary__header">
@@ -544,14 +660,37 @@ export const QuerySummary: React.FC<QuerySummaryProps> = ({
           {/* Connected Point Clouds Metadata Section */}
           {summary.connected_pointclouds && summary.connected_pointclouds.length > 0 ? (
             <div className="query-summary__connected-section">
-              <span className="query-summary__label">
-                Connected Metadata ({summary.connected_pointclouds.length}):
-              </span>
+              <div className="query-summary__connected-header">
+                <span className="query-summary__label">
+                  Connected Metadata ({selectedIds.length}/{summary.connected_pointclouds.length}):
+                </span>
+                <div className="query-summary__connected-bulk-actions">
+                  <button
+                    type="button"
+                    className="query-summary__bulk-btn"
+                    onClick={handleSelectAll}
+                    disabled={allSelected}
+                    title="Select all connected point clouds"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    className="query-summary__bulk-btn"
+                    onClick={handleDeselectAll}
+                    disabled={selectedIds.length === 0}
+                    title="Deselect all connected point clouds"
+                  >
+                    Deselect All
+                  </button>
+                </div>
+              </div>
               <div className="query-summary__connected-list">
                 {sortedConnectedPointclouds.map((meta, idx) => {
                   const matchingCameraHeaders = summary.connected_camera_headers?.filter(
                     (cam) => cam.pointcloud_id === meta.id
                   );
+                  const isChecked = selectedIds.includes(meta.id);
                   return (
                     <ConnectedMetadataCard
                       key={meta.id || `meta-${idx}`}
@@ -561,6 +700,9 @@ export const QuerySummary: React.FC<QuerySummaryProps> = ({
                       queryId={query.id}
                       queryFilters={query.filters}
                       onRefreshSummary={onRefreshSummary}
+                      isChecked={isChecked}
+                      onToggleSelect={handleToggleMetadata}
+                      onEdit={onEdit}
                     />
                   );
                 })}

@@ -45,6 +45,12 @@ const PointCloudSidebar: React.FC<PointCloudSidebarProps> = ({ onSelect, selecte
         fetchPointClouds();
     }, [refreshKey]);
 
+    useEffect(() => {
+        if (editingId && !selectedIds.includes(editingId)) {
+            onEditSelect?.(null);
+        }
+    }, [editingId, selectedIds, onEditSelect]);
+
     const renderItemName = (item: PointCloudMetadataResponse) => {
         return item.orig_filename || item.safe_filename || item.id || 'Unnamed Point Cloud';
     };

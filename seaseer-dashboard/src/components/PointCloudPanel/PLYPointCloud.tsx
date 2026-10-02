@@ -325,7 +325,7 @@ function QuerySummaryOutlines() {
                         typeof pc.min_z === "number" && typeof pc.max_z === "number"
                     ) {
                         const isPcHovered = isQueryHovered || pc.id === hoveredId;
-                        const isPcSelected = isQuerySelected || pc.id === editingPointcloudId;
+                        const isPcSelected = pc.id === editingPointcloudId || (isQuerySelected && summary.connected_pointclouds!.length === 1);
 
                         items.push({
                             id: `connected-pc-bbox-${q.id}-${pc.id || idx}`,
@@ -672,7 +672,7 @@ export function PointCloudTransformItem({
         if (editingPointcloudId === id) return true;
 
         const summary = summaryMap[editingPointcloudId];
-        if (summary?.connected_pointclouds?.some((pc) => pc.id === id)) {
+        if (summary?.connected_pointclouds && summary.connected_pointclouds.length === 1 && summary.connected_pointclouds[0].id === id) {
             return true;
         }
 

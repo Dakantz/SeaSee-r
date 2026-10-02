@@ -1075,6 +1075,55 @@
     gap: 4px;
 }
 
+.query-summary__connected-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.query-summary__connected-header .query-summary__label {
+    margin-bottom: 0;
+}
+
+.query-summary__connected-bulk-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.query-summary__bulk-btn {
+    background: transparent;
+    border: 1px solid var(--border-color, #475569);
+    border-radius: 4px;
+    color: var(--text-secondary, #94a3b8);
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover:not(:disabled) {
+        background: rgba(56, 189, 248, 0.1);
+        border-color: var(--color-accent-text, #38bdf8);
+        color: var(--color-accent-text, #38bdf8);
+    }
+
+    &:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+}
+
+.query-summary__connected-checkbox {
+    cursor: pointer;
+    accent-color: var(--color-accent-text, #38bdf8);
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    flex-shrink: 0;
+}
+
 .query-summary__connected-list {
     display: flex;
     flex-direction: column;
@@ -1152,11 +1201,59 @@
     box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
 }
 
+.query-summary__connected-card--editing {
+    border-color: #3b82f6 !important;
+    background: rgba(37, 99, 235, 0.1) !important;
+    box-shadow: 0 0 12px rgba(59, 130, 246, 0.35) !important;
+}
+
 .query-summary__connected-actions {
     display: flex;
     align-items: center;
     gap: 6px;
     flex-shrink: 0;
+}
+
+.query-summary__connected-edit-btn {
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px solid rgba(59, 130, 246, 0.35);
+    color: #60a5fa;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 2px 7px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s ease;
+    user-select: none;
+
+    &:hover {
+        background: rgba(59, 130, 246, 0.25);
+        border-color: #60a5fa;
+        color: #ffffff;
+        transform: translateY(-1px);
+    }
+
+    &:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px #3b82f6;
+    }
+}
+
+.query-summary__connected-edit-btn--active {
+    background: #2563eb;
+    border-color: #3b82f6;
+    color: #ffffff;
+    font-weight: 700;
+    box-shadow: 0 0 8px rgba(37, 99, 235, 0.5);
+
+    &:hover {
+        background: #1d4ed8;
+        border-color: #60a5fa;
+        color: #ffffff;
+    }
 }
 
 .query-summary__connected-select-btn {

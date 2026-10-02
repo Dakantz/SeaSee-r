@@ -5,6 +5,10 @@ import {
     EmptyPointCloudBufferError,
 } from "../../../PointCloudPanel/utils/pointCloudLoader";
 import type { FilterRule } from "../../../PointCloudPanel/utils/filterUtils";
+import {
+    isConnectedPointCloudSelected,
+    type CustomQuery,
+} from "../../../PointCloudPanel/CustomQueryManager";
 
 export interface Bounds3D {
     minX: number;
@@ -48,6 +52,7 @@ export function getLodColor(lod: number): string {
 export interface PointCloudTarget {
     key: string;
     pcId: string;
+    query?: CustomQuery;
     filters?: FilterRule[];
     bounds: Bounds3D;
     matrixArr?: number[];
@@ -271,6 +276,9 @@ class TargetLODManager {
         newActiveKeys: Set<string>,
         tasksToQueue: FetchTask[]
     ): void {
+        if (this.target.query && !isConnectedPointCloudSelected(this.target.query, this.target.pcId)) {
+            return;
+        }
         // Transform camera position into local pointcloud coordinate space
         const localCamPos = camera.position.clone().applyMatrix4(this.invWorldTransformMatrix);
         const distToCenter = localCamPos.distanceTo(this.domainCenter);
@@ -833,6 +841,7 @@ export class DynamicLODController {
     private config: DynamicLODConfig;
 
     private targetManagers: Map<string, TargetLODManager> = new Map();
+    private queries: CustomQuery[] = [];
     private activeKeys: Set<string> = new Set();
     private pendingQueue: FetchTask[] = [];
     private activeFetches: number = 0;
@@ -861,10 +870,47 @@ export class DynamicLODController {
         this.showOutlines = !!this.config.showOutlines;
     }
 
-    public syncTargets(targets: PointCloudTarget[]): void {
-        const targetKeys = new Set(targets.map((t) => t.key));
+    public isTargetSelected(target: PointCloudTarget): boolean {
+        // 1. Direct query attached to target
+        if (target.query) {
+            return isConnectedPointCloudSelected(target.query, target.pcId);
+        }
 
-        // Remove targets that no longer exist
+        // 2. Look up in stored queries
+        if (this.queries && this.queries.length > 0) {
+            for (const q of this.queries) {
+                const summary = q.summary;
+                const isConnected = summary?.connected_pointclouds?.some(
+                    (pc) => pc && String(pc.id) === target.pcId
+                );
+                const isFiltered = q.filters?.some(
+                    (f) => f.field === "pointcloud_id" && String(f.value) === target.pcId
+                );
+                if (isConnected || isFiltered) {
+                    if (!isConnectedPointCloudSelected(q, target.pcId)) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
+
+    public setQueries(queries: CustomQuery[]): void {
+        this.queries = queries;
+    }
+
+    public syncTargets(targets: PointCloudTarget[], queries?: CustomQuery[]): void {
+        if (queries !== undefined) {
+            this.queries = queries;
+        }
+
+        // Only display / load point clouds if isConnectedPointCloudSelected is true
+        const validTargets = targets.filter((target) => this.isTargetSelected(target));
+        const targetKeys = new Set(validTargets.map((t) => t.key));
+
+        // Remove targets that no longer exist or are deselected
         for (const [key, manager] of this.targetManagers.entries()) {
             if (!targetKeys.has(key)) {
                 manager.destroy();
@@ -872,8 +918,8 @@ export class DynamicLODController {
             }
         }
 
-        // Add or update targets
-        for (const target of targets) {
+        // Add or update valid targets
+        for (const target of validTargets) {
             const existing = this.targetManagers.get(target.key);
             if (existing) {
                 existing.updateTransform(target);
@@ -883,8 +929,12 @@ export class DynamicLODController {
             }
         }
 
+        // Evict any pending tasks for targets that are no longer active
+        this.pendingQueue = this.pendingQueue.filter((task) => targetKeys.has(task.targetKey));
+
         // Force update on next frame
         this.lastCamPos.set(NaN, NaN, NaN);
+        this.notifyPointCount();
     }
 
     public update(camera: THREE.Camera): void {
@@ -952,6 +1002,10 @@ export class DynamicLODController {
             const manager = this.targetManagers.get(task.targetKey);
             if (!manager) continue;
 
+            if (!this.isTargetSelected(manager.target)) {
+                continue;
+            }
+
             const abortController = new AbortController();
             manager.registerLoadingChunk(task.key, task.lod, task.bounds, abortController);
             this.activeFetches++;
@@ -965,6 +1019,11 @@ export class DynamicLODController {
 
                     const currentManager = this.targetManagers.get(task.targetKey);
                     if (currentManager) {
+                        if (!this.isTargetSelected(currentManager.target)) {
+                            geometry.dispose();
+                            return;
+                        }
+
                         // Save geometry in background cache regardless of current view state
                         currentManager.saveToCache(task.key, task.lod, task.bounds, geometry);
 

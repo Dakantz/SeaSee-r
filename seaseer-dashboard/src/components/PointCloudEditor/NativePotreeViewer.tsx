@@ -24,8 +24,13 @@ const NativePotreeViewer: React.FC<NativePotreeViewerProps> = ({ pointCloudIds, 
     // Initialize Potree
     usePotreeViewer(containerRef, renderAreaRef);
 
+    // Only allow editing if editingPointcloudId is in pointCloudIds (selected point clouds)
+    const effectiveEditingId = (editingPointcloudId && pointCloudIds.includes(editingPointcloudId))
+        ? editingPointcloudId
+        : null;
+
     // Initialize TransformControls (Gizmo)
-    useTransformControls(gizmoMode, editingPointcloudId);
+    useTransformControls(gizmoMode, effectiveEditingId);
 
 
     return (

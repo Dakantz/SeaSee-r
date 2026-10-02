@@ -40,11 +40,13 @@ const PointCloudEditorPageContent: React.FC = () => {
         
         if (newId) {
             setSelectedIds(prev => {
-                if (prev.includes(newId)) {
-                    return prev.filter(i => i !== newId);
-                } else {
-                    return [...prev, newId];
+                const next = prev.includes(newId)
+                    ? prev.filter(i => i !== newId)
+                    : [...prev, newId];
+                if (editingPointcloudId && !next.includes(editingPointcloudId)) {
+                    setEditingPointcloudId(null);
                 }
+                return next;
             });
             // We can optionally navigate if we wanted to change the URL, but keeping state is cleaner for multiselect.
         }

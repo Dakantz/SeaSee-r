@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import * as THREE from "three";
 import type { PointCloudMetadataResponse } from "../../client";
-import type { QuerySummaryData, CustomQuery } from "./CustomQueryManager";
+import { type QuerySummaryData, type CustomQuery, isConnectedPointCloudSelected } from "./CustomQueryManager";
 import { fetchPointCloudSummary } from "./utils/pointCloudApi.ts";
 import { type FilterRule, sanitizeNonSpatialFilters } from "./utils/filterUtils.ts";
 
@@ -247,23 +247,43 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
             const targetUuids = new Set<string>();
 
             if (uuidRegex.test(id)) {
-                targetUuids.add(id);
+                let isAllowed = true;
+                if (queries && queries.length > 0) {
+                    for (const q of queries) {
+                        const summary = summaryMap[q.id];
+                        const isConnected = summary?.connected_pointclouds?.some((pc) => pc && String(pc.id) === id);
+                        const isFiltered = q.filters?.some((f) => f.field === "pointcloud_id" && String(f.value) === id);
+                        if (isConnected || isFiltered) {
+                            if (!isConnectedPointCloudSelected(q, id)) {
+                                isAllowed = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (isAllowed) {
+                    targetUuids.add(id);
+                }
             } else {
                 // Look up in summaryMap for connected pointclouds
                 const summary = summaryMap[id];
+                const query = queries.find((q) => q.id === id);
                 if (summary?.connected_pointclouds) {
                     for (const pc of summary.connected_pointclouds) {
                         if (pc.id && uuidRegex.test(pc.id)) {
-                            targetUuids.add(pc.id);
+                            if (!query || isConnectedPointCloudSelected(query, pc.id)) {
+                                targetUuids.add(pc.id);
+                            }
                         }
                     }
                 }
 
                 // Look up in query filters
-                const query = queries.find((q) => q.id === id);
                 const filterPcId = query?.filters?.find((f) => f.field === "pointcloud_id")?.value;
                 if (filterPcId && uuidRegex.test(String(filterPcId))) {
-                    targetUuids.add(String(filterPcId));
+                    if (!query || isConnectedPointCloudSelected(query, String(filterPcId))) {
+                        targetUuids.add(String(filterPcId));
+                    }
                 }
             }
 

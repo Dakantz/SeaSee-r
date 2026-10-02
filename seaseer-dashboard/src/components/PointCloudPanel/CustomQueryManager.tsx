@@ -19,6 +19,7 @@ export interface CustomQuery {
   name: string; // Display name / label for the query
   filters?: FilterRule[]; // Structured filter rules for field__operator=value queries
   summary?: QuerySummaryData | null; // Connected summary metadata & bounding box
+  selectedConnectedPointCloudIds?: string[]; // IDs of selected ConnectedPointCloudMetadata (all selected by default if undefined)
   createdAt?: string; // ISO creation timestamp
   updatedAt?: string; // ISO update timestamp
 }
@@ -84,6 +85,34 @@ export interface ConnectedPointCloudMetadata {
   dense_points?: number | null;
   [key: string]: any;
 }
+
+/**
+ * Helper to determine if a ConnectedPointCloudMetadata is selected for a given CustomQuery.
+ * By default, all ConnectedPointCloudMetadata are selected if selectedConnectedPointCloudIds is undefined.
+ */
+export const isConnectedPointCloudSelected = (
+  query: CustomQuery,
+  pointCloudId: string
+): boolean => {
+  if (query.selectedConnectedPointCloudIds === undefined) {
+    return true;
+  }
+  return query.selectedConnectedPointCloudIds.includes(pointCloudId);
+};
+
+/**
+ * Helper to get the list of selected ConnectedPointCloudMetadata IDs for a query.
+ * Falls back to all connected pointclouds if none is explicitly specified.
+ */
+export const getSelectedConnectedPointCloudIds = (
+  query: CustomQuery,
+  connectedPointClouds?: ConnectedPointCloudMetadata[]
+): string[] => {
+  if (query.selectedConnectedPointCloudIds !== undefined) {
+    return query.selectedConnectedPointCloudIds;
+  }
+  return (connectedPointClouds || []).map((pc) => pc.id);
+};
 
 export interface QuerySummaryData {
   total_points: number;
@@ -193,13 +222,19 @@ export interface CustomQueryManagerProps {
   onUpdateQuery?: (query: CustomQuery) => void;
   /** Callback triggered whenever the list of queries changes */
   onQueriesChange?: (queries: CustomQuery[]) => void;
+  /** Callback triggered when ConnectedPointCloudMetadata selection changes for a query */
+  onSelectedConnectedPointCloudChange?: (queryId: string, selectedIds: string[]) => void;
   /** Callback triggered to focus the camera on specific 3D coordinates */
   onFocusCenter?: (center: [number, number, number] | { x: number; y: number; z: number }, offset?: [number, number, number] | number) => void;
+
+  /** Currently active editing pointcloud ID */
+  editingPointcloudId?: string | null;
+  /** Callback triggered when pointcloud editing is toggled */
+  onEdit?: (pointcloudId: string | null) => void;
 
   /* Legacy props maintained for component API compatibility */
   hoveredId?: string | null;
   onMoveCamera?: (pointcloudId: string) => void;
-  onEdit?: (pointcloudId: string) => void;
   onHover?: (pointcloudId: string | null) => void;
   onSelect?: (pointcloudId: string) => void;
   pointclouds?: any[];
@@ -221,16 +256,19 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
   loadedQueryIds,
   loadingQueryIds,
   hoveredId: externalHoveredId,
+  editingPointcloudId: propEditingPointcloudId,
   onAddQuery,
   onRunQuery,
   onUnloadQuery,
   onDeleteQuery,
   onUpdateQuery,
   onQueriesChange,
+  onSelectedConnectedPointCloudChange,
   onFocusCenter,
   onMoveCamera,
   onSelect,
   onHover: externalOnHover,
+  onEdit,
 }) => {
   // 1. Client-Side Storage & Local State Initialization
   const [internalQueries, setInternalQueries] = useState<CustomQuery[]>(() => {
@@ -303,6 +341,30 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
   const updateSummaryMap = (updater: (prev: Record<string, QuerySummaryData>) => Record<string, QuerySummaryData>) => {
     setLocalSummaryMap(updater);
     contextSetSummaryMap?.(updater);
+  };
+
+  const effectiveEditingPointcloudId = propEditingPointcloudId !== undefined
+    ? propEditingPointcloudId
+    : (editingPointcloudId ?? null);
+
+  const activeEditingMetadata = React.useMemo(() => {
+    if (!effectiveEditingPointcloudId) return null;
+    for (const q of queries) {
+      const summary = summaryMap[q.id];
+      const found = summary?.connected_pointclouds?.find((pc) => pc.id === effectiveEditingPointcloudId);
+      if (found) return found;
+    }
+    return null;
+  }, [effectiveEditingPointcloudId, queries, summaryMap]);
+
+  const handleEdit = (id: string | null) => {
+    onEdit?.(id);
+    setEditingPointcloudId?.(id);
+    if (!id) {
+      setGizmoMode?.(null);
+    } else if (!gizmoMode) {
+      setGizmoMode?.("translate");
+    }
   };
 
   const effectiveHoveredId = externalHoveredId !== undefined ? externalHoveredId : (contextHoveredId ?? null);
@@ -520,7 +582,7 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
         </button>
       </div>
 
-      {editingPointcloudId && (
+      {effectiveEditingPointcloudId && (
         <div style={{
           background: 'rgba(30, 41, 59, 0.95)',
           border: '1px solid #3b82f6',
@@ -534,11 +596,11 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '12px', fontWeight: 600, color: '#60a5fa' }}>
-              ✏️ Gizmo Controls (Transforming Active)
+              ✏️ Gizmo Controls: {activeEditingMetadata ? (activeEditingMetadata.orig_filename || activeEditingMetadata.safe_filename || activeEditingMetadata.id.substring(0, 8)) : (effectiveEditingPointcloudId.length > 8 ? effectiveEditingPointcloudId.substring(0, 8) : effectiveEditingPointcloudId)} (Transforming Active)
             </span>
             <button
               type="button"
-              onClick={() => { setEditingPointcloudId?.(null); setGizmoMode?.(null); }}
+              onClick={() => handleEdit(null)}
               style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '13px' }}
               title="Stop editing transform"
             >
@@ -578,7 +640,7 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setGizmoMode?.(null)}
+              onClick={() => handleEdit(null)}
               style={{
                 flex: 1, padding: '4px 6px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
                 backgroundColor: gizmoMode === null ? '#991b1b' : '#334155', color: 'white'
@@ -602,14 +664,18 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
             const extractedId = pcIdRule ? String(pcIdRule) : null;
             const summary = summaryMap[q.id];
             const connectedPcs = summary?.connected_pointclouds || [];
+            const selectedConnectedIds = q.selectedConnectedPointCloudIds;
+            const activeConnectedPcs = selectedConnectedIds
+              ? connectedPcs.filter((pc) => selectedConnectedIds.includes(pc.id))
+              : connectedPcs;
             const isLoadingStream =
               isQueryLoading(q.id) ||
               (extractedId ? isQueryLoading(extractedId) : false) ||
-              connectedPcs.some((pc) => isQueryLoading(pc.id));
+              activeConnectedPcs.some((pc) => isQueryLoading(pc.id));
             const isLoadedStream =
               isQueryLoaded(q.id) ||
               (extractedId ? isQueryLoaded(extractedId) : false) ||
-              connectedPcs.some((pc) => isQueryLoaded(pc.id));
+              (activeConnectedPcs.length > 0 && activeConnectedPcs.some((pc) => isQueryLoaded(pc.id)));
             const saveStatus = saveStatusMap[q.id];
             const isHovered = q.id === effectiveHoveredId;
 
@@ -625,12 +691,17 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
                 summaryLoading={summaryLoadingMap[q.id]}
                 summaryError={summaryErrorMap[q.id]}
                 onUpdateQuery={handleUpdateQuery}
+                onSelectedConnectedChange={(queryId, selectedIds) => {
+                  handleUpdateQuery(queryId, "selectedConnectedPointCloudIds", selectedIds);
+                  onSelectedConnectedPointCloudChange?.(queryId, selectedIds);
+                }}
                 onDeleteQuery={handleDeleteQuery}
                 onRunQuery={handleRun}
                 onUnloadQuery={onUnloadQuery}
                 onFocusQuery={handleFocusQuery}
                 onRefreshSummary={fetchQuerySummary}
                 onHover={handleHover}
+                onEdit={handleEdit}
               />
             );
           })}

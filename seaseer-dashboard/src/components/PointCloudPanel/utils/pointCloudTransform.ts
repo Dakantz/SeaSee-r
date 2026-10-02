@@ -1,10 +1,12 @@
-import type { QuerySummaryData, ConnectedPointCloudMetadata } from "../CustomQueryManager";
+import type { QuerySummaryData, ConnectedPointCloudMetadata, CustomQuery } from "../CustomQueryManager";
+import { isConnectedPointCloudSelected } from "../CustomQueryManager";
 import type { PointCloudMetadataResponse } from "../../../client";
 
 export function getPointCloudTransform(
     queryId: string,
     summaryMap?: Record<string, QuerySummaryData>,
-    catalog?: PointCloudMetadataResponse[]
+    catalog?: PointCloudMetadataResponse[],
+    query?: CustomQuery
 ): { matrixArr?: number[]; center: [number, number, number] } {
     let matrixArr: number[] | undefined;
     let center: [number, number, number] = [0, 0, 0];
@@ -55,8 +57,13 @@ export function getPointCloudTransform(
     }
 
     // 2. If no exact ID match (e.g. queryId is a query container ID), fallback to first item with valid matrix
-    if (!matrixArr && metadataList.length > 0) {
-        for (const pc of metadataList) {
+    const filteredMetadataList = query
+        ? metadataList.filter((m) => isConnectedPointCloudSelected(query, m.id))
+        : metadataList;
+    const fallbackList = filteredMetadataList.length > 0 ? filteredMetadataList : metadataList;
+
+    if (!matrixArr && fallbackList.length > 0) {
+        for (const pc of fallbackList) {
             if (pc.transform_matrix && pc.transform_matrix.length === 16) {
                 matrixArr = pc.transform_matrix;
                 break;
@@ -65,8 +72,8 @@ export function getPointCloudTransform(
     }
 
     // 3. Fallback center from metadataList if center is still [0,0,0]
-    if (center[0] === 0 && center[1] === 0 && center[2] === 0 && metadataList.length > 0) {
-        for (const pc of metadataList) {
+    if (center[0] === 0 && center[1] === 0 && center[2] === 0 && fallbackList.length > 0) {
+        for (const pc of fallbackList) {
             if (pc.center && Array.isArray(pc.center) && pc.center.length === 3) {
                 center = [Number(pc.center[0]), Number(pc.center[1]), Number(pc.center[2])];
                 break;
