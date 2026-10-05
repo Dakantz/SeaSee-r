@@ -201,10 +201,18 @@ const ConnectedMetadataCard: React.FC<{
   );
 
   const focusedTrajectoryId = useTrajectoryLogSync((state) => state.focusedTrajectoryId);
+  const focusedQueryId = useTrajectoryLogSync((state) => state.focusedQueryId);
+
+  const effectiveQueryId = queryId || query?.id;
+
+  const currentSelectedPointcloudId = focusedTrajectoryId || ctx?.selectedPointcloudId || null;
+  const currentSelectedQueryId = focusedQueryId || ctx?.selectedQueryId || null;
 
   const isSelected =
     Boolean(meta.id) &&
-    (ctx?.identifier === meta.id || focusedTrajectoryId === meta.id);
+    Boolean(effectiveQueryId) &&
+    currentSelectedPointcloudId === meta.id &&
+    currentSelectedQueryId === effectiveQueryId;
 
   const handleSelectDataset = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -212,16 +220,16 @@ const ConnectedMetadataCard: React.FC<{
 
     if (isSelected) {
       if (ctx?.selectPointcloud) {
-        ctx.selectPointcloud(null);
+        ctx.selectPointcloud(null, null);
       }
       useTrajectoryLogSync.getState().focusTrajectory(null);
       return;
     }
 
     if (ctx?.selectPointcloud) {
-      ctx.selectPointcloud(meta.id);
+      ctx.selectPointcloud(meta.id, effectiveQueryId);
     }
-    useTrajectoryLogSync.getState().focusTrajectory(meta.id, true);
+    useTrajectoryLogSync.getState().focusTrajectory(meta.id, true, effectiveQueryId);
   };
 
   const isCamerasVisible = Boolean(
@@ -330,16 +338,16 @@ const ConnectedMetadataCard: React.FC<{
           </button>
           {meta.id && (
             <Link
-              to={`/logs?map=${meta.id}`}
+              to={effectiveQueryId ? `/logs?map=${meta.id}&query=${effectiveQueryId}` : `/logs?map=${meta.id}`}
               target="_blank"
               rel="noopener noreferrer"
               className="query-summary__connected-link-btn"
               onClick={(e) => {
                 e.stopPropagation();
                 if (ctx?.selectPointcloud) {
-                  ctx.selectPointcloud(meta.id);
+                  ctx.selectPointcloud(meta.id, effectiveQueryId);
                 }
-                useTrajectoryLogSync.getState().focusTrajectory(meta.id, true);
+                useTrajectoryLogSync.getState().focusTrajectory(meta.id, true, effectiveQueryId);
               }}
               title={`Open dedicated logs page for dataset ${meta.id} in a new tab`}
             >

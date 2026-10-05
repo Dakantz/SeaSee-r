@@ -32,6 +32,7 @@ interface TrajectoryLogSyncStore {
     activePoint: TrajectorySyncPoint | null;
     activePointIndex: number | null;
     focusedTrajectoryId: string | null; // e.g. pointcloud ID or header ID
+    focusedQueryId: string | null; // e.g. query ID when selected from a specific query
     syncSource: "3d" | "chart" | "video" | null;
     seekTimestamp: number | null; // Trigger to seek video player
     requestOpenLogsPanel: number;
@@ -41,7 +42,8 @@ interface TrajectoryLogSyncStore {
 
     // Actions
     selectPoint: (point: TrajectorySyncPoint | null, source?: "3d" | "chart" | "video") => void;
-    focusTrajectory: (trajectoryId: string | null, openPanel?: boolean) => void;
+    focusTrajectory: (trajectoryId: string | null, openPanel?: boolean, queryId?: string | null) => void;
+    setFocusedQueryId: (queryId: string | null) => void;
     openLogsPanel: () => void;
     setSeekTimestamp: (timestamp: number | null) => void;
     setActiveTabValues: (values: ActiveTabValues | null) => void;
@@ -54,6 +56,7 @@ export const useTrajectoryLogSync = create<TrajectoryLogSyncStore>((set) => ({
     activePoint: null,
     activePointIndex: null,
     focusedTrajectoryId: null,
+    focusedQueryId: null,
     syncSource: null,
     seekTimestamp: null,
     requestOpenLogsPanel: 0,
@@ -93,11 +96,16 @@ export const useTrajectoryLogSync = create<TrajectoryLogSyncStore>((set) => ({
         set({ isVideoPlaying: playing });
     },
 
-    focusTrajectory: (trajectoryId, openPanel = false) => {
+    focusTrajectory: (trajectoryId, openPanel = false, queryId?: string | null) => {
         set((state) => ({
             focusedTrajectoryId: trajectoryId,
+            focusedQueryId: trajectoryId === null ? null : (queryId !== undefined ? queryId : state.focusedQueryId),
             ...(openPanel ? { requestOpenLogsPanel: state.requestOpenLogsPanel + 1 } : {}),
         }));
+    },
+
+    setFocusedQueryId: (queryId) => {
+        set({ focusedQueryId: queryId });
     },
 
     openLogsPanel: () => {
@@ -116,7 +124,6 @@ export const useTrajectoryLogSync = create<TrajectoryLogSyncStore>((set) => ({
         set({
             activePoint: null,
             activePointIndex: null,
-            focusedTrajectoryId: null,
             syncSource: null,
             seekTimestamp: null,
             activeTabValues: null,

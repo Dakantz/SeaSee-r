@@ -4,6 +4,8 @@ import { listPointclouds, getCameraRoutes } from "../../../client";
 import type { PointCloudMetadataResponse, CameraFrameResponse } from "../../../client";
 import type { PointCloudOption, ComputedTelemetryPoint, MissionSummary, VideoItem } from "../types";
 import { PLYPointCloudContext } from "../../PointCloudPanel/PLYPointCloudContext";
+import type { CustomQuery } from "../../PointCloudPanel/CustomQueryManager";
+import { useTrajectoryLogSync } from "./useTrajectoryLogSync";
 
 export interface TargetDataset {
     id: string;
@@ -166,9 +168,11 @@ export function useLogsData() {
     const isLogsPage = location.pathname.startsWith("/logs");
     const [searchParams, setSearchParams] = useSearchParams();
     const mapParam = isLogsPage ? searchParams.get("map") : null;
+    const queryParam = isLogsPage ? searchParams.get("query") : null;
 
     const [maps, setMaps] = useState<PointCloudOption[]>([]);
     const [selectedMapId, setSelectedMapId] = useState<string | null>(mapParam);
+    const [selectedQueryId, setSelectedQueryId] = useState<string | null>(queryParam);
     const [loadingMaps, setLoadingMaps] = useState<boolean>(true);
 
     const [batchDatasets, setBatchDatasets] = useState<TargetDataset[]>([]);
@@ -186,6 +190,10 @@ export function useLogsData() {
 
     // Safely access PLYPointCloudContext (undefined when outside provider)
     const plyContext = useContext(PLYPointCloudContext);
+
+    // Access focusedQueryId from trajectory sync store
+    const storeFocusedQueryId = useTrajectoryLogSync((state) => state.focusedQueryId);
+    const effectiveQueryId = selectedQueryId || storeFocusedQueryId || queryParam || null;
 
     const fetchMaps = useCallback(async () => {
         setLoadingMaps(true);
@@ -231,14 +239,14 @@ export function useLogsData() {
     }, [fetchMaps]);
 
     const selectMap = useCallback(
-        (id: string | null) => {
+        (id: string | null, queryId?: string | null) => {
             setSelectedMapId(id);
+            setSelectedQueryId(queryId !== undefined ? queryId : null);
             if (isLogsPage) {
-                if (id) {
-                    setSearchParams({ map: id }, { replace: true });
-                } else {
-                    setSearchParams({}, { replace: true });
-                }
+                const params: Record<string, string> = {};
+                if (id) params.map = id;
+                if (queryId) params.query = queryId;
+                setSearchParams(params, { replace: true });
             }
             setActiveIndex(null);
             setHoveredIndex(null);
@@ -267,12 +275,38 @@ export function useLogsData() {
                 // 1. Identify all datasets inside the selected query with the same Batch ID
                 let targetBatchId: string | null = null;
                 let queryDatasets: TargetDataset[] = [];
+                let selectedQuery: CustomQuery | undefined = undefined;
 
                 if (plyContext && plyContext.queries && plyContext.queries.length > 0) {
-                    // Match query by selectedMapId, plyContext.identifier, or containing selectedMapId
-                    let selectedQuery = plyContext.queries.find(
-                        (q) => q.id === selectedMapId || q.id === plyContext.identifier
-                    );
+                    // A. Prioritize matching by effectiveQueryId
+                    if (effectiveQueryId) {
+                        selectedQuery = plyContext.queries.find((q) => q.id === effectiveQueryId);
+                    }
+
+                    // B. Check if selectedMapId is itself a query ID
+                    if (!selectedQuery) {
+                        selectedQuery = plyContext.queries.find((q) => q.id === selectedMapId);
+                    }
+
+                    // C. Check if plyContext.identifier matches a query ID
+                    if (!selectedQuery && plyContext.identifier) {
+                        selectedQuery = plyContext.queries.find((q) => q.id === plyContext.identifier);
+                    }
+
+                    // D. Match query containing selectedMapId (prioritizing queries where selectedMapId is active/selected)
+                    if (!selectedQuery) {
+                        selectedQuery = plyContext.queries.find((q) => {
+                            const sum = plyContext.summaryMap[q.id] || q.summary;
+                            const hasPc = sum?.connected_pointclouds?.some(
+                                (pc) => pc.id === selectedMapId || pc.orig_filename === selectedMapId
+                            );
+                            if (!hasPc) return false;
+                            if (q.selectedConnectedPointCloudIds !== undefined) {
+                                return q.selectedConnectedPointCloudIds.includes(selectedMapId!);
+                            }
+                            return true;
+                        });
+                    }
 
                     if (!selectedQuery) {
                         selectedQuery = plyContext.queries.find((q) => {
@@ -303,17 +337,9 @@ export function useLogsData() {
                             }
                         }
 
-                        // Determine targetBatchId from query filters
-                        const batchRule = selectedQuery.filters?.find(
-                            (f) => f.field === "batch_id" && (f.operator === "eq" || !f.operator)
-                        );
-                        if (batchRule && batchRule.value) {
-                            targetBatchId = String(batchRule.value);
-                        }
-
-                        // If not in filters, match batch_id from connected pointclouds
+                        // Determine targetBatchId for the selected dataset:
+                        // Priority 1: From the selected dataset in connected_pointclouds
                         if (
-                            !targetBatchId &&
                             summaryData?.connected_pointclouds &&
                             summaryData.connected_pointclouds.length > 0
                         ) {
@@ -322,19 +348,48 @@ export function useLogsData() {
                             );
                             if (matchedPc?.batch_id) {
                                 targetBatchId = matchedPc.batch_id;
-                            } else if (summaryData.connected_pointclouds[0]?.batch_id) {
-                                targetBatchId = summaryData.connected_pointclouds[0].batch_id;
                             }
                         }
 
-                        // Collect all datasets from this query matching targetBatchId
+                        // Priority 2: From maps catalog for selectedMapId
+                        if (!targetBatchId) {
+                            const matchedMap = maps.find((m) => m.id === selectedMapId || m.name === selectedMapId);
+                            if (matchedMap?.batch_id) {
+                                targetBatchId = matchedMap.batch_id;
+                            }
+                        }
+
+                        // Priority 3: From query filters
+                        if (!targetBatchId) {
+                            const batchRule = selectedQuery.filters?.find(
+                                (f) => f.field === "batch_id" && (f.operator === "eq" || !f.operator)
+                            );
+                            if (batchRule && batchRule.value) {
+                                targetBatchId = String(batchRule.value);
+                            }
+                        }
+
+                        // Priority 4: From first connected pointcloud
+                        if (!targetBatchId && summaryData?.connected_pointclouds?.[0]?.batch_id) {
+                            targetBatchId = summaryData.connected_pointclouds[0].batch_id;
+                        }
+
+                        // Collect all datasets inside this selected query matching targetBatchId
                         if (
                             summaryData?.connected_pointclouds &&
                             summaryData.connected_pointclouds.length > 0
                         ) {
+                            // Only include datasets selected/active in this query
+                            const queryAllowedPcs = summaryData.connected_pointclouds.filter((pc) => {
+                                if (selectedQuery?.selectedConnectedPointCloudIds !== undefined) {
+                                    return selectedQuery.selectedConnectedPointCloudIds.includes(pc.id);
+                                }
+                                return true;
+                            });
+
                             const matchedConnected = targetBatchId
-                                ? summaryData.connected_pointclouds.filter((pc) => pc.batch_id === targetBatchId)
-                                : summaryData.connected_pointclouds;
+                                ? queryAllowedPcs.filter((pc) => pc.batch_id === targetBatchId)
+                                : queryAllowedPcs;
 
                             if (matchedConnected.length > 0) {
                                 queryDatasets = matchedConnected.map((pc) => ({
@@ -348,35 +403,51 @@ export function useLogsData() {
                     }
                 }
 
-                // If no query-based datasets were found (e.g. standalone /logs page), fallback to maps by batch_id
-                if (queryDatasets.length === 0) {
-                    const matchedMap = maps.find((m) => m.id === selectedMapId || m.name === selectedMapId);
-                    const bId = targetBatchId || matchedMap?.batch_id;
-                    if (bId) {
-                        targetBatchId = bId;
-                        const batchMaps = maps.filter((m) => m.batch_id === bId);
-                        if (batchMaps.length > 0) {
-                            queryDatasets = batchMaps.map((m) => ({
-                                id: m.id,
-                                name: m.name,
-                                reconstruction_index: m.reconstruction_index ?? 0,
-                                batch_id: m.batch_id,
-                            }));
+                // If a query was selected, strictly limit to datasets inside that query
+                if (selectedQuery) {
+                    if (queryDatasets.length === 0) {
+                        const matchedMap = maps.find((m) => m.id === selectedMapId || m.name === selectedMapId);
+                        queryDatasets = [
+                            {
+                                id: selectedMapId!,
+                                name: matchedMap?.name || selectedMapId!,
+                                reconstruction_index: matchedMap?.reconstruction_index ?? 0,
+                                batch_id: targetBatchId || matchedMap?.batch_id,
+                            },
+                        ];
+                    }
+                } else {
+                    // Only when NO query was matched (e.g. standalone /logs page without query context),
+                    // fallback to grouping all maps across the entire catalog by batch_id
+                    if (queryDatasets.length === 0) {
+                        const matchedMap = maps.find((m) => m.id === selectedMapId || m.name === selectedMapId);
+                        const bId = targetBatchId || matchedMap?.batch_id;
+                        if (bId) {
+                            targetBatchId = bId;
+                            const batchMaps = maps.filter((m) => m.batch_id === bId);
+                            if (batchMaps.length > 0) {
+                                queryDatasets = batchMaps.map((m) => ({
+                                    id: m.id,
+                                    name: m.name,
+                                    reconstruction_index: m.reconstruction_index ?? 0,
+                                    batch_id: m.batch_id,
+                                }));
+                            }
                         }
                     }
-                }
 
-                // Fallback: single selected dataset
-                if (queryDatasets.length === 0) {
-                    const matchedMap = maps.find((m) => m.id === selectedMapId || m.name === selectedMapId);
-                    queryDatasets = [
-                        {
-                            id: selectedMapId!,
-                            name: matchedMap?.name || selectedMapId!,
-                            reconstruction_index: matchedMap?.reconstruction_index ?? 0,
-                            batch_id: matchedMap?.batch_id,
-                        },
-                    ];
+                    // Fallback: single selected dataset
+                    if (queryDatasets.length === 0) {
+                        const matchedMap = maps.find((m) => m.id === selectedMapId || m.name === selectedMapId);
+                        queryDatasets = [
+                            {
+                                id: selectedMapId!,
+                                name: matchedMap?.name || selectedMapId!,
+                                reconstruction_index: matchedMap?.reconstruction_index ?? 0,
+                                batch_id: matchedMap?.batch_id,
+                            },
+                        ];
+                    }
                 }
 
                 // Sort datasets strictly by reconstruction_index ascending (0 is highest priority)
@@ -427,7 +498,7 @@ export function useLogsData() {
                     const merged = mergeFramesByReconstructionIndex(routeGroups);
                     setRawFrames(merged);
                     if (merged.length > 0) {
-                        setActiveIndex((prev) => (prev !== null && prev < merged.length ? prev : 0));
+                        setActiveIndex((prev) => (prev !== null && prev < merged.length ? prev : null));
                     } else {
                         setActiveIndex(null);
                     }
@@ -477,6 +548,7 @@ export function useLogsData() {
         };
     }, [
         selectedMapId,
+        effectiveQueryId,
         reloadKey,
         apiBaseUrl,
         maps,
@@ -806,6 +878,7 @@ export function useLogsData() {
         maps,
         activeMap,
         selectedMapId,
+        selectedQueryId,
         selectMap,
         loadingMaps,
         batchDatasets,

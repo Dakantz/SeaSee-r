@@ -579,7 +579,7 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
     // Memoize paths separately so they don't recompute on every animation frame
     const { linePath, areaPath } = useMemo(() => {
         if (isLogMode) {
-            const validCoords = computedLogPoints
+            const validLogPointsWithCoords = computedLogPoints
                 .filter((p) => {
                     if (chartMode === "log_depth") return p.depth !== null;
                     if (chartMode === "log_temperature") return p.temperature !== null;
@@ -587,33 +587,101 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                     if (chartMode === "log_sonar_front") return p.distance !== null;
                     return false;
                 })
-                .map(getLogCoords)
-                .filter((c) => Number.isFinite(c.x) && Number.isFinite(c.y));
+                .map((p) => ({ pt: p, coord: getLogCoords(p) }))
+                .filter((item) => Number.isFinite(item.coord.x) && Number.isFinite(item.coord.y));
 
-            if (validCoords.length === 0) return { linePath: "", areaPath: "" };
+            if (validLogPointsWithCoords.length === 0) return { linePath: "", areaPath: "" };
 
-            let lPath = `M ${validCoords[0].x.toFixed(2)} ${validCoords[0].y.toFixed(2)}`;
-            for (let i = 1; i < validCoords.length; i++) {
-                lPath += ` L ${validCoords[i].x.toFixed(2)} ${validCoords[i].y.toFixed(2)}`;
+            const segments: Array<Array<{ x: number; y: number }>> = [];
+            let currentSegment: Array<{ x: number; y: number }> = [];
+
+            for (let i = 0; i < validLogPointsWithCoords.length; i++) {
+                const { pt, coord } = validLogPointsWithCoords[i];
+
+                if (currentSegment.length > 0) {
+                    const prevPt = validLogPointsWithCoords[i - 1].pt;
+                    const isSame =
+                        (prevPt.videoIndex === undefined || pt.videoIndex === undefined || prevPt.videoIndex === pt.videoIndex) &&
+                        (!prevPt.raw?.batch_id || !pt.raw?.batch_id || prevPt.raw.batch_id === pt.raw.batch_id);
+
+                    if (!isSame) {
+                        segments.push(currentSegment);
+                        currentSegment = [];
+                    }
+                }
+                currentSegment.push(coord);
+            }
+            if (currentSegment.length > 0) {
+                segments.push(currentSegment);
             }
 
             const baselineY = padding.top + innerHeight;
-            const aPath = `${lPath} L ${validCoords[validCoords.length - 1].x.toFixed(2)} ${baselineY} L ${validCoords[0].x.toFixed(2)} ${baselineY} Z`;
+            let lPath = "";
+            let aPath = "";
+
+            for (const seg of segments) {
+                if (seg.length === 0) continue;
+                let segLine = `M ${seg[0].x.toFixed(2)} ${seg[0].y.toFixed(2)}`;
+                for (let j = 1; j < seg.length; j++) {
+                    segLine += ` L ${seg[j].x.toFixed(2)} ${seg[j].y.toFixed(2)}`;
+                }
+                const segArea = `${segLine} L ${seg[seg.length - 1].x.toFixed(2)} ${baselineY.toFixed(2)} L ${seg[0].x.toFixed(2)} ${baselineY.toFixed(2)} Z`;
+                lPath += (lPath ? " " : "") + segLine;
+                aPath += (aPath ? " " : "") + segArea;
+            }
 
             return { linePath: lPath, areaPath: aPath };
         }
 
-        const validCoords = points.map(getTrajectoryCoords).filter((c) => Number.isFinite(c.x) && Number.isFinite(c.y));
+        const validPointsWithCoords = points
+            .map((p) => ({ pt: p, coord: getTrajectoryCoords(p) }))
+            .filter((item) => Number.isFinite(item.coord.x) && Number.isFinite(item.coord.y));
 
-        if (validCoords.length === 0) return { linePath: "", areaPath: "" };
+        if (validPointsWithCoords.length === 0) return { linePath: "", areaPath: "" };
 
-        let lPath = `M ${validCoords[0].x.toFixed(2)} ${validCoords[0].y.toFixed(2)}`;
-        for (let i = 1; i < validCoords.length; i++) {
-            lPath += ` L ${validCoords[i].x.toFixed(2)} ${validCoords[i].y.toFixed(2)}`;
+        const segments: Array<Array<{ x: number; y: number }>> = [];
+        let currentSegment: Array<{ x: number; y: number }> = [];
+
+        for (let i = 0; i < validPointsWithCoords.length; i++) {
+            const { pt, coord } = validPointsWithCoords[i];
+
+            if (currentSegment.length > 0) {
+                const prevPt = validPointsWithCoords[i - 1].pt;
+                const prevId = prevPt.pointCloudId ?? (prevPt.reconstructionIndex !== undefined ? `recon_${prevPt.reconstructionIndex}` : null);
+                const currId = pt.pointCloudId ?? (pt.reconstructionIndex !== undefined ? `recon_${pt.reconstructionIndex}` : null);
+
+                let isSame = true;
+                if (prevId !== null && currId !== null) {
+                    isSame = prevId === currId;
+                } else if (prevPt.videoIndex !== undefined && pt.videoIndex !== undefined) {
+                    isSame = prevPt.videoIndex === pt.videoIndex;
+                }
+
+                if (!isSame) {
+                    segments.push(currentSegment);
+                    currentSegment = [];
+                }
+            }
+            currentSegment.push(coord);
+        }
+        if (currentSegment.length > 0) {
+            segments.push(currentSegment);
         }
 
         const baselineY = padding.top + innerHeight;
-        const aPath = `${lPath} L ${validCoords[validCoords.length - 1].x.toFixed(2)} ${baselineY} L ${validCoords[0].x.toFixed(2)} ${baselineY} Z`;
+        let lPath = "";
+        let aPath = "";
+
+        for (const seg of segments) {
+            if (seg.length === 0) continue;
+            let segLine = `M ${seg[0].x.toFixed(2)} ${seg[0].y.toFixed(2)}`;
+            for (let j = 1; j < seg.length; j++) {
+                segLine += ` L ${seg[j].x.toFixed(2)} ${seg[j].y.toFixed(2)}`;
+            }
+            const segArea = `${segLine} L ${seg[seg.length - 1].x.toFixed(2)} ${baselineY.toFixed(2)} L ${seg[0].x.toFixed(2)} ${baselineY.toFixed(2)} Z`;
+            lPath += (lPath ? " " : "") + segLine;
+            aPath += (aPath ? " " : "") + segArea;
+        }
 
         return { linePath: lPath, areaPath: aPath };
     }, [

@@ -90,7 +90,9 @@ export interface PLYPointCloudContextType {
     catalog: PointCloudMetadataResponse[];
     isFetchingCatalog: boolean;
     fetchCatalog: () => Promise<void>;
-    selectPointcloud: (id: string | null) => void;
+    selectPointcloud: (id: string | null, queryId?: string | null) => void;
+    selectedPointcloudId: string | null;
+    selectedQueryId: string | null;
     hoveredId: string | null;
     hoverPointcloud: (id: string | null) => void;
     cameraTarget: { x: number; y: number; z: number; offset?: [number, number, number] | number; timestamp: number } | null;
@@ -170,6 +172,8 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [cameraTarget, setCameraTarget] = useState<{ x: number; y: number; z: number; offset?: [number, number, number] | number; timestamp: number } | null>(null);
     const [cameraViewTarget, setCameraViewTargetState] = useState<CameraViewTarget | null>(null);
 
+    const [selectedPointcloudId, setSelectedPointcloudId] = useState<string | null>(null);
+    const [selectedQueryId, setSelectedQueryId] = useState<string | null>(null);
     const [editingPointcloudId, setEditingPointcloudId] = useState<string | null>(null);
     const [gizmoMode, setGizmoMode] = useState<"translate" | "rotate" | "scale" | null>(null);
     const [isGizmoDragging, setIsGizmoDragging] = useState<boolean>(false);
@@ -433,7 +437,9 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         }
     }, [fetchQuerySummary, summaryMap]);
 
-    const selectPointcloud = useCallback((id: string | null) => {
+    const selectPointcloud = useCallback((id: string | null, queryId?: string | null) => {
+        setSelectedPointcloudId(id);
+        setSelectedQueryId(queryId !== undefined ? queryId : null);
         if (id) {
             setIdentifier(id);
         }
@@ -596,6 +602,8 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 isFetchingCatalog,
                 fetchCatalog,
                 selectPointcloud,
+                selectedPointcloudId,
+                selectedQueryId,
                 hoveredId,
                 hoverPointcloud,
                 cameraTarget,

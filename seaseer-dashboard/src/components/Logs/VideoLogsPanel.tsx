@@ -14,6 +14,7 @@ export const VideoLogsPanel: React.FC = () => {
     const {
         maps,
         selectedMapId,
+        selectedQueryId,
         selectMap,
         loadingMaps,
         loadingFrames,
@@ -35,6 +36,7 @@ export const VideoLogsPanel: React.FC = () => {
     const activeSyncPoint = useTrajectoryLogSync((state) => state.activePoint);
     const syncSource = useTrajectoryLogSync((state) => state.syncSource);
     const focusedTrajectoryId = useTrajectoryLogSync((state) => state.focusedTrajectoryId);
+    const focusedQueryId = useTrajectoryLogSync((state) => state.focusedQueryId);
 
     // Sequential Video Playlist State
     const [currentVideoIndex, setCurrentVideoIndex] = useState<number>(0);
@@ -171,11 +173,11 @@ export const VideoLogsPanel: React.FC = () => {
     // Automatically sync when 3D scene point cloud or query card is selected/deselected
     useEffect(() => {
         const targetId = focusedTrajectoryId || plyContext?.identifier || null;
-        if (targetId !== selectedMapId) {
+        if (targetId !== selectedMapId || (focusedQueryId && focusedQueryId !== selectedQueryId)) {
             const match = targetId ? maps.find((m) => m.id === targetId || m.name === targetId) : null;
-            selectMap(match ? match.id : targetId);
+            selectMap(match ? match.id : targetId, focusedQueryId);
         }
-    }, [focusedTrajectoryId, plyContext?.identifier, selectedMapId, maps, selectMap]);
+    }, [focusedTrajectoryId, focusedQueryId, plyContext?.identifier, selectedMapId, selectedQueryId, maps, selectMap]);
 
     const activeMap = maps.find((m) => m.id === selectedMapId);
 
