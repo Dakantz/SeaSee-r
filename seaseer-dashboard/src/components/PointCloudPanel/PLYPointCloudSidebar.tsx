@@ -34,6 +34,8 @@ export interface PLYPointCloudSidebarProps {
     setAmbientLightIntensity?: (val: number) => void;
     showOutlines?: boolean;
     setShowOutlines?: (show: boolean) => void;
+    disableDynamicLOD?: boolean;
+    setDisableDynamicLOD?: (disable: boolean) => void;
 }
 
 import { getApiBaseUrl } from "../../utils/apiConfig";
@@ -69,6 +71,8 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const pointCount = props.pointCount ?? contextState?.pointCount ?? null;
     const showOutlines = props.showOutlines ?? contextState?.showOutlines ?? false;
     const setShowOutlines = props.setShowOutlines ?? contextState?.setShowOutlines ?? (() => {});
+    const disableDynamicLOD = props.disableDynamicLOD ?? contextState?.disableDynamicLOD ?? false;
+    const setDisableDynamicLOD = props.setDisableDynamicLOD ?? contextState?.setDisableDynamicLOD ?? (() => {});
     const startPerfTest = contextState?.startPerfTest ?? (() => {});
     const stopPerfTest = contextState?.stopPerfTest ?? (() => {});
     const isPerfTestRunning = contextState?.isPerfTestRunning ?? false;
@@ -429,6 +433,16 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                         className="pointcloud-sidebar__checkbox"
                     />
                     Show Chunk Outlines
+                </label>
+
+                <label className="pointcloud-sidebar__checkbox-label" style={{ marginTop: "8px" }}>
+                    <input
+                        type="checkbox"
+                        checked={disableDynamicLOD}
+                        onChange={(e) => setDisableDynamicLOD(e.target.checked)}
+                        className="pointcloud-sidebar__checkbox"
+                    />
+                    Disable Dynamic LOD
                 </label>
 
                 {/* Geo-Three Heightmap Controls */}

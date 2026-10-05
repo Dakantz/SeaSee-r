@@ -88,6 +88,12 @@ export const PointCloudOverview: React.FC<PointCloudOverviewProps> = ({
     }, [configProps.showOutlines]);
 
     useEffect(() => {
+        if (engineRef.current && configProps.disableDynamicLOD !== undefined) {
+            engineRef.current.setDisableDynamicLOD(configProps.disableDynamicLOD);
+        }
+    }, [configProps.disableDynamicLOD]);
+
+    useEffect(() => {
         if (!engineRef.current || !cameraTarget) return;
         const { x, y, z, offset, timestamp } = cameraTarget;
         const hasNewTimestamp = timestamp !== undefined && timestamp !== lastCameraTargetTimestampRef.current;

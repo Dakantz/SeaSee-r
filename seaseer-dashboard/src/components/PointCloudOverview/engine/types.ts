@@ -43,6 +43,7 @@ export interface EngineConfig {
 
     // Outlines / Debug
     showOutlines?: boolean;
+    disableDynamicLOD?: boolean;
 
     // Point Cloud & Queries
     queries?: CustomQuery[];

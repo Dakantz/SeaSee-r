@@ -10,6 +10,7 @@ export const PointCloudOverviewContainer: React.FC = () => {
         heightmapMapProvider,
         heightmapHeightProvider,
         showOutlines,
+        disableDynamicLOD,
         queries,
         summaryMap,
         catalog,
@@ -44,6 +45,7 @@ export const PointCloudOverviewContainer: React.FC = () => {
             heightmapMapProvider={heightmapMapProvider}
             heightmapHeightProvider={heightmapHeightProvider}
             showOutlines={showOutlines}
+            disableDynamicLOD={disableDynamicLOD}
             queries={queries}
             summaryMap={summaryMap}
             catalog={catalog}

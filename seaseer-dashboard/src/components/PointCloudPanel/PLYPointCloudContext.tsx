@@ -78,6 +78,8 @@ export interface PLYPointCloudContextType {
     setShowCameraTrajectories: (show: boolean) => void;
     showOutlines: boolean;
     setShowOutlines: (show: boolean) => void;
+    disableDynamicLOD: boolean;
+    setDisableDynamicLOD: (disable: boolean) => void;
 
     // Custom Queries state & action dispatcher
     queries: CustomQuery[];
@@ -163,6 +165,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [ambientLightIntensity, setAmbientLightIntensity] = useState<number>(0.4);
     const [showCameraTrajectories, setShowCameraTrajectories] = useState<boolean>(true);
     const [showOutlines, setShowOutlines] = useState<boolean>(false);
+    const [disableDynamicLOD, setDisableDynamicLOD] = useState<boolean>(false);
     const [summaryMap, setSummaryMap] = useState<Record<string, QuerySummaryData>>({});
     const [cameraTarget, setCameraTarget] = useState<{ x: number; y: number; z: number; offset?: [number, number, number] | number; timestamp: number } | null>(null);
     const [cameraViewTarget, setCameraViewTargetState] = useState<CameraViewTarget | null>(null);
@@ -615,6 +618,8 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 toggleCameraUpFixed,
                 showOutlines,
                 setShowOutlines,
+                disableDynamicLOD,
+                setDisableDynamicLOD,
 
                 // Performance Test exports
                 perfTestTrigger,

@@ -21,12 +21,14 @@ export class PointCloudSystem {
     private summaryMap: Record<string, QuerySummaryData> = {};
     private catalog: PointCloudMetadataResponse[] = [];
     private showOutlines: boolean = false;
+    private disableDynamicLOD: boolean = false;
     private editingPointcloudId: string | null = null;
 
     constructor(scene: THREE.Scene, callbacks: EngineCallbacks = {}, config: Partial<EngineConfig> = {}) {
         this.scene = scene;
         this.callbacks = callbacks;
         this.showOutlines = !!config.showOutlines;
+        this.disableDynamicLOD = !!config.disableDynamicLOD;
         if (config.editingPointcloudId !== undefined) {
             this.editingPointcloudId = config.editingPointcloudId;
         }
@@ -42,6 +44,7 @@ export class PointCloudSystem {
                 distanceFactor: 1.0,
                 switchDistanceFactor: 1.0,
                 showOutlines: this.showOutlines,
+                disableDynamicLOD: this.disableDynamicLOD,
             }
         );
 
@@ -54,6 +57,11 @@ export class PointCloudSystem {
         if (config.showOutlines !== undefined && config.showOutlines !== this.showOutlines) {
             this.showOutlines = config.showOutlines;
             this.dynamicLodController.setShowOutlines(this.showOutlines);
+        }
+
+        if (config.disableDynamicLOD !== undefined && config.disableDynamicLOD !== this.disableDynamicLOD) {
+            this.disableDynamicLOD = config.disableDynamicLOD;
+            this.dynamicLodController.setDisableDynamicLOD(this.disableDynamicLOD);
         }
 
         if (config.editingPointcloudId !== undefined && config.editingPointcloudId !== this.editingPointcloudId) {
@@ -255,6 +263,13 @@ export class PointCloudSystem {
         if (this.showOutlines !== show) {
             this.showOutlines = show;
             this.dynamicLodController.setShowOutlines(show);
+        }
+    }
+
+    public setDisableDynamicLOD(disable: boolean): void {
+        if (this.disableDynamicLOD !== disable) {
+            this.disableDynamicLOD = disable;
+            this.dynamicLodController.setDisableDynamicLOD(disable);
         }
     }
 

@@ -28,6 +28,7 @@ export interface DynamicLODConfig {
     maxConcurrentFetches: number;
     movementThresholdSq: number;
     showOutlines?: boolean;
+    disableDynamicLOD?: boolean;
     /** Maximum number of chunks to keep in the in-memory background cache per target (default: 200) */
     maxCacheSize?: number;
 }
@@ -110,6 +111,7 @@ class TargetLODManager {
     public group: THREE.Group;
     private config: DynamicLODConfig;
     private showOutlines: boolean = false;
+    private disableDynamicLOD: boolean = false;
 
     private domainBounds: Bounds3D;
     private domainCenter: THREE.Vector3;
@@ -134,11 +136,13 @@ class TargetLODManager {
         target: PointCloudTarget,
         parentGroup: THREE.Group,
         config: DynamicLODConfig,
-        showOutlines: boolean = false
+        showOutlines: boolean = false,
+        disableDynamicLOD: boolean = false
     ) {
         this.target = target;
         this.config = config;
         this.showOutlines = showOutlines;
+        this.disableDynamicLOD = disableDynamicLOD;
 
         this.group = new THREE.Group();
         this.group.name = `PointCloudGroup_${target.key}`;
@@ -267,6 +271,10 @@ class TargetLODManager {
         node.isLeaf = false;
     }
 
+    public setDisableDynamicLOD(disable: boolean): void {
+        this.disableDynamicLOD = disable;
+    }
+
     /**
      * Evaluates LOD requirements for this target based on camera position and frustum.
      * Populates newActiveKeys and collects tasks to queue.
@@ -282,6 +290,49 @@ class TargetLODManager {
         if (this.target.query && !isConnectedPointCloudSelected(this.target.query, this.target.pcId)) {
             return;
         }
+
+        if (this.disableDynamicLOD) {
+            // When Dynamic LOD is disabled: clear octree and load entire pointcloud with LOD 0
+            if (!this.octreeRoot.isLeaf || this.loadedChunks.size > 0) {
+                this.evictOctreeSubtree(this.octreeRoot);
+                this.octreeRoot = this.createOctreeNode(0, this.domainBounds, null);
+            }
+
+            const wholeDomainKey = `${this.target.key}_whole_domain_lod0`;
+            newActiveKeys.add(wholeDomainKey);
+
+            if (!this.wholeDomainChunk || this.wholeDomainChunk.lod !== 0) {
+                if (this.wholeDomainChunk && this.wholeDomainChunk.status === "loaded") {
+                    newActiveKeys.add(this.wholeDomainChunk.key);
+                }
+
+                const existing = this.loadedChunks.get(wholeDomainKey);
+                if (existing && (existing.status === "loaded" || existing.status === "loading")) {
+                    if (existing.status === "loaded" && this.wholeDomainChunk && this.wholeDomainChunk.key !== wholeDomainKey) {
+                        this.disposeChunk(this.wholeDomainChunk);
+                        this.wholeDomainChunk = existing;
+                    }
+                } else if (this.activateCachedChunk(wholeDomainKey)) {
+                    if (this.wholeDomainChunk && this.wholeDomainChunk.key !== wholeDomainKey) {
+                        this.disposeChunk(this.wholeDomainChunk);
+                    }
+                    this.wholeDomainChunk = this.loadedChunks.get(wholeDomainKey) || null;
+                } else if (!existing) {
+                    tasksToQueue.push({
+                        key: wholeDomainKey,
+                        pcId: this.target.pcId,
+                        lod: 0,
+                        bounds: { ...this.domainBounds },
+                        filters: this.target.filters || [],
+                        distSq: 0,
+                        isWholeDomain: true,
+                        targetKey: this.target.key,
+                    });
+                }
+            }
+            return;
+        }
+
         // Transform camera position into local pointcloud coordinate space
         const localCamPos = camera.position.clone().applyMatrix4(this.invWorldTransformMatrix);
         const distToCenter = localCamPos.distanceTo(this.domainCenter);
@@ -935,6 +986,7 @@ export class DynamicLODController {
     private pendingQueue: FetchTask[] = [];
     private activeFetches: number = 0;
     private showOutlines: boolean = false;
+    private disableDynamicLOD: boolean = false;
 
     private lastCamPos: THREE.Vector3 = new THREE.Vector3(NaN, NaN, NaN);
     private frustum: THREE.Frustum = new THREE.Frustum();
@@ -954,9 +1006,11 @@ export class DynamicLODController {
             maxConcurrentFetches: 6,
             movementThresholdSq: 0.05,
             maxCacheSize: 200,
+            disableDynamicLOD: false,
             ...config,
         };
         this.showOutlines = !!this.config.showOutlines;
+        this.disableDynamicLOD = !!this.config.disableDynamicLOD;
     }
 
     public isTargetSelected(target: PointCloudTarget): boolean {
@@ -990,6 +1044,17 @@ export class DynamicLODController {
         this.queries = queries;
     }
 
+    public setDisableDynamicLOD(disable: boolean): void {
+        if (this.disableDynamicLOD !== disable) {
+            this.disableDynamicLOD = disable;
+            this.config.disableDynamicLOD = disable;
+            for (const manager of this.targetManagers.values()) {
+                manager.setDisableDynamicLOD(disable);
+            }
+            this.lastCamPos.set(NaN, NaN, NaN);
+        }
+    }
+
     public syncTargets(targets: PointCloudTarget[], queries?: CustomQuery[]): void {
         if (queries !== undefined) {
             this.queries = queries;
@@ -1013,7 +1078,7 @@ export class DynamicLODController {
             if (existing) {
                 existing.updateTransform(target);
             } else {
-                const manager = new TargetLODManager(target, this.rootGroup, this.config, this.showOutlines);
+                const manager = new TargetLODManager(target, this.rootGroup, this.config, this.showOutlines, this.disableDynamicLOD);
                 this.targetManagers.set(target.key, manager);
             }
         }

@@ -269,6 +269,10 @@ export class PointCloudOverviewEngine {
         this.pointCloudSystem.setShowOutlines(show);
     }
 
+    public setDisableDynamicLOD(disable: boolean): void {
+        this.pointCloudSystem.setDisableDynamicLOD(disable);
+    }
+
     public startPerformanceTest(): void {
         this.perfTotalElapsedSec = 0;
         this.perfTotalFrames = 0;
