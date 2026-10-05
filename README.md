@@ -2,6 +2,10 @@
 
 A system to ingest, explore, and plan operations for ROV systems in marine environments.
 
+![SeaSee-r Point Cloud Overview](./GSoC_Notes/6_Screenshots/PointCloud_Overview_1.png)
+
+_For additional interface previews and system views, see the [Screenshots Overview](./GSoC_Notes/6_Screenshots/README.md)._
+
 ## Getting Started
 
 Follow these steps to set up and start the system from a fresh clone.
@@ -40,7 +44,8 @@ docker compose up -d --build
 
 ## Documentation
 
-For additional technical documentation, architecture overviews, and guides, see the [Documentation Index](./GSoC_Notes/3_Documentation/00_Index.md).
+- [Documentation Index](./GSoC_Notes/3_Documentation/00_Index.md): Technical documentation, architecture overviews, and guides.
+- [Screenshots Overview](./GSoC_Notes/6_Screenshots/README.md): Visual walkthrough of UI features, point cloud exploration, camera-route visualizations, and pipelines.
 
 ---
 
