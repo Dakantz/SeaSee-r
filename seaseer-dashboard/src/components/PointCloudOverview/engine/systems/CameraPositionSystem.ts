@@ -99,7 +99,7 @@ export class CameraPositionSystem {
         this.tooltipElement.style.zIndex = "1000";
         this.tooltipElement.style.padding = "6px 10px";
         this.tooltipElement.style.background = "rgba(15, 23, 42, 0.92)";
-        this.tooltipElement.style.border = "1px solid #38bdf8";
+        this.tooltipElement.style.border = "1px solid #f97316";
         this.tooltipElement.style.borderRadius = "6px";
         this.tooltipElement.style.color = "#f8fafc";
         this.tooltipElement.style.fontSize = "11px";
@@ -399,7 +399,7 @@ export class CameraPositionSystem {
             );
             const lineGeo = new THREE.BufferGeometry().setFromPoints(linePoints);
             const lineMat = new THREE.LineBasicMaterial({
-                color: 0x00f0ff, // Vibrant cyan
+                color: 0xff7a00, // Vibrant orange
                 linewidth: 2,
                 transparent: true,
                 opacity: 0.85,
@@ -413,8 +413,8 @@ export class CameraPositionSystem {
         // 2. Camera Position Markers (High-performance InstancedMesh)
         const markerGeo = new THREE.SphereGeometry(0.035, 12, 10);
         const markerMat = new THREE.MeshStandardMaterial({
-            color: 0x38bdf8,
-            emissive: 0x0284c7,
+            color: 0xfb923c, // Warm orange
+            emissive: 0xea580c, // Deep orange glow
             emissiveIntensity: 0.5,
             roughness: 0.3,
             metalness: 0.2,
@@ -483,9 +483,9 @@ export class CameraPositionSystem {
             const dirGeo = new THREE.BufferGeometry();
             dirGeo.setAttribute("position", new THREE.Float32BufferAttribute(dirPositions, 3));
             const dirMat = new THREE.LineBasicMaterial({
-                color: 0xfbbf24, // Amber/gold
+                color: 0xff7a00, // Vibrant orange
                 transparent: true,
-                opacity: 0.75,
+                opacity: 0.85,
                 depthTest: true,
             });
             directionLines = new THREE.LineSegments(dirGeo, dirMat);
@@ -613,7 +613,7 @@ export class CameraPositionSystem {
                         : "";
 
                     this.tooltipElement.innerHTML = `
-                        <div style="font-weight: 600; color: #38bdf8; margin-bottom: 2px;">📷 ${name}</div>
+                        <div style="font-weight: 600; color: #fb923c; margin-bottom: 2px;">📷 ${name}</div>
                         <div style="color: #cbd5e1; font-size: 10px;">${time}</div>
                         <div style="color: #94a3b8; font-size: 9px; margin-top: 2px;">XYZ: ${posStr}</div>
                     `;
