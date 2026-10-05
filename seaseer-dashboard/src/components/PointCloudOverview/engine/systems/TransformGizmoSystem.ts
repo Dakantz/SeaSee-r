@@ -2,6 +2,7 @@ import * as THREE from "three";
 import React from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ViewportGizmo } from "three-viewport-gizmo";
+import { patchViewportGizmo } from "../patches/patchViewportGizmo";
 import GizmoRollRing from "../../../PointCloudPanel/GizmoRollRing";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 import type { EngineCallbacks, EngineConfig } from "../types";
@@ -66,6 +67,7 @@ export class TransformGizmoSystem {
         this.boundMouseUp = this.onMouseUp.bind(this);
         this.boundObjectChange = this.onObjectChange.bind(this);
 
+        patchViewportGizmo();
         this.initControls();
         this.initViewportGizmo();
         this.updateConfig(config);

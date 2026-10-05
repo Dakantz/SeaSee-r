@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { useThree, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { ViewportGizmo } from "three-viewport-gizmo";
+import { patchViewportGizmo } from "../PointCloudOverview/engine/patches/patchViewportGizmo";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import GizmoRollRing from "./GizmoRollRing";
 
@@ -17,6 +18,8 @@ export function ViewportGizmoHelper() {
 
     useEffect(() => {
         if (!camera || !gl) return;
+
+        patchViewportGizmo();
 
         const container = gl.domElement.parentElement || document.body;
 

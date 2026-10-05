@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { CameraViewTarget, EngineCallbacks, EngineConfig, PerfTestMetric, PerfTestSummary } from "./types";
 import { patchGeoThreeHeight } from "./patches/patchGeoThreeHeight";
+import { patchViewportGizmo } from "./patches/patchViewportGizmo";
 import { PointCloudSystem } from "./systems/PointCloudSystem";
 import { TerrainSystem } from "./systems/TerrainSystem";
 import { TransformGizmoSystem } from "./systems/TransformGizmoSystem";
@@ -61,8 +62,9 @@ export class PointCloudOverviewEngine {
         this.container = container;
         this.callbacks = callbacks;
 
-        // Apply Geo-Three patch
+        // Apply Geo-Three and ViewportGizmo patches
         patchGeoThreeHeight();
+        patchViewportGizmo();
 
         // Initialize Scenes
         this.terrainScene = new THREE.Scene();
