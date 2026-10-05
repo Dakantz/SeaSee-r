@@ -58,7 +58,7 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const showHeightmap = props.showHeightmap ?? contextState?.showHeightmap ?? false;
     const setShowHeightmap = props.setShowHeightmap ?? contextState?.setShowHeightmap ?? (() => {});
     const experimentalBathymetry = props.experimentalBathymetry ?? contextState?.experimentalBathymetry;
-    const heightmapMode = props.heightmapMode ?? contextState?.heightmapMode ?? "HEIGHT";
+    const heightmapMode = props.heightmapMode ?? contextState?.heightmapMode ?? "HEIGHT_SHADER";
     const setHeightmapMode = props.setHeightmapMode ?? contextState?.setHeightmapMode ?? (() => {});
     const heightmapMapProvider = props.heightmapMapProvider ?? contextState?.heightmapMapProvider ?? "OpenStreetMaps";
     const setHeightmapMapProvider = props.setHeightmapMapProvider ?? contextState?.setHeightmapMapProvider ?? (() => {});
@@ -67,14 +67,6 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
     const isLoading = props.isLoading ?? contextState?.isLoading ?? false;
     const error = props.error ?? contextState?.error ?? null;
     const pointCount = props.pointCount ?? contextState?.pointCount ?? null;
-    const keyLightIntensity = props.keyLightIntensity ?? contextState?.keyLightIntensity ?? 1.5;
-    const setKeyLightIntensity = props.setKeyLightIntensity ?? contextState?.setKeyLightIntensity ?? (() => {});
-    const fillLightIntensity = props.fillLightIntensity ?? contextState?.fillLightIntensity ?? 0.5;
-    const setFillLightIntensity = props.setFillLightIntensity ?? contextState?.setFillLightIntensity ?? (() => {});
-    const hemisphereLightIntensity = props.hemisphereLightIntensity ?? contextState?.hemisphereLightIntensity ?? 0.6;
-    const setHemisphereLightIntensity = props.setHemisphereLightIntensity ?? contextState?.setHemisphereLightIntensity ?? (() => {});
-    const ambientLightIntensity = props.ambientLightIntensity ?? contextState?.ambientLightIntensity ?? 0.4;
-    const setAmbientLightIntensity = props.setAmbientLightIntensity ?? contextState?.setAmbientLightIntensity ?? (() => {});
     const showOutlines = props.showOutlines ?? contextState?.showOutlines ?? false;
     const setShowOutlines = props.setShowOutlines ?? contextState?.setShowOutlines ?? (() => {});
     const startPerfTest = contextState?.startPerfTest ?? (() => {});
@@ -513,80 +505,7 @@ export default function PLYPointCloudSidebar(props: PLYPointCloudSidebarProps) {
                                 </select>
                             </div>
 
-                            {/* Lighting Intensity Controls */}
-                            <div className="pointcloud-sidebar__dashed-divider">
-                                <div className="pointcloud-sidebar__sub-title">
-                                    Lighting Intensity Controls
-                                </div>
 
-                                {/* Key Sun Light (NW) */}
-                                <div className="pointcloud-sidebar__slider-group">
-                                    <div className="pointcloud-sidebar__slider-header">
-                                        <span>Key Sun Light (NW):</span>
-                                        <span className="pointcloud-sidebar__mono-val">{keyLightIntensity.toFixed(1)}</span>
-                                    </div>
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max="4.0"
-                                        step="0.1"
-                                        value={keyLightIntensity}
-                                        onChange={(e) => setKeyLightIntensity(parseFloat(e.target.value))}
-                                        className="pointcloud-sidebar__slider"
-                                    />
-                                </div>
-
-                                {/* Fill Light (SE) */}
-                                <div className="pointcloud-sidebar__slider-group">
-                                    <div className="pointcloud-sidebar__slider-header">
-                                        <span>Fill Light (SE):</span>
-                                        <span className="pointcloud-sidebar__mono-val">{fillLightIntensity.toFixed(1)}</span>
-                                    </div>
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max="3.0"
-                                        step="0.1"
-                                        value={fillLightIntensity}
-                                        onChange={(e) => setFillLightIntensity(parseFloat(e.target.value))}
-                                        className="pointcloud-sidebar__slider"
-                                    />
-                                </div>
-
-                                {/* Hemisphere Sky/Ground Light */}
-                                <div className="pointcloud-sidebar__slider-group">
-                                    <div className="pointcloud-sidebar__slider-header">
-                                        <span>Hemisphere Light:</span>
-                                        <span className="pointcloud-sidebar__mono-val">{hemisphereLightIntensity.toFixed(1)}</span>
-                                    </div>
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max="3.0"
-                                        step="0.1"
-                                        value={hemisphereLightIntensity}
-                                        onChange={(e) => setHemisphereLightIntensity(parseFloat(e.target.value))}
-                                        className="pointcloud-sidebar__slider"
-                                    />
-                                </div>
-
-                                {/* Ambient Base Light */}
-                                <div className="pointcloud-sidebar__slider-group">
-                                    <div className="pointcloud-sidebar__slider-header">
-                                        <span>Ambient Light:</span>
-                                        <span className="pointcloud-sidebar__mono-val">{ambientLightIntensity.toFixed(1)}</span>
-                                    </div>
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max="3.0"
-                                        step="0.1"
-                                        value={ambientLightIntensity}
-                                        onChange={(e) => setAmbientLightIntensity(parseFloat(e.target.value))}
-                                        className="pointcloud-sidebar__slider"
-                                    />
-                                </div>
-                            </div>
                         </div>
                     )}
                 </div>

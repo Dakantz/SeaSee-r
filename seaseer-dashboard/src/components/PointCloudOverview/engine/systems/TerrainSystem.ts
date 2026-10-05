@@ -32,7 +32,7 @@ export class TerrainSystem {
     public updateConfig(config: Partial<EngineConfig>): void {
         const showHeightmap = config.showHeightmap ?? true;
         const experimentalBathymetry = config.experimentalBathymetry;
-        const heightmapMode = config.heightmapMode ?? "HEIGHT";
+        const heightmapMode = config.heightmapMode ?? "HEIGHT_SHADER";
         let mapChoice = config.heightmapMapProvider ?? "OpenStreetMaps";
         let heightChoice = config.heightmapHeightProvider ?? (experimentalBathymetry ? "Bathymetry" : "EmodnetWCSBilinear");
 
@@ -152,7 +152,7 @@ export class TerrainSystem {
 
             const modeCode = (!heightProvider || heightChoice === "None")
                 ? MapView.PLANAR
-                : (MapView[heightmapMode] ?? MapView.HEIGHT);
+                : (MapView[heightmapMode] ?? MapView.HEIGHT_SHADER);
 
             this.mapView = new MapView(modeCode, provider, heightProvider);
             this.mapView.scale.set(UnitsUtils.EARTH_PERIMETER, 1, UnitsUtils.EARTH_PERIMETER);
