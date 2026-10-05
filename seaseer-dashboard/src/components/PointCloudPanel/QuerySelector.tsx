@@ -22,7 +22,7 @@ export interface QuerySelectorProps {
   /** Summary calculation error state */
   summaryError?: string | null;
   /** Handler to update query fields (name, filters, etc.) */
-  onUpdateQuery: (id: string, field: string, value: any) => void;
+  onUpdateQuery: (id: string, field: string | Record<string, any>, value?: any) => void;
   /** Handler triggered when selected connected point cloud IDs change */
   onSelectedConnectedChange?: (queryId: string, selectedIds: string[]) => void;
   /** Handler to delete a query */
@@ -49,6 +49,12 @@ export interface QuerySelectorProps {
   loadedPointCount?: number;
   /** Callback triggered when pointcloud editing is toggled */
   onEdit?: (pointcloudId: string | null) => void;
+  /** Optional camera toggle button element passed from CustomQueryManager */
+  cameraToggleButton?: React.ReactNode;
+  /** Optional handler to toggle camera positions visibility */
+  onToggleCameraPositions?: (queryId: string) => void;
+  /** Optional handler to toggle camera positions for a specific pointcloud ID */
+  onTogglePointcloudCameras?: (queryId: string, pointCloudId: string) => void;
 }
 
 /**
@@ -80,6 +86,9 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
   onToggleExpand,
   loadedPointCount: propLoadedPointCount,
   onEdit,
+  cameraToggleButton,
+  onToggleCameraPositions,
+  onTogglePointcloudCameras,
 }) => {
   const [internalIsExpanded, setInternalIsExpanded] = React.useState<boolean>(defaultExpanded);
 
@@ -155,6 +164,25 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
             🎯 Focus
           </button>
 
+          {cameraToggleButton ? (
+            cameraToggleButton
+          ) : (
+            <button
+              type="button"
+              title={query.showCameraPositions ? "Hide camera positions for this pointcloud" : "Display camera positions for this pointcloud"}
+              onClick={() => {
+                if (onToggleCameraPositions) {
+                  onToggleCameraPositions(query.id);
+                } else {
+                  onUpdateQuery(query.id, "showCameraPositions", !query.showCameraPositions);
+                }
+              }}
+              className={`query-selector__btn--cameras ${query.showCameraPositions ? "query-selector__btn--cameras-active active" : ""}`}
+            >
+              📷 {query.showCameraPositions ? "Cameras On" : "Cameras"}
+            </button>
+          )}
+
           {(isLoadedStream || isLoadingStream) && (
             <button
               type="button"
@@ -217,6 +245,7 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
             onUpdateQuery={onUpdateQuery}
             onSelectedConnectedChange={onSelectedConnectedChange}
             onEdit={onEdit}
+            onTogglePointcloudCameras={onTogglePointcloudCameras}
           />
 
           {/* Card Controls & Status Bar */}

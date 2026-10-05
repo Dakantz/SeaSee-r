@@ -2,7 +2,7 @@ import React, { useRef, useState, useMemo, useCallback, useEffect } from "react"
 import { FiNavigation, FiThermometer, FiDroplet, FiRadio, FiTarget } from "react-icons/fi";
 import type { ComputedTelemetryPoint, VideoItem, LogDataItem } from "./types";
 import { getVideoDuration } from "./types";
-import { useTrajectoryLogSync } from "./hooks/useTrajectoryLogSync";
+import { useTrajectoryLogSync, type TrajectorySyncPoint } from "./hooks/useTrajectoryLogSync";
 
 interface LogsChartsProps {
     points: ComputedTelemetryPoint[];
@@ -50,6 +50,7 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
     const [chartMode, setChartMode] = useState<ChartMode>("log_depth");
     const containerRef = useRef<HTMLDivElement>(null);
     const activeSyncPoint = useTrajectoryLogSync((state) => state.activePoint);
+    const syncSource = useTrajectoryLogSync((state) => state.syncSource);
 
     const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -441,12 +442,117 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
         [chartData, chartMode, innerWidth, innerHeight, padding.left, padding.top]
     );
 
+    // Helper to find matching point in points array from activeSyncPoint
+    const findMatchingTelemetryIndex = useCallback(
+        (syncPt: TrajectorySyncPoint | null, pts: ComputedTelemetryPoint[]): number | null => {
+            if (!syncPt || !pts || pts.length === 0) return null;
+
+            // 1. Direct ID match
+            if (syncPt.id) {
+                const idx = pts.findIndex((p) => p.id === syncPt.id);
+                if (idx !== -1) return idx;
+            }
+
+            // 2. Direct filename match
+            if (syncPt.filename) {
+                const idx = pts.findIndex((p) => p.filename && p.filename === syncPt.filename);
+                if (idx !== -1) return idx;
+            }
+
+            // 3. Exact or close timestamp match (within 500ms)
+            if (syncPt.timestamp) {
+                let closestIdx = -1;
+                let minDiff = Infinity;
+                for (let i = 0; i < pts.length; i++) {
+                    if (pts[i].timestamp) {
+                        const diff = Math.abs(pts[i].timestamp - syncPt.timestamp);
+                        if (diff < minDiff && diff < 500) {
+                            minDiff = diff;
+                            closestIdx = i;
+                        }
+                    }
+                }
+                if (closestIdx !== -1) return closestIdx;
+            }
+
+            // 4. Position match in 3D space
+            if (syncPt.x !== undefined && syncPt.y !== undefined && syncPt.z !== undefined) {
+                let closestIdx = -1;
+                let minDist = Infinity;
+                for (let i = 0; i < pts.length; i++) {
+                    const p = pts[i];
+                    const dist = Math.hypot(p.x - syncPt.x, p.y - syncPt.y, p.z - syncPt.z);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        closestIdx = i;
+                    }
+                }
+                if (closestIdx !== -1 && minDist < 0.1) return closestIdx;
+            }
+
+            // 5. Match by relativeTime
+            if (typeof syncPt.relativeTime === "number") {
+                let closestIdx = -1;
+                let minDiff = Infinity;
+                for (let i = 0; i < pts.length; i++) {
+                    const diff = Math.abs(pts[i].relativeTime - syncPt.relativeTime);
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        closestIdx = i;
+                    }
+                }
+                if (closestIdx !== -1 && minDiff < 0.5) return closestIdx;
+            }
+
+            // 6. If syncSource is NOT "3d" and index is in bounds, fallback to index
+            if (syncSource !== "3d" && typeof syncPt.index === "number" && syncPt.index >= 0 && syncPt.index < pts.length) {
+                return syncPt.index;
+            }
+
+            return null;
+        },
+        [syncSource]
+    );
+
+    const effectiveActiveIndex = useMemo(() => {
+        if (syncSource === "3d" && activeSyncPoint && points && points.length > 0) {
+            const matched = findMatchingTelemetryIndex(activeSyncPoint, points);
+            if (matched !== null) return matched;
+        }
+        return activeIndex;
+    }, [syncSource, activeSyncPoint, points, activeIndex, findMatchingTelemetryIndex]);
+
+    // Keep parent activeIndex in sync whenever 3D camera waypoint is selected
+    useEffect(() => {
+        if (!activeSyncPoint || syncSource !== "3d" || !points || points.length === 0) return;
+        const matchedIdx = findMatchingTelemetryIndex(activeSyncPoint, points);
+        if (matchedIdx !== null && matchedIdx !== activeIndex) {
+            onSelectIndex(matchedIdx);
+            const pt = points[matchedIdx];
+            if (onSeekTime && pt) {
+                const vidIdx = pt.videoIndex ?? currentVideoIndex ?? 0;
+                const vidTime = pt.videoTime !== undefined ? pt.videoTime : pt.relativeTime;
+                onSeekTime(vidTime, vidIdx, pt.relativeTime);
+            }
+        }
+    }, [
+        activeSyncPoint,
+        syncSource,
+        points,
+        activeIndex,
+        onSelectIndex,
+        onSeekTime,
+        currentVideoIndex,
+        findMatchingTelemetryIndex,
+    ]);
+
     const activeTime = useMemo(() => {
+        const effIdx = effectiveActiveIndex !== null ? effectiveActiveIndex : activeIndex;
+        if (effIdx !== null && points && points[effIdx]) {
+            return points[effIdx].relativeTime;
+        }
         if (activeSyncPoint && typeof activeSyncPoint.relativeTime === "number") {
             return activeSyncPoint.relativeTime;
-        }
-        if (activeIndex !== null && points && points[activeIndex]) {
-            return points[activeIndex].relativeTime;
         }
         if (activeSyncPoint && typeof activeSyncPoint.videoTime === "number") {
             const vIdx = activeSyncPoint.videoIndex ?? 0;
@@ -454,7 +560,7 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             return vOffset + activeSyncPoint.videoTime;
         }
         return null;
-    }, [activeSyncPoint, activeIndex, points, videoTimeline]);
+    }, [effectiveActiveIndex, activeIndex, points, activeSyncPoint, videoTimeline]);
 
     const activeLogIndex = useMemo(() => {
         if (!computedLogPoints || computedLogPoints.length === 0 || activeTime === null) return null;
@@ -643,8 +749,9 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             }
         }
 
-        if (activeIndex !== null && points && points[activeIndex]) {
-            return getTrajectoryCoords(points[activeIndex]);
+        const effIdx = effectiveActiveIndex !== null ? effectiveActiveIndex : activeIndex;
+        if (effIdx !== null && points && points[effIdx]) {
+            return getTrajectoryCoords(points[effIdx]);
         }
 
         return null;
@@ -652,6 +759,7 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
         isLogMode,
         activeTime,
         activeIndex,
+        effectiveActiveIndex,
         chartData,
         chartMode,
         computedLogPoints,
@@ -732,7 +840,8 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
     };
 
     const activeTrajectoryIndex = useMemo(() => {
-        if (activeIndex !== null) return activeIndex;
+        const effIdx = effectiveActiveIndex !== null ? effectiveActiveIndex : activeIndex;
+        if (effIdx !== null) return effIdx;
         if (!points || points.length === 0 || activeTime === null) return null;
         let closestIdx = -1;
         let minDiff = Infinity;
@@ -744,11 +853,11 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
             }
         }
         return closestIdx !== -1 ? closestIdx : null;
-    }, [activeIndex, points, activeTime]);
+    }, [effectiveActiveIndex, activeIndex, points, activeTime]);
 
     // Keep activeTabValues in sync with activeIndex / activeTrajectoryIndex / activeLogIndex
     useEffect(() => {
-        const trajIdx = activeIndex !== null ? activeIndex : activeTrajectoryIndex;
+        const trajIdx = effectiveActiveIndex !== null ? effectiveActiveIndex : (activeIndex !== null ? activeIndex : activeTrajectoryIndex);
         const trajPt =
             trajIdx !== null && points && points[trajIdx]
                 ? points[trajIdx]
@@ -1325,7 +1434,7 @@ export const LogsCharts: React.FC<LogsChartsProps> = ({
                     );
                 }
 
-                const targetIdx = hoveredIndex !== null ? hoveredIndex : activeTrajectoryIndex;
+                const targetIdx = hoveredIndex !== null ? hoveredIndex : (effectiveActiveIndex !== null ? effectiveActiveIndex : activeTrajectoryIndex);
                 if (targetIdx === null || !points[targetIdx]) return null;
                 const pt = points[targetIdx];
                 const formatTime = (t?: number) => {

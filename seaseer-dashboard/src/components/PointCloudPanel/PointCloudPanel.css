@@ -834,6 +834,77 @@
     }
 }
 
+.query-selector__btn--cameras,
+.custom-query-manager__camera-toggle-btn {
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    color: #94a3b8;
+    border-radius: var(--radius-sm, 4px);
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+
+    &:hover {
+        background: rgba(56, 189, 248, 0.25);
+        color: #38bdf8;
+        border-color: rgba(56, 189, 248, 0.45);
+    }
+
+    &:active {
+        background: rgba(56, 189, 248, 0.35);
+    }
+
+    &.active,
+    &.query-selector__btn--cameras-active {
+        background: rgba(14, 165, 233, 0.25);
+        border: 1px solid #0ea5e9;
+        color: #38bdf8;
+        box-shadow: 0 0 8px rgba(14, 165, 233, 0.25);
+
+        &:hover {
+            background: rgba(14, 165, 233, 0.4);
+            color: #7dd3fc;
+        }
+    }
+
+    &:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.5);
+    }
+}
+
+.query-summary__connected-camera-btn {
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    color: #94a3b8;
+    border-radius: var(--radius-sm, 4px);
+    padding: 2px 7px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s ease;
+
+    &:hover {
+        background: rgba(56, 189, 248, 0.25);
+        color: #38bdf8;
+    }
+
+    &.active {
+        background: rgba(14, 165, 233, 0.25);
+        border: 1px solid #0ea5e9;
+        color: #38bdf8;
+        box-shadow: 0 0 6px rgba(14, 165, 233, 0.25);
+    }
+}
+
 .query-selector__btn--reset {
     background: rgba(168, 85, 247, 0.15);
     border: 1px solid rgba(168, 85, 247, 0.3);

@@ -16,6 +16,7 @@ export interface TrajectorySyncPoint {
     cameraHeaderId?: string;
     pointCloudId?: string;
     reconstructionIndex?: number;
+    timestamp?: number;
 }
 
 export interface ActiveTabValues {
@@ -35,6 +36,8 @@ interface TrajectoryLogSyncStore {
     seekTimestamp: number | null; // Trigger to seek video player
     requestOpenLogsPanel: number;
     activeTabValues: ActiveTabValues | null;
+    isVideoPlaying: boolean;
+    requestPauseVideo: number;
 
     // Actions
     selectPoint: (point: TrajectorySyncPoint | null, source?: "3d" | "chart" | "video") => void;
@@ -43,6 +46,8 @@ interface TrajectoryLogSyncStore {
     setSeekTimestamp: (timestamp: number | null) => void;
     setActiveTabValues: (values: ActiveTabValues | null) => void;
     clearSync: () => void;
+    pauseVideo: () => void;
+    setVideoPlaying: (playing: boolean) => void;
 }
 
 export const useTrajectoryLogSync = create<TrajectoryLogSyncStore>((set) => ({
@@ -53,12 +58,20 @@ export const useTrajectoryLogSync = create<TrajectoryLogSyncStore>((set) => ({
     seekTimestamp: null,
     requestOpenLogsPanel: 0,
     activeTabValues: null,
+    isVideoPlaying: false,
+    requestPauseVideo: 0,
 
     selectPoint: (point, source = "3d") => {
-        set({
+        set((state) => ({
             activePoint: point,
             activePointIndex: point?.index ?? null,
             syncSource: source,
+            ...(source === "3d"
+                ? {
+                      isVideoPlaying: false,
+                      requestPauseVideo: state.requestPauseVideo + 1,
+                  }
+                : {}),
             // If the point provides a videoTime or relativeTime, update seekTimestamp
             seekTimestamp:
                 point?.videoTime !== undefined
@@ -66,7 +79,18 @@ export const useTrajectoryLogSync = create<TrajectoryLogSyncStore>((set) => ({
                     : point?.relativeTime !== undefined
                     ? point.relativeTime
                     : null,
-        });
+        }));
+    },
+
+    pauseVideo: () => {
+        set((state) => ({
+            isVideoPlaying: false,
+            requestPauseVideo: state.requestPauseVideo + 1,
+        }));
+    },
+
+    setVideoPlaying: (playing: boolean) => {
+        set({ isVideoPlaying: playing });
     },
 
     focusTrajectory: (trajectoryId, openPanel = false) => {

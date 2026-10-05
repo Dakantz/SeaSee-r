@@ -67,7 +67,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const syncSource = useTrajectoryLogSync((state) => state.syncSource);
     const activeSyncPoint = useTrajectoryLogSync((state) => state.activePoint);
     const selectPoint = useTrajectoryLogSync((state) => state.selectPoint);
+    const requestPauseVideo = useTrajectoryLogSync((state) => state.requestPauseVideo);
+    const setVideoPlaying = useTrajectoryLogSync((state) => state.setVideoPlaying);
     const pendingSeekTimeRef = useRef<number | null>(null);
+
+    // React to global pause requests (e.g. from clicking camera position in 3D scene)
+    useEffect(() => {
+        if (requestPauseVideo > 0) {
+            if (videoRef.current && !videoRef.current.paused) {
+                videoRef.current.pause();
+            }
+            setIsPlaying(false);
+            setInternalAutoPlay(false);
+        }
+    }, [requestPauseVideo]);
 
     // Fallback: Fetch video info internally if videos prop is not controlled
     useEffect(() => {
@@ -481,8 +494,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                         onTimeUpdate={handleTimeUpdate}
                         onLoadedMetadata={handleLoadedMetadata}
                         onCanPlay={handleCanPlay}
-                        onPlay={() => setIsPlaying(true)}
-                        onPause={() => setIsPlaying(false)}
+                        onPlay={() => {
+                            setIsPlaying(true);
+                            setVideoPlaying(true);
+                        }}
+                        onPause={() => {
+                            setIsPlaying(false);
+                            setVideoPlaying(false);
+                        }}
                         onEnded={handleEnded}
                         onError={() => setVideoError("Stream loading failed")}
                     />

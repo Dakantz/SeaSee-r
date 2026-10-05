@@ -1,7 +1,7 @@
 import React, { useState, useContext, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { FiExternalLink } from "react-icons/fi";
-import type { CustomQuery, QuerySummaryData, ConnectedPointCloudMetadata } from "./CustomQueryManager";
+import { isPointCloudCameraVisible, type CustomQuery, type QuerySummaryData, type ConnectedPointCloudMetadata } from "./CustomQueryManager";
 import PointProgressBar from "./PointProgressBar";
 import { PLYPointCloudContext } from "./PLYPointCloudContext";
 import { useTrajectoryLogSync } from "../Logs/hooks/useTrajectoryLogSync";
@@ -17,9 +17,10 @@ export interface QuerySummaryProps {
   loadedPoints?: number;
   isLoadingStream?: boolean;
   isLoadedStream?: boolean;
-  onUpdateQuery?: (id: string, field: string, value: any) => void;
+  onUpdateQuery?: (id: string, field: string | Record<string, any>, value?: any) => void;
   onSelectedConnectedChange?: (queryId: string, selectedIds: string[]) => void;
   onEdit?: (pointcloudId: string | null) => void;
+  onTogglePointcloudCameras?: (queryId: string, pointCloudId: string) => void;
 }
 
 /**
@@ -96,6 +97,9 @@ const ConnectedMetadataCard: React.FC<{
   isChecked?: boolean;
   onToggleSelect?: (id: string) => void;
   onEdit?: (id: string | null) => void;
+  query?: CustomQuery;
+  onUpdateQuery?: (id: string, field: string | Record<string, any>, value?: any) => void;
+  onTogglePointcloudCameras?: (queryId: string, pointCloudId: string) => void;
 }> = ({
   meta,
   cameraHeaders = [],
@@ -106,6 +110,9 @@ const ConnectedMetadataCard: React.FC<{
   isChecked = true,
   onToggleSelect,
   onEdit,
+  query,
+  onUpdateQuery,
+  onTogglePointcloudCameras,
 }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(defaultExpanded);
 
@@ -217,6 +224,38 @@ const ConnectedMetadataCard: React.FC<{
     useTrajectoryLogSync.getState().focusTrajectory(meta.id, true);
   };
 
+  const isCamerasVisible = Boolean(
+    query && isPointCloudCameraVisible(query, meta.id)
+  );
+
+  const handleToggleCameras = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!queryId || !meta.id) return;
+    if (!isChecked && onToggleSelect) {
+      onToggleSelect(meta.id);
+    }
+    if (onTogglePointcloudCameras) {
+      onTogglePointcloudCameras(queryId, meta.id);
+    } else if (onUpdateQuery && query) {
+      const summaryPcs = (query.summary?.connected_pointclouds || []).map((p) => p.id);
+      const currentlyVisible = isPointCloudCameraVisible(query, meta.id);
+      let nextVisibleIds: string[];
+      if (query.visibleCameraPointCloudIds !== undefined) {
+        nextVisibleIds = currentlyVisible
+          ? query.visibleCameraPointCloudIds.filter((id) => id !== meta.id)
+          : [...query.visibleCameraPointCloudIds, meta.id];
+      } else {
+        nextVisibleIds = currentlyVisible
+          ? summaryPcs.filter((id) => id !== meta.id)
+          : [meta.id];
+      }
+      onUpdateQuery(queryId, {
+        showCameraPositions: nextVisibleIds.length > 0,
+        visibleCameraPointCloudIds: nextVisibleIds,
+      });
+    }
+  };
+
   return (
     <div className={`query-summary__connected-card ${isSelected ? "query-summary__connected-card--selected" : ""} ${isEditing ? "query-summary__connected-card--editing" : ""}`}>
       <div
@@ -266,6 +305,28 @@ const ConnectedMetadataCard: React.FC<{
             title={isEditing ? `Stop editing transform for ${meta.orig_filename || meta.safe_filename || meta.id}` : `Edit spatial transform (Move/Rotate/Scale) for ${meta.orig_filename || meta.safe_filename || meta.id}`}
           >
             ✏️ {isEditing ? "Editing" : "Edit"}
+          </button>
+          <button
+            type="button"
+            className={`query-summary__connected-camera-btn ${isCamerasVisible ? "active" : ""}`}
+            onClick={handleToggleCameras}
+            title={isCamerasVisible ? `Hide camera positions for ${meta.orig_filename || meta.safe_filename || meta.id}` : `Display camera positions for ${meta.orig_filename || meta.safe_filename || meta.id}`}
+            style={{
+              background: isCamerasVisible ? "rgba(14, 165, 233, 0.25)" : "rgba(51, 65, 85, 0.4)",
+              border: isCamerasVisible ? "1px solid #0ea5e9" : "1px solid #475569",
+              color: isCamerasVisible ? "#38bdf8" : "#94a3b8",
+              borderRadius: "4px",
+              padding: "2px 7px",
+              fontSize: "11px",
+              fontWeight: 500,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+              transition: "all 0.15s ease",
+            }}
+          >
+            📷 {isCamerasVisible ? "Cameras On" : "Cameras"}
           </button>
           {meta.id && (
             <Link
@@ -490,6 +551,7 @@ export const QuerySummary: React.FC<QuerySummaryProps> = ({
   onUpdateQuery,
   onSelectedConnectedChange,
   onEdit,
+  onTogglePointcloudCameras,
 }) => {
   const sortedConnectedPointclouds = useMemo(() => {
     if (!summary?.connected_pointclouds || summary.connected_pointclouds.length === 0) {
@@ -703,6 +765,9 @@ export const QuerySummary: React.FC<QuerySummaryProps> = ({
                       isChecked={isChecked}
                       onToggleSelect={handleToggleMetadata}
                       onEdit={onEdit}
+                      query={query}
+                      onUpdateQuery={onUpdateQuery}
+                      onTogglePointcloudCameras={onTogglePointcloudCameras}
                     />
                   );
                 })}

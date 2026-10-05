@@ -5,6 +5,7 @@ import { PointCloudSystem } from "./systems/PointCloudSystem";
 import { TerrainSystem } from "./systems/TerrainSystem";
 import { TransformGizmoSystem } from "./systems/TransformGizmoSystem";
 import { CameraMovementSystem } from "./systems/CameraMovementSystem";
+import { CameraPositionSystem } from "./systems/CameraPositionSystem";
 
 export const TARGET_X = 0;
 export const TARGET_Y = 0;
@@ -37,6 +38,7 @@ export class PointCloudOverviewEngine {
     private pointCloudSystem: PointCloudSystem;
     private terrainSystem: TerrainSystem;
     private transformGizmoSystem: TransformGizmoSystem;
+    private cameraPositionSystem: CameraPositionSystem;
 
     private animationFrameId: number | null = null;
     private clock: THREE.Clock;
@@ -154,14 +156,23 @@ export class PointCloudOverviewEngine {
             },
             onPreviewPointcloudTransform: (id: string, matrixArray: number[]) => {
                 this.pointCloudSystem.updateTargetTransform(id, matrixArray);
+                this.cameraPositionSystem.updateTargetTransform(id, matrixArray);
                 this.callbacks.onPreviewPointcloudTransform?.(id, matrixArray);
             },
             onUpdatePointcloudTransform: (id: string, matrixArray: number[]) => {
                 this.pointCloudSystem.updateTargetTransform(id, matrixArray);
+                this.cameraPositionSystem.updateTargetTransform(id, matrixArray);
                 this.callbacks.onUpdatePointcloudTransform?.(id, matrixArray);
             },
         };
         this.transformGizmoSystem = new TransformGizmoSystem(this.scene, this.camera, this.renderer, gizmoCallbacks, initialConfig);
+        this.cameraPositionSystem = new CameraPositionSystem(
+            this.scene,
+            this.callbacks,
+            initialConfig,
+            this.renderer.domElement,
+            this.pointCloudCamera
+        );
 
         // Bind Resize Observer
         this.initResizeObserver();
@@ -233,6 +244,7 @@ export class PointCloudOverviewEngine {
         this.pointCloudSystem.updateConfig(newConfig);
         this.terrainSystem.updateConfig(newConfig);
         this.transformGizmoSystem.updateConfig(newConfig);
+        this.cameraPositionSystem.updateConfig(newConfig);
     }
 
     public applyCameraViewTarget(target: CameraViewTarget): void {
@@ -415,6 +427,7 @@ export class PointCloudOverviewEngine {
         }
 
         this.pointCloudSystem.update(this.pointCloudCamera);
+        this.cameraPositionSystem.update(this.pointCloudCamera);
         this.terrainSystem.update(this.terrainCamera, this.renderer);
 
         // Pass 1: Render Terrain with far = 1e9, near = 100
@@ -449,6 +462,7 @@ export class PointCloudOverviewEngine {
         // Destroy core systems
         this.cameraMovementSystem.destroy();
         this.pointCloudSystem.destroy();
+        this.cameraPositionSystem.destroy();
         this.terrainSystem.destroy();
         this.transformGizmoSystem.destroy();
 

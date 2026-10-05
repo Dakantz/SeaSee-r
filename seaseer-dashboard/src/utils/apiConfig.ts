@@ -1,7 +1,7 @@
 export function getApiBaseUrl(): string {
   const envUrl = import.meta.env.VITE_API_URL;
   if (!envUrl || envUrl.trim() === '') {
-    throw new Error('VITE_API_URL environment variable is required but not set.');
+    return 'http://localhost:8000';
   }
 
   const cleaned = envUrl.trim().replace(/^["'“”]+|["'“”]+$/g, '');

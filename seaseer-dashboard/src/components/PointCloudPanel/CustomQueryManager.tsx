@@ -20,6 +20,8 @@ export interface CustomQuery {
   filters?: FilterRule[]; // Structured filter rules for field__operator=value queries
   summary?: QuerySummaryData | null; // Connected summary metadata & bounding box
   selectedConnectedPointCloudIds?: string[]; // IDs of selected ConnectedPointCloudMetadata (all selected by default if undefined)
+  showCameraPositions?: boolean; // Toggle whether camera positions are displayed for this pointcloud
+  visibleCameraPointCloudIds?: string[]; // Optional specific pointcloud IDs to display cameras for
   createdAt?: string; // ISO creation timestamp
   updatedAt?: string; // ISO update timestamp
 }
@@ -98,6 +100,23 @@ export const isConnectedPointCloudSelected = (
     return true;
   }
   return query.selectedConnectedPointCloudIds.includes(pointCloudId);
+};
+
+/**
+ * Helper to determine if camera positions should be displayed for a specific pointcloud in a CustomQuery.
+ */
+export const isPointCloudCameraVisible = (
+  query: CustomQuery,
+  pointCloudId: string
+): boolean => {
+  // Camera positions are only visible if the dataset is selected
+  if (!isConnectedPointCloudSelected(query, pointCloudId)) {
+    return false;
+  }
+  if (query.visibleCameraPointCloudIds !== undefined) {
+    return query.visibleCameraPointCloudIds.includes(pointCloudId);
+  }
+  return query.showCameraPositions === true;
 };
 
 /**
@@ -231,6 +250,10 @@ export interface CustomQueryManagerProps {
   editingPointcloudId?: string | null;
   /** Callback triggered when pointcloud editing is toggled */
   onEdit?: (pointcloudId: string | null) => void;
+  /** Callback triggered when camera positions visibility is toggled for a pointcloud */
+  onToggleCameraPositions?: (queryId: string, show: boolean) => void;
+  /** Callback triggered when a specific pointcloud ID's camera positions are toggled */
+  onTogglePointcloudCameras?: (queryId: string, pointCloudId: string) => void;
 
   /* Legacy props maintained for component API compatibility */
   hoveredId?: string | null;
@@ -269,6 +292,8 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
   onSelect,
   onHover: externalOnHover,
   onEdit,
+  onToggleCameraPositions,
+  onTogglePointcloudCameras,
 }) => {
   // 1. Client-Side Storage & Local State Initialization
   const [internalQueries, setInternalQueries] = useState<CustomQuery[]>(() => {
@@ -369,6 +394,66 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
 
   const effectiveHoveredId = externalHoveredId !== undefined ? externalHoveredId : (contextHoveredId ?? null);
   const handleHover = externalOnHover ?? contextHoverPointcloud;
+
+  const handleToggleCameraPositions = (queryId: string) => {
+    const q = queries.find((item) => item.id === queryId);
+    if (!q) return;
+
+    const summary = summaryMap[queryId];
+    const selectedConnectedIds = (summary?.connected_pointclouds || [])
+      .filter((p) => p && isConnectedPointCloudSelected(q, p.id))
+      .map((p) => p.id);
+    const isCurrentlyActive = q.showCameraPositions === true || (q.visibleCameraPointCloudIds !== undefined && q.visibleCameraPointCloudIds.length > 0);
+    const nextVal = !isCurrentlyActive;
+
+    handleUpdateQuery(queryId, {
+      showCameraPositions: nextVal,
+      visibleCameraPointCloudIds: nextVal ? selectedConnectedIds : [],
+    });
+    onToggleCameraPositions?.(queryId, nextVal);
+  };
+
+  const handleTogglePointcloudCameras = (queryId: string, pointCloudId: string) => {
+    const q = queries.find((item) => item.id === queryId);
+    if (!q) return;
+
+    const summary = summaryMap[queryId];
+    const allConnectedIds = (summary?.connected_pointclouds || []).map((p) => p.id);
+    const currentlyVisible = isPointCloudCameraVisible(q, pointCloudId);
+    const isSelected = isConnectedPointCloudSelected(q, pointCloudId);
+
+    let nextVisibleIds: string[];
+    if (q.visibleCameraPointCloudIds !== undefined) {
+      nextVisibleIds = currentlyVisible
+        ? q.visibleCameraPointCloudIds.filter((id) => id !== pointCloudId)
+        : [...q.visibleCameraPointCloudIds, pointCloudId];
+    } else {
+      if (q.showCameraPositions === true) {
+        nextVisibleIds = allConnectedIds.filter((id) => id !== pointCloudId);
+      } else {
+        nextVisibleIds = [pointCloudId];
+      }
+    }
+
+    const nextShowCameras = nextVisibleIds.length > 0;
+    const updates: Record<string, any> = {
+      showCameraPositions: nextShowCameras,
+      visibleCameraPointCloudIds: nextVisibleIds,
+    };
+
+    if (!isSelected) {
+      const currentSelected = q.selectedConnectedPointCloudIds !== undefined
+        ? q.selectedConnectedPointCloudIds
+        : allConnectedIds;
+      const newSelected = [...currentSelected, pointCloudId];
+      updates.selectedConnectedPointCloudIds = newSelected;
+      onSelectedConnectedPointCloudChange?.(queryId, newSelected);
+    }
+
+    handleUpdateQuery(queryId, updates);
+    onToggleCameraPositions?.(queryId, nextShowCameras);
+    onTogglePointcloudCameras?.(queryId, pointCloudId);
+  };
 
   const isQueryLoading = (id: string) => {
     if (!loadingQueryIds) return false;
@@ -480,10 +565,17 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
   };
 
   // Handler for title / filter updates
-  const handleUpdateQuery = (id: string, field: string, value: any) => {
+  const handleUpdateQuery = (id: string, field: string | Record<string, any>, value?: any) => {
     const updatedTimestamp = new Date().toISOString();
     const updatedList = queries.map((q) => {
       if (q.id !== id) return q;
+      if (typeof field === "object" && field !== null) {
+        return {
+          ...q,
+          ...field,
+          updatedAt: updatedTimestamp,
+        };
+      }
       if (field === "filters") {
         const filtersList = sanitizeNonSpatialFilters((value as FilterRule[]) || []);
         return {
@@ -678,6 +770,21 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
               (activeConnectedPcs.length > 0 && activeConnectedPcs.some((pc) => isQueryLoaded(pc.id)));
             const saveStatus = saveStatusMap[q.id];
             const isHovered = q.id === effectiveHoveredId;
+            const isCamerasActive = !!q.showCameraPositions;
+            const cameraToggleButton = (
+              <button
+                type="button"
+                className={`custom-query-manager__camera-toggle-btn query-selector__btn--cameras ${isCamerasActive ? "active" : ""}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleCameraPositions(q.id);
+                }}
+                title={isCamerasActive ? "Hide camera positions for this pointcloud" : "Display camera positions for this pointcloud"}
+                aria-pressed={isCamerasActive}
+              >
+                📷 {isCamerasActive ? "Cameras On" : "Cameras"}
+              </button>
+            );
 
             return (
               <QuerySelector
@@ -690,6 +797,9 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
                 summary={summary}
                 summaryLoading={summaryLoadingMap[q.id]}
                 summaryError={summaryErrorMap[q.id]}
+                cameraToggleButton={cameraToggleButton}
+                onToggleCameraPositions={handleToggleCameraPositions}
+                onTogglePointcloudCameras={handleTogglePointcloudCameras}
                 onUpdateQuery={handleUpdateQuery}
                 onSelectedConnectedChange={(queryId, selectedIds) => {
                   handleUpdateQuery(queryId, "selectedConnectedPointCloudIds", selectedIds);

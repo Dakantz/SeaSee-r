@@ -44,7 +44,9 @@ export const VideoLogsPanel: React.FC = () => {
     useEffect(() => {
         setCurrentVideoIndex(0);
         setAutoPlayNext(false);
-        useTrajectoryLogSync.getState().clearSync();
+        if (useTrajectoryLogSync.getState().syncSource !== "3d") {
+            useTrajectoryLogSync.getState().clearSync();
+        }
     }, [selectedMapId]);
 
     const handleSelectVideoIndex = useCallback((index: number, autoPlay: boolean = false) => {
@@ -66,38 +68,105 @@ export const VideoLogsPanel: React.FC = () => {
     // Sync active point index when updated externally (from 3D map click)
     useEffect(() => {
         if (!activeSyncPoint || syncSource !== "3d") return;
+        setAutoPlayNext(false);
 
-        // If activeSyncPoint has an index, use it directly
-        if (typeof activeSyncPoint.index === "number" && activeSyncPoint.index >= 0) {
-            if (activeSyncPoint.index !== activeIndex) {
-                setActiveIndex(activeSyncPoint.index);
-            }
-            const pt = telemetryPoints[activeSyncPoint.index];
-            if (pt && typeof pt.videoIndex === "number" && pt.videoIndex !== currentVideoIndex) {
-                handleSelectVideoIndex(pt.videoIndex);
-            }
-            return;
+        if (!telemetryPoints || telemetryPoints.length === 0) return;
+
+        let matchedIdx = -1;
+
+        // 1. Direct ID match
+        if (activeSyncPoint.id) {
+            matchedIdx = telemetryPoints.findIndex((p) => p.id === activeSyncPoint.id);
         }
 
-        // Match against telemetryPoints by id, filename, or closest relativeTime
-        if (telemetryPoints.length === 0) return;
-        const matchedIdx = telemetryPoints.findIndex((p) => {
-            if (activeSyncPoint.id && p.id === activeSyncPoint.id) return true;
-            if (activeSyncPoint.filename && p.filename === activeSyncPoint.filename) return true;
-            if (typeof activeSyncPoint.relativeTime === "number") {
-                return Math.abs(p.relativeTime - activeSyncPoint.relativeTime) < 0.05;
-            }
-            return false;
-        });
+        // 2. Direct filename match
+        if (matchedIdx === -1 && activeSyncPoint.filename) {
+            matchedIdx = telemetryPoints.findIndex(
+                (p) => p.filename && p.filename === activeSyncPoint.filename
+            );
+        }
 
-        if (matchedIdx !== -1 && matchedIdx !== activeIndex) {
-            setActiveIndex(matchedIdx);
+        // 3. Exact or close timestamp match (within 500ms)
+        if (matchedIdx === -1 && activeSyncPoint.timestamp) {
+            let minDiff = Infinity;
+            for (let i = 0; i < telemetryPoints.length; i++) {
+                if (telemetryPoints[i].timestamp) {
+                    const diff = Math.abs(telemetryPoints[i].timestamp - activeSyncPoint.timestamp);
+                    if (diff < minDiff && diff < 500) {
+                        minDiff = diff;
+                        matchedIdx = i;
+                    }
+                }
+            }
+        }
+
+        // 4. Position match in 3D space
+        if (
+            matchedIdx === -1 &&
+            activeSyncPoint.x !== undefined &&
+            activeSyncPoint.y !== undefined &&
+            activeSyncPoint.z !== undefined
+        ) {
+            let minDist = Infinity;
+            for (let i = 0; i < telemetryPoints.length; i++) {
+                const p = telemetryPoints[i];
+                const d = Math.hypot(p.x - activeSyncPoint.x, p.y - activeSyncPoint.y, p.z - activeSyncPoint.z);
+                if (d < minDist) {
+                    minDist = d;
+                    if (d < 0.1) {
+                        matchedIdx = i;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 5. Match by relativeTime
+        if (matchedIdx === -1 && typeof activeSyncPoint.relativeTime === "number") {
+            let minDiff = Infinity;
+            for (let i = 0; i < telemetryPoints.length; i++) {
+                const diff = Math.abs(telemetryPoints[i].relativeTime - activeSyncPoint.relativeTime);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    matchedIdx = i;
+                }
+            }
+            if (minDiff > 1.0) {
+                matchedIdx = -1;
+            }
+        }
+
+        // 6. Fallback to index if within bounds and pointCloudId matches
+        if (
+            matchedIdx === -1 &&
+            typeof activeSyncPoint.index === "number" &&
+            activeSyncPoint.index >= 0 &&
+            activeSyncPoint.index < telemetryPoints.length
+        ) {
+            const candidate = telemetryPoints[activeSyncPoint.index];
+            if (!activeSyncPoint.pointCloudId || candidate.pointCloudId === activeSyncPoint.pointCloudId) {
+                matchedIdx = activeSyncPoint.index;
+            }
+        }
+
+        if (matchedIdx !== -1) {
+            if (matchedIdx !== activeIndex) {
+                setActiveIndex(matchedIdx);
+            }
             const pt = telemetryPoints[matchedIdx];
             if (pt && typeof pt.videoIndex === "number" && pt.videoIndex !== currentVideoIndex) {
-                handleSelectVideoIndex(pt.videoIndex);
+                handleSelectVideoIndex(pt.videoIndex, false);
             }
         }
-    }, [activeSyncPoint, syncSource, telemetryPoints, activeIndex, setActiveIndex, currentVideoIndex, handleSelectVideoIndex]);
+    }, [
+        activeSyncPoint,
+        syncSource,
+        telemetryPoints,
+        activeIndex,
+        setActiveIndex,
+        currentVideoIndex,
+        handleSelectVideoIndex,
+    ]);
 
     // Automatically sync when 3D scene point cloud or query card is selected/deselected
     useEffect(() => {
