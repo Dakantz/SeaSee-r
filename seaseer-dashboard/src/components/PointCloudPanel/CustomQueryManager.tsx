@@ -1018,17 +1018,21 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
             const summary = summaryMap[q.id];
             const connectedPcs = summary?.connected_pointclouds || [];
             const selectedConnectedIds = q.selectedConnectedPointCloudIds;
+            const hasNoSelectedDatasets =
+              selectedConnectedIds !== undefined && selectedConnectedIds.length === 0;
             const activeConnectedPcs = selectedConnectedIds
               ? connectedPcs.filter((pc) => selectedConnectedIds.includes(pc.id))
               : connectedPcs;
             const isLoadingStream =
-              isQueryLoading(q.id) ||
-              (extractedId ? isQueryLoading(extractedId) : false) ||
-              activeConnectedPcs.some((pc) => isQueryLoading(pc.id));
+              !hasNoSelectedDatasets &&
+              (isQueryLoading(q.id) ||
+                (extractedId ? isQueryLoading(extractedId) : false) ||
+                activeConnectedPcs.some((pc) => isQueryLoading(pc.id)));
             const isLoadedStream =
-              isQueryLoaded(q.id) ||
-              (extractedId ? isQueryLoaded(extractedId) : false) ||
-              (activeConnectedPcs.length > 0 && activeConnectedPcs.some((pc) => isQueryLoaded(pc.id)));
+              !hasNoSelectedDatasets &&
+              (isQueryLoaded(q.id) ||
+                (extractedId ? isQueryLoaded(extractedId) : false) ||
+                (activeConnectedPcs.length > 0 && activeConnectedPcs.some((pc) => isQueryLoaded(pc.id))));
             const saveStatus = saveStatusMap[q.id];
             const isHovered = q.id === effectiveHoveredId;
             const isCamerasActive = !!q.showCameraPositions;
@@ -1054,6 +1058,7 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
                 isHovered={isHovered}
                 isLoadingStream={isLoadingStream}
                 isLoadedStream={isLoadedStream}
+                loadedPointCount={hasNoSelectedDatasets ? 0 : undefined}
                 saveStatus={saveStatus}
                 summary={summary}
                 summaryLoading={summaryLoadingMap[q.id]}

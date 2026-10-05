@@ -109,11 +109,20 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
     // Context unavailable
   }
 
+  const hasNoSelectedDatasets =
+    query.selectedConnectedPointCloudIds !== undefined &&
+    query.selectedConnectedPointCloudIds.length === 0;
+
   // Determine actual number of points loaded from 3D context
   let loadedPoints = propLoadedPointCount ?? 0;
-  if (ctx && propLoadedPointCount === undefined && ctx.pointCount) {
+  if (hasNoSelectedDatasets) {
+    loadedPoints = 0;
+  } else if (ctx && propLoadedPointCount === undefined && ctx.pointCount) {
     loadedPoints = ctx.pointCount;
   }
+
+  const effectiveIsLoadingStream = hasNoSelectedDatasets ? false : isLoadingStream;
+  const effectiveIsLoadedStream = hasNoSelectedDatasets ? false : isLoadedStream;
 
   return (
     <div
@@ -145,11 +154,11 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
         </div>
 
         <div className="query-selector__actions">
-          {isLoadingStream ? (
+          {effectiveIsLoadingStream ? (
             <span className="query-selector__badge query-selector__badge--streaming">
               🌀 Streaming
             </span>
-          ) : isLoadedStream ? (
+          ) : effectiveIsLoadedStream ? (
             <span className="query-selector__badge query-selector__badge--streamed">
               ⚡ Streamed
             </span>
@@ -183,7 +192,7 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
             </button>
           )}
 
-          {(isLoadedStream || isLoadingStream) && (
+          {(effectiveIsLoadedStream || effectiveIsLoadingStream) && (
             <button
               type="button"
               title="Unload this query from 3D scene"
@@ -206,12 +215,12 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
       </div>
 
       {/* Mini Progress Bar in Collapsed View */}
-      {!isExpanded && (isLoadingStream || isLoadedStream || loadedPoints > 0) && (
+      {!isExpanded && (
         <PointProgressBar
           loadedPoints={loadedPoints}
           totalPoints={summary?.total_points}
-          isLoadingStream={isLoadingStream}
-          isLoadedStream={isLoadedStream}
+          isLoadingStream={effectiveIsLoadingStream}
+          isLoadedStream={effectiveIsLoadedStream}
           compact
         />
       )}
@@ -240,8 +249,8 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
             onRefreshSummary={onRefreshSummary}
             onFocusQuery={onFocusQuery}
             loadedPoints={loadedPoints}
-            isLoadingStream={isLoadingStream}
-            isLoadedStream={isLoadedStream}
+            isLoadingStream={effectiveIsLoadingStream}
+            isLoadedStream={effectiveIsLoadedStream}
             onUpdateQuery={onUpdateQuery}
             onSelectedConnectedChange={onSelectedConnectedChange}
             onEdit={onEdit}
