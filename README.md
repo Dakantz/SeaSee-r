@@ -45,6 +45,7 @@ docker compose up -d --build
 ## Documentation
 
 - [Documentation Index](./GSoC_Notes/3_Documentation/00_Index.md): Technical documentation, architecture overviews, and guides.
+- [Project Status & Roadmap](./PROJECT_STATUS.md): Summary of implemented features, architectures, and future improvements.
 - [Screenshots Overview](./GSoC_Notes/6_Screenshots/README.md): Visual walkthrough of UI features, point cloud exploration, camera-route visualizations, and pipelines.
 
 ---
