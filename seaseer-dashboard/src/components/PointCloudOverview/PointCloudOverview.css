@@ -1,0 +1,296 @@
+/* ==========================================================================
+   PointCloudOverview with Resizable Right Side Panels (JobSystem Overview & Debug Controls)
+   ========================================================================== */
+
+.pointcloud-overview-container {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: row;
+    background: var(--color-bg-app, #090d16);
+}
+
+.pointcloud-overview-canvas {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Vertical Resize Handle Separator */
+.resize-handle {
+    background: var(--color-border-default, rgba(255, 255, 255, 0.12));
+    transition: background 0.2s ease;
+    z-index: 20;
+    position: relative;
+}
+
+.resize-handle:hover,
+.resize-handle[data-resize-handle-state="hover"],
+.resize-handle[data-resize-handle-state="drag"] {
+    background: var(--color-primary, #3b82f6);
+}
+
+.resize-handle.vertical {
+    width: 6px;
+    cursor: col-resize;
+    height: 100%;
+    flex-shrink: 0;
+}
+
+/* Top Toolbars */
+.pco-top-left-toolbar,
+.pco-top-right-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm, 8px);
+}
+
+/* Floating Toolbars (when panels are collapsed) */
+.pco-top-left-toolbar.pco-top-left-toolbar--floating {
+    position: absolute;
+    top: var(--spacing-lg, 16px);
+    left: var(--spacing-lg, 16px);
+    z-index: var(--z-sticky, 100);
+}
+
+.pco-top-right-toolbar.pco-top-right-toolbar--floating {
+    position: absolute;
+    top: var(--spacing-lg, 16px);
+    right: var(--spacing-lg, 16px);
+    z-index: var(--z-sticky, 100);
+}
+
+/* Inside Right Sidebar Panel (positioned directly above right-sidebar-header) */
+.right-sidebar-panel .pco-top-right-toolbar {
+    position: static;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs, 6px);
+    padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+    background: var(--color-bg-card, rgba(30, 41, 59, 0.7));
+    border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+    flex-shrink: 0;
+}
+
+.right-sidebar-panel .pco-toggle-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: center;
+    padding: var(--spacing-xs, 6px) var(--spacing-sm, 10px);
+    font-size: var(--font-size-xs, 11px);
+    box-shadow: none;
+}
+
+.right-sidebar-panel .pco-toggle-btn span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Floating Toggle Buttons */
+.pco-toggle-btn {
+    background: var(--color-bg-card, rgba(30, 41, 59, 0.75));
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--color-border-strong, rgba(255, 255, 255, 0.2));
+    color: var(--color-primary-text, #60a5fa);
+    padding: var(--spacing-xs, 6px) var(--spacing-lg, 16px);
+    border-radius: var(--radius-md, 6px);
+    font-size: var(--font-size-sm, 12px);
+    font-weight: var(--font-weight-semibold, 600);
+    font-family: var(--font-sans);
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs, 6px);
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.pco-toggle-btn:hover {
+    background: var(--color-bg-card-hover, rgba(30, 41, 59, 0.9));
+    border-color: var(--color-primary-border, rgba(59, 130, 246, 0.4));
+    color: var(--color-text-primary, #f8fafc);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 0 12px rgba(59, 130, 246, 0.2);
+}
+
+.pco-toggle-btn.active {
+    background: rgba(30, 41, 59, 0.95);
+    border-color: var(--color-accent-text, #38bdf8);
+    color: var(--color-accent-text, #38bdf8);
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.25);
+}
+
+/* Right Side Resizable Sidebar Panel */
+.pco-job-overview-sidebar {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-bg-surface, #0f172a);
+    border-left: 1px solid var(--color-border-default, rgba(255, 255, 255, 0.12));
+    position: relative;
+    overflow: hidden;
+    z-index: 10;
+    box-sizing: border-box;
+    animation: pcoSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes pcoSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.pco-job-overview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-md, 10px) var(--spacing-lg, 16px);
+    background: var(--color-bg-card, rgba(30, 41, 59, 0.7));
+    border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+    flex-shrink: 0;
+}
+
+.pco-job-overview-title {
+    font-size: var(--font-size-sm, 12px);
+    font-weight: var(--font-weight-semibold, 600);
+    color: var(--color-accent-text, #38bdf8);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs, 6px);
+}
+
+.pco-job-overview-close-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted, #94a3b8);
+    font-size: var(--font-size-md, 14px);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm, 4px);
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.pco-job-overview-close-btn:hover {
+    background: var(--color-border-default, rgba(255, 255, 255, 0.12));
+    color: var(--color-text-primary, #f8fafc);
+}
+
+.pco-job-overview-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--spacing-md, 12px);
+    display: flex;
+    flex-direction: column;
+}
+
+.pco-job-overview-content .job-system-overview {
+    border-radius: var(--radius-md, 8px);
+    height: 100%;
+}
+
+.pco-job-overview-content .pointcloud-sidebar {
+    height: 100%;
+    overflow-y: auto;
+}
+
+/* ==========================================================================
+   Viewport Gizmo Camera Roll Ring
+   ========================================================================== */
+.gizmo-roll-ring-overlay-host {
+    position: absolute;
+    top: 0;
+    right: 0;
+    pointer-events: none;
+    z-index: 1010;
+}
+
+.gizmo-roll-ring-container {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 156px;
+    height: 156px;
+    margin: 11px 11px 0 0;
+    pointer-events: none;
+    z-index: 1010;
+    user-select: none;
+}
+
+.pointcloud-overview-container .gizmo-roll-ring-container,
+.gizmo-roll-ring-container.gizmo-roll-ring-container--overview {
+    margin: 56px 11px 0 0;
+}
+
+.gizmo-roll-ring-svg {
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+}
+
+.gizmo-roll-ring-track {
+    pointer-events: stroke;
+    stroke: rgba(56, 189, 248, 0.4);
+    stroke-linecap: round;
+    transition: stroke 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease;
+    cursor: grab;
+}
+
+.gizmo-roll-ring-track:hover {
+    stroke: rgba(56, 189, 248, 0.9);
+    stroke-width: 10px;
+    filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.8));
+}
+
+.gizmo-roll-ring-track--active {
+    stroke: #00e5ff !important;
+    stroke-width: 10px !important;
+    filter: drop-shadow(0 0 10px #00e5ff) !important;
+    cursor: grabbing !important;
+}
+
+.gizmo-roll-ring-track--fixed {
+    stroke: rgba(0, 255, 102, 0.6);
+    filter: drop-shadow(0 0 6px rgba(0, 255, 102, 0.5));
+}
+
+.gizmo-roll-ring-notch {
+    pointer-events: none;
+    stroke: rgba(255, 255, 255, 0.4);
+    stroke-width: 1.5;
+}
+
+.gizmo-roll-ring-tooltip {
+    position: absolute;
+    bottom: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    color: #38bdf8;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+}
+

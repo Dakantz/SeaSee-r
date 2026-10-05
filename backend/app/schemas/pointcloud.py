@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, computed_field
 class PointCloudMetadataResponse(BaseModel):
     id: UUID
     job_id: Optional[UUID] = None
-    video_metadata_id: Optional[UUID] = None
+    batch_id: Optional[UUID] = None
     orig_filename: str
     safe_filename: Optional[str] = None
     number_of_points: int
@@ -22,6 +22,13 @@ class PointCloudMetadataResponse(BaseModel):
     created_at: datetime
     pcid: int
     transform_matrix: List[float]
+
+    # OpenSfM reconstruction statistics
+    reconstruction_index: Optional[int] = 0
+    views: Optional[int] = None
+    sparse_points: Optional[int] = None
+    dense_points: Optional[int] = None
+
 
     @computed_field
     @property

@@ -1,0 +1,58 @@
+FROM continuumio/miniconda3:latest
+
+# Install system dependencies required by OpenSfM, OpenCV/OpenGL, and backend PostgreSQL/PostGIS drivers
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    wget \
+    libpq-dev \
+    postgresql-client \
+    postgis \
+    libgl1 \
+    libglib2.0-0 \
+    ocl-icd-libopencl1 \
+    ocl-icd-opencl-dev \
+    opencl-headers \
+    clinfo \
+    && rm -rf /var/lib/apt/lists/*
+
+# Register NVIDIA OpenCL vendor library for ocl-icd loader
+RUN mkdir -p /etc/OpenCL/vendors && echo "libnvidia-opencl.so.1" > /etc/OpenCL/vendors/nvidia.icd
+
+WORKDIR /source/OpenSfM
+
+# Copy OpenSfM core repository
+COPY openSfM/openSfM_core /source/OpenSfM
+
+# Create the opensfm conda environment using lock file
+RUN conda create --name opensfm --file conda-linux-64.lock --yes && \
+    conda clean -afy
+
+# Use conda bash shell for subsequent installations
+SHELL ["conda", "run", "-n", "opensfm", "/bin/bash", "-c"]
+
+# Build and install OpenSfM in editable mode
+RUN pip install --no-cache-dir -e .
+
+# Install backend Python requirements into the opensfm conda environment
+WORKDIR /app
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Create non-root app user (matching host UID/GID dynamically)
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+
+RUN userdel -f ubuntu || true && \
+    (groupadd -g ${GROUP_ID} appgroup 2>/dev/null || true) && \
+    (useradd -m -u ${USER_ID} -g ${GROUP_ID} -s /bin/bash appuser 2>/dev/null || useradd -m -u ${USER_ID} -s /bin/bash appuser)
+
+# Copy backend application code
+COPY --chown=appuser:appuser backend /app
+
+# Add opensfm conda environment binaries to PATH and preload libtcmalloc (mandatory for OpenSfM C++ bindings)
+ENV PATH=/opt/conda/envs/opensfm/bin:$PATH
+ENV LD_PRELOAD=/opt/conda/envs/opensfm/lib/libtcmalloc.so
+
+USER appuser

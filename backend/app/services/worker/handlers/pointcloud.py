@@ -1,4 +1,5 @@
 import os
+import math
 import logging
 from typing import Dict, Any, Optional
 from app.core.config import settings
@@ -27,9 +28,16 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         file_path: str,
         file_id: str,
         job_id: Optional[str] = None,
+        batch_id: Optional[str] = None,
         is_append: bool = False,
         offset_x: float = 0.0,
-        offset_y: float = 0.0
+        offset_y: float = 0.0,
+        override_filename: Optional[str] = None,
+        override_safe_filename: Optional[str] = None,
+        reconstruction_index: Optional[int] = None,
+        views: Optional[int] = None,
+        sparse_points: Optional[int] = None,
+        dense_points: Optional[int] = None
     ) -> None:
         """Database Ingestion via PDAL & Metadata insertion/update."""
         logger.info(f"Ingesting pointcloud {file_id} (is_append={is_append}) to database...")
@@ -57,6 +65,12 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         # Execute PDAL pgPointcloud ingestion for LOD levels 0..10
         for lod in range(11):
             step = 2 ** lod
+            if lod > 0 and (math.ceil(number_of_points / step) == 0 or step > number_of_points):
+                logger.info(
+                    f"Skipping LOD level {lod}+ for pointcloud {file_id}: "
+                    f"step ({step}) > number_of_points ({number_of_points}) or ceil(number_of_points / step) == 0."
+                )
+                break
             ingested_pcid = await ingest_pgpointcloud(
                 file_path=file_path,
                 connection_str=connection_str,
@@ -74,6 +88,10 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
             if lod == 0 and pcid is None and ingested_pcid is not None:
                 pcid = ingested_pcid
 
+            if job_id:
+                db_progress = 50.0 + ((lod + 1) / 11.0) * 45.0
+                await self.update_job_status(job_id, "RUNNING", db_progress)
+
         if pcid is None:
             async with async_session() as session:
                 pcid = (await query_existing_pcid(session, file_id)) or 1
@@ -87,9 +105,16 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
                 number_of_points=number_of_points,
                 pcid=pcid,
                 job_id=job_id,
+                batch_id=batch_id,
                 is_append=is_append,
                 offset_x=offset_x,
-                offset_y=offset_y
+                offset_y=offset_y,
+                override_filename=override_filename,
+                override_safe_filename=override_safe_filename,
+                reconstruction_index=reconstruction_index,
+                views=views,
+                sparse_points=sparse_points,
+                dense_points=dense_points
             )
 
         logger.info(f"Successfully ingested pointcloud {file_id} metadata and data to database.")
@@ -99,10 +124,17 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         file_path: str,
         file_id: str,
         job_id: Optional[str] = None,
+        batch_id: Optional[str] = None,
         mark_completed: bool = True,
         is_append: bool = False,
         offset_x: float = 0.0,
-        offset_y: float = 0.0
+        offset_y: float = 0.0,
+        override_filename: Optional[str] = None,
+        override_safe_filename: Optional[str] = None,
+        reconstruction_index: Optional[int] = None,
+        views: Optional[int] = None,
+        sparse_points: Optional[int] = None,
+        dense_points: Optional[int] = None
     ) -> Dict[str, Any]:
         """Core pipeline to convert to EPT and ingest to database."""
         if job_id:
@@ -121,7 +153,8 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         try:
             async def on_progress(pct: float):
                 if job_id:
-                    await self.update_job_status(job_id, "RUNNING", pct)
+                    pipeline_progress = (pct / 100.0) * 50.0
+                    await self.update_job_status(job_id, "RUNNING", pipeline_progress)
 
             await build_ept(
                 file_path=file_path,
@@ -138,15 +171,22 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
                 file_path=file_path,
                 file_id=file_id,
                 job_id=job_id,
+                batch_id=batch_id,
                 is_append=is_append,
                 offset_x=offset_x,
-                offset_y=offset_y
+                offset_y=offset_y,
+                override_filename=override_filename,
+                override_safe_filename=override_safe_filename,
+                reconstruction_index=reconstruction_index,
+                views=views,
+                sparse_points=sparse_points,
+                dense_points=dense_points
             )
 
             if job_id and mark_completed:
                 await self.update_job_status(job_id, "COMPLETED", 100.0)
 
-            return {"status": "success", "file_id": file_id, "ept_dir": output_dir}
+            return {"status": "success", "file_id": file_id, "ept_dir": output_dir, "batch_id": batch_id}
 
         except Exception as e:
             error_msg = str(e)
@@ -159,6 +199,7 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
         file_id = payload.get("file_id")
         safe_filename = payload.get("safe_filename")
         file_path = payload.get("file_path")
+        batch_id = payload.get("batch_id")
 
         # Locate file on disk if full path is omitted
         if not file_path and safe_filename:
@@ -175,4 +216,9 @@ class PointCloudUploadTaskHandler(BaseTaskHandler):
             await self.update_job_status(job_id, "FAILED", 0.0, error_msg)
             return {"status": "error", "message": error_msg}
 
-        return await self.ingest_pointcloud_pipeline(file_path, file_id or job_id, job_id)
+        return await self.ingest_pointcloud_pipeline(
+            file_path=file_path,
+            file_id=file_id or job_id,
+            job_id=job_id,
+            batch_id=batch_id
+        )

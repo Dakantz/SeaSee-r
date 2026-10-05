@@ -1,9 +1,11 @@
-import os
-import uuid
-from redis import Redis
-from rq import Queue
+import logging
 
-from typing import List, Union, Optional
+import os
+import json
+import uuid
+from app.utils.queue_utils import enqueue_job
+
+from typing import List, Tuple, Union, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
@@ -209,6 +211,131 @@ async def update_transform(
     
     return {"transform_matrix": pointcloud.transform_matrix}
 
+def get_reconstruction_shot_count(folder_path: str, subfolder_name: str, rec_idx: int) -> int:
+    """
+    Helper function to determine shot count of a reconstruction component.
+    Checks reconstruction.json in folder_path or subfolder, as well as shots.geojson.
+    """
+    main_rec_json = os.path.join(folder_path, "reconstruction.json")
+    if os.path.isfile(main_rec_json):
+        try:
+            with open(main_rec_json, "r") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                if 0 <= rec_idx < len(data):
+                    shots = data[rec_idx].get("shots", {})
+                    if isinstance(shots, (dict, list)):
+                        return len(shots)
+            elif isinstance(data, dict):
+                shots = data.get("shots", {})
+                if isinstance(shots, (dict, list)):
+                    return len(shots)
+        except Exception:
+            pass
+
+    sub_rec_json = os.path.join(folder_path, subfolder_name, "reconstruction.json")
+    if os.path.isfile(sub_rec_json):
+        try:
+            with open(sub_rec_json, "r") as f:
+                data = json.load(f)
+            if isinstance(data, list) and len(data) > 0:
+                if 0 <= rec_idx < len(data):
+                    shots = data[rec_idx].get("shots", {})
+                else:
+                    shots = data[0].get("shots", {})
+                if isinstance(shots, (dict, list)):
+                    return len(shots)
+            elif isinstance(data, dict):
+                shots = data.get("shots", {})
+                if isinstance(shots, (dict, list)):
+                    return len(shots)
+        except Exception:
+            pass
+
+    sub_geojson = os.path.join(folder_path, subfolder_name, "shots.geojson")
+    if os.path.isfile(sub_geojson):
+        try:
+            with open(sub_geojson, "r") as f:
+                data = json.load(f)
+            features = data.get("features", [])
+            if isinstance(features, list):
+                return len(features)
+        except Exception:
+            pass
+
+    main_geojson = os.path.join(folder_path, "shots.geojson")
+    if os.path.isfile(main_geojson):
+        try:
+            with open(main_geojson, "r") as f:
+                data = json.load(f)
+            features = data.get("features", [])
+            if isinstance(features, list):
+                return len(features)
+        except Exception:
+            pass
+
+    return 0
+
+
+def discover_opensfm_reconstructions(folder_path: str) -> List[Tuple[str, int, str]]:
+    """
+    Finds all undistorted subfolders in an OpenSfM folder and matches them to reconstruction indices and point cloud paths.
+    Only adds reconstructions with a shot count of 10 or greater.
+    Returns a list of tuples: (subfolder_name, reconstruction_index, pointcloud_file_path).
+    """
+    results = []
+    if not os.path.isdir(folder_path):
+        return results
+
+    for entry in sorted(os.listdir(folder_path)):
+        full_sub_path = os.path.join(folder_path, entry)
+        if not os.path.isdir(full_sub_path):
+            continue
+
+        rec_idx = None
+        if entry == "undistorted":
+            rec_idx = 0
+        elif entry.startswith("undistorted_"):
+            suffix = entry[len("undistorted_"):]
+            if suffix.isdigit():
+                rec_idx = int(suffix)
+
+        if rec_idx is not None:
+            pc_file = None
+            depthmaps_dir = os.path.join(full_sub_path, "depthmaps")
+            candidates = []
+            if os.path.isdir(depthmaps_dir):
+                candidates.extend([
+                    os.path.join(depthmaps_dir, "fused.laz"),
+                    os.path.join(depthmaps_dir, "merged.ply"),
+                    os.path.join(depthmaps_dir, "fused.ply"),
+                ])
+                try:
+                    for fname in sorted(os.listdir(depthmaps_dir)):
+                        if fname.endswith(".laz") or fname.endswith(".ply"):
+                            candidates.append(os.path.join(depthmaps_dir, fname))
+                except Exception:
+                    pass
+
+            candidates.extend([
+                os.path.join(full_sub_path, "fused.laz"),
+                os.path.join(full_sub_path, "merged.ply"),
+                os.path.join(full_sub_path, "fused.ply"),
+            ])
+
+            for cand in candidates:
+                if os.path.isfile(cand):
+                    pc_file = cand
+                    break
+
+            if pc_file:
+                shot_count = get_reconstruction_shot_count(folder_path, entry, rec_idx)
+                logging.info(f"File: {folder_path}, {entry}, {rec_idx}, {shot_count}")
+                if shot_count >= 10:
+                    results.append((entry, rec_idx, pc_file))
+
+    return results
+
 @router.post("/ingest-opensfm/init")
 async def ingest_opensfm_init(
     folder_name: Optional[str] = None,
@@ -221,14 +348,12 @@ async def ingest_opensfm_init(
     """
     Initialize new point cloud ingestion from OpenSfM output directories.
     Supports multiplying ingestion in a multiply_x x multiply_y grid with global position offsets.
+    Supports ingesting all existing reconstruction components (undistorted, undistorted_1, ...).
     """
 
     ingestion_dir = settings.opensfm_ingestion_dir
     if not os.path.exists(ingestion_dir) or not os.path.isdir(ingestion_dir):
         raise HTTPException(status_code=404, detail="OpenSfM ingestion directory not found.")
-
-    redis_conn = Redis.from_url(settings.redis_url)
-    q = Queue("pointcloud_tasks", connection=redis_conn)
 
     jobs_created = []
 
@@ -238,8 +363,8 @@ async def ingest_opensfm_init(
             
         folder_path = os.path.join(ingestion_dir, f_name)
         if os.path.isdir(folder_path):
-            fused_laz_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz")
-            if os.path.isfile(fused_laz_path):
+            recs_found = discover_opensfm_reconstructions(folder_path)
+            for subfolder_name, rec_idx, fused_laz_path in recs_found:
                 # Determine grid offset step sizes
                 step_x = offset_step_x
                 step_y = offset_step_y
@@ -265,7 +390,8 @@ async def ingest_opensfm_init(
                         grid_offset_y = iy * step_y
 
                         file_uuid_str = str(uuid.uuid4())
-                        name_suffix = f"{f_name}_grid_{ix}_{iy}" if (multiply_x > 1 or multiply_y > 1) else f_name
+                        rec_prefix = f"{f_name}_rec_{rec_idx}" if (len(recs_found) > 1 or rec_idx > 0) else f_name
+                        name_suffix = f"{rec_prefix}_grid_{ix}_{iy}" if (multiply_x > 1 or multiply_y > 1) else rec_prefix
 
                         job_record = Job(
                             name=f"Ingest OpenSfM {name_suffix}",
@@ -276,6 +402,9 @@ async def ingest_opensfm_init(
                                 "total_bytes": os.path.getsize(fused_laz_path),
                                 "file_id": file_uuid_str,
                                 "folder_path": folder_path,
+                                "subfolder": subfolder_name,
+                                "reconstruction_index": rec_idx,
+                                "file_path": fused_laz_path,
                                 "offset_x": grid_offset_x,
                                 "offset_y": grid_offset_y,
                                 "grid_x": ix,
@@ -288,14 +417,12 @@ async def ingest_opensfm_init(
                         await db.commit()
                         await db.refresh(job_record)
                         
-                        q.enqueue(
-                            "app.services.worker.tasks.run_background_job",
-                            str(job_record.id),
-                            job_id=str(job_record.id)
-                        )
+                        enqueue_job(job_record.id, job_record.task_type)
                         
                         jobs_created.append({
                             "folder": f_name,
+                            "subfolder": subfolder_name,
+                            "reconstruction_index": rec_idx,
                             "job_id": str(job_record.id),
                             "file_id": file_uuid_str,
                             "grid_x": ix,
@@ -316,6 +443,7 @@ async def ingest_opensfm_append(
     """
     Append point clouds inside opensfm_ingestion_dir into an existing point cloud
     if conditions (within bounding box, same coordinate system) are met.
+    Supports ingesting all existing reconstruction components (undistorted, undistorted_1, ...).
     """
     try:
         pc_uuid = uuid.UUID(str(existing_id))
@@ -349,9 +477,6 @@ async def ingest_opensfm_append(
     }
     existing_srs = str(existing_pc.pcid)
 
-    redis_conn = Redis.from_url(settings.redis_url)
-    q = Queue("pointcloud_tasks", connection=redis_conn)
-
     jobs_created = []
     skipped_folders = []
 
@@ -361,31 +486,36 @@ async def ingest_opensfm_append(
             
         folder_path = os.path.join(ingestion_dir, f_name)
         if os.path.isdir(folder_path):
-            fused_laz_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz")
-            if os.path.isfile(fused_laz_path):
+            recs_found = discover_opensfm_reconstructions(folder_path)
+            for subfolder_name, rec_idx, fused_laz_path in recs_found:
                 try:
                     cand_bbox, cand_points, cand_srs = await get_pointcloud_srs_and_stats(fused_laz_path)
                 except Exception as e:
-                    skipped_folders.append({"folder": f_name, "reason": f"Failed to parse PDAL stats: {str(e)}"})
+                    skipped_folders.append({"folder": f_name, "subfolder": subfolder_name, "reason": f"Failed to parse PDAL stats: {str(e)}"})
                     continue
 
                 bbox_valid = check_bbox_within_or_overlapping(existing_bbox, cand_bbox)
                 srs_valid = check_coordinate_systems_match(existing_srs, cand_srs)
 
                 if not bbox_valid:
-                    skipped_folders.append({"folder": f_name, "reason": "Candidate point cloud outside existing bounding box."})
+                    skipped_folders.append({"folder": f_name, "subfolder": subfolder_name, "reason": "Candidate point cloud outside existing bounding box."})
                     continue
 
                 if not srs_valid:
-                    skipped_folders.append({"folder": f_name, "reason": f"Coordinate system mismatch: existing={existing_srs}, candidate={cand_srs}."})
+                    skipped_folders.append({"folder": f_name, "subfolder": subfolder_name, "reason": f"Coordinate system mismatch: existing={existing_srs}, candidate={cand_srs}."})
                     continue
 
+                job_suffix = f"{f_name}_rec_{rec_idx}" if (len(recs_found) > 1 or rec_idx > 0) else f_name
+
                 job_record = Job(
-                    name=f"Append OpenSfM {f_name} to {existing_id}",
+                    name=f"Append OpenSfM {job_suffix} to {existing_id}",
                     task_type="opensfm_append",
                     payload={
-                        "filename": f_name,
+                        "filename": job_suffix,
                         "folder_path": folder_path,
+                        "subfolder": subfolder_name,
+                        "reconstruction_index": rec_idx,
+                        "file_path": fused_laz_path,
                         "existing_id": str(existing_pc.id),
                         "file_id": str(existing_pc.id),
                         "is_append": True,
@@ -398,14 +528,12 @@ async def ingest_opensfm_append(
                 await db.commit()
                 await db.refresh(job_record)
 
-                q.enqueue(
-                    "app.services.worker.tasks.run_background_job",
-                    str(job_record.id),
-                    job_id=str(job_record.id)
-                )
+                enqueue_job(job_record.id, job_record.task_type)
 
                 jobs_created.append({
                     "folder": f_name,
+                    "subfolder": subfolder_name,
+                    "reconstruction_index": rec_idx,
                     "job_id": str(job_record.id),
                     "existing_id": str(existing_pc.id)
                 })
@@ -415,6 +543,7 @@ async def ingest_opensfm_append(
         "jobs": jobs_created,
         "skipped": skipped_folders
     }
+
 
 
 def _find_geotiff_in_item(item_path: str) -> Optional[str]:
@@ -445,9 +574,6 @@ async def ingest_emodnet_init(
     ingestion_dir = settings.emodnet_ingestion_dir
     if not os.path.exists(ingestion_dir) or not os.path.isdir(ingestion_dir):
         raise HTTPException(status_code=404, detail="EMODnet ingestion directory not found.")
-
-    redis_conn = Redis.from_url(settings.redis_url)
-    q = Queue("pointcloud_tasks", connection=redis_conn)
 
     target_name = file_name or filename or file_path or folder_name
 
@@ -489,11 +615,7 @@ async def ingest_emodnet_init(
             await db.commit()
             await db.refresh(job_record)
 
-            q.enqueue(
-                "app.services.worker.tasks.run_background_job",
-                str(job_record.id),
-                job_id=str(job_record.id)
-            )
+            enqueue_job(job_record.id, job_record.task_type)
 
             jobs_created.append({
                 "folder": f_name,
@@ -551,9 +673,6 @@ async def ingest_emodnet_append(
         "max_z": existing_pc.max_z,
     }
     existing_srs = str(existing_pc.pcid)
-
-    redis_conn = Redis.from_url(settings.redis_url)
-    q = Queue("pointcloud_tasks", connection=redis_conn)
 
     target_name = file_name or filename or file_path or folder_name
 
@@ -613,11 +732,7 @@ async def ingest_emodnet_append(
             await db.commit()
             await db.refresh(job_record)
 
-            q.enqueue(
-                "app.services.worker.tasks.run_background_job",
-                str(job_record.id),
-                job_id=str(job_record.id)
-            )
+            enqueue_job(job_record.id, job_record.task_type)
 
             jobs_created.append({
                 "folder": f_name,

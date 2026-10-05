@@ -134,7 +134,11 @@ class PointCloudRepository:
         res_fk = await self.db.execute(distinct_stmt, bind_params)
         connected_ids = [r[0] for r in res_fk.all() if r[0] is not None]
         if connected_ids:
-            stmt = select(PointCloudMetadata).where(PointCloudMetadata.id.in_(connected_ids))
+            stmt = select(PointCloudMetadata).where(PointCloudMetadata.id.in_(connected_ids)).order_by(
+                PointCloudMetadata.batch_id.asc().nulls_last(),
+                PointCloudMetadata.reconstruction_index.asc().nulls_last(),
+                PointCloudMetadata.orig_filename.asc()
+            )
             res_meta = await self.db.execute(stmt)
             connected_metadata_list = list(res_meta.scalars().all())
 

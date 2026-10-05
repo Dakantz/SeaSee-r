@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import * as THREE from 'three';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { useViewerContext } from '../ViewerContext';
+import { getApiBaseUrl } from '../../../utils/apiConfig';
 
 export const useLoadPLY = (identifier: string, enabled: boolean) => {
     const { viewer, setPointCloud } = useViewerContext();
@@ -9,7 +10,7 @@ export const useLoadPLY = (identifier: string, enabled: boolean) => {
     useEffect(() => {
         if (!viewer || !identifier || !enabled) return;
 
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        const API_BASE_URL = getApiBaseUrl();
         const url = `${API_BASE_URL}/pointclouds/${identifier}`;
 
         let isCancelled = false;

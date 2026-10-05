@@ -3,6 +3,7 @@ services:
   db:
     image: pgpointcloud/pointcloud:latest
     container_name: seasee-r-db
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -23,8 +24,9 @@ services:
   redis:
     image: redis:7-alpine
     container_name: seasee-r-redis
+    restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_HOST_PORT:-6381}:6379" # Keeps host access available via localhost:6381 without conflicting with host redis (6379)
     volumes:
       - redisdata:/data
     healthcheck:
@@ -38,12 +40,15 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        USER_ID: ${UID:-1000}
+        GROUP_ID: ${GID:-1000}
     container_name: seasee-r-backend
+    restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - uploads_data:/app/data/uploads
     env_file:
       - .env
     healthcheck:
@@ -63,10 +68,13 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        USER_ID: ${UID:-1000}
+        GROUP_ID: ${GID:-1000}
     container_name: seasee-r-worker
+    restart: unless-stopped
     volumes:
       - ./backend:/app
-      - uploads_data:/app/data/uploads
     # Instead of hardcoding the URL in command, reference the env variable
     command: ["rq", "worker", "pointcloud_tasks", "job_tasks", "default", "--url", "${REDIS_URL}"]
 
@@ -81,26 +89,93 @@ services:
       timeout: 5s
       retries: 3
 
+  # OpenSfM Dedicated Worker
+  opensfm:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.opensfm-worker
+      args:
+        USER_ID: ${UID:-1000}
+        GROUP_ID: ${GID:-1000}
+    container_name: seasee-r-opensfm
+    restart: unless-stopped
+    volumes:
+      - ./backend:/app
+      - ./openSfM/openSfM_core:/source/OpenSfM
+    command: ["conda", "run", "-n", "opensfm", "--no-capture-output", "bash", "-c", "cd /source/OpenSfM && pip install --no-cache-dir -e . && cd /app && rq worker -w app.services.worker.opensfm_worker.OpenSfMWorker opensfm_tasks --url $${REDIS_URL}"]
+    environment:
+      - PYTHONPATH=/app
+      - LD_PRELOAD=/opt/conda/envs/opensfm/lib/libtcmalloc.so
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, utility, compute]
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "rq info -u $${REDIS_URL} && python -m app.services.worker.opensfm_worker || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
   # TUSD Resumable Upload Server
   tusd:
     image: tusproject/tusd:latest
+    user: "${UID:-1000}:${GID:-1000}"
     container_name: seasee-r-tusd
+    restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
       - TUSD_UPLOAD_DIR=/srv/tusd-data
     command: >
       -upload-dir /srv/tusd-data
+      -behind-proxy
       -hooks-http http://backend:8000/webhooks/tusd
       -hooks-http-forward-headers Cookie,Authorization
       -hooks-enabled-events post-create,post-finish,post-terminate
     volumes:
-      - uploads_data:/srv/tusd-data
+      - ./backend/data/uploads:/srv/tusd-data
     depends_on:
       backend:
         condition: service_healthy
 
+  # Frontend Dashboard (Nginx SPA)
+  frontend:
+    build:
+      context: ./seaseer-dashboard
+      dockerfile: Dockerfile
+    container_name: seasee-r-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-}
+      - VITE_TUS_URL=${VITE_TUS_URL:-}
+      - OPENAPI_INPUT=http://backend:8000/openapi.json
+    depends_on:
+      backend:
+        condition: service_healthy
+      tusd:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider http://localhost/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+
 volumes:
   pgdata:
   redisdata:
-  uploads_data:
+

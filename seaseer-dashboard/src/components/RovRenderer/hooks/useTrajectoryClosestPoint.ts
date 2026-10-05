@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { PositionSample } from "../../TelemetoryPanel/TelemetryPositionReader";
@@ -15,7 +15,6 @@ export function useTrajectoryClosestPoint(
 ) {
     const [hoveredPoint, setHoveredPoint] = useState<[number, number, number] | null>(null);
     const [hoveredSample, setHoveredSample] = useState<PositionSample | null>(null);
-    const lastHoveredTimeRef = useRef<number | null>(null);
 
     useEffect(() => {
         if (hoveredPoint) {
@@ -33,7 +32,6 @@ export function useTrajectoryClosestPoint(
             if (hoveredPoint !== null) {
                 setHoveredPoint(null);
                 setHoveredSample(null);
-                lastHoveredTimeRef.current = null;
             }
             return;
         }
@@ -76,17 +74,11 @@ export function useTrajectoryClosestPoint(
                 hoveredPoint[2] !== closestSample.z) {
                 setHoveredPoint([closestSample.x, closestSample.y, closestSample.z]);
                 setHoveredSample(closestSample);
-                
-                if (lastHoveredTimeRef.current !== closestSample.relativeTime) {
-                    lastHoveredTimeRef.current = closestSample.relativeTime;
-                    console.log("Hovered relative time:", closestSample.relativeTime);
-                }
             }
         } else {
             if (hoveredPoint !== null) {
                 setHoveredPoint(null);
                 setHoveredSample(null);
-                lastHoveredTimeRef.current = null;
             }
         }
     });

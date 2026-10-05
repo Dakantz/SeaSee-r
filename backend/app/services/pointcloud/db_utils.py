@@ -74,36 +74,63 @@ async def upsert_pointcloud_metadata(
     number_of_points: int,
     pcid: int,
     job_id: Optional[str] = None,
-    video_metadata_id: Optional[str] = None,
+    batch_id: Optional[str] = None,
     is_append: bool = False,
     override_filename: Optional[str] = None,
     override_safe_filename: Optional[str] = None,
     offset_x: float = 0.0,
-    offset_y: float = 0.0
+    offset_y: float = 0.0,
+    reconstruction_index: Optional[int] = None,
+    views: Optional[int] = None,
+    sparse_points: Optional[int] = None,
+    dense_points: Optional[int] = None
 ) -> PointCloudMetadata:
     """
     Inserts a new PointCloudMetadata record or updates an existing record for append ops,
     merging bounding box bounds, updating center point geometry, and accumulating point counts.
-    Supports global position translation via offset_x and offset_y.
+    Supports global position translation via offset_x and offset_y, and stores OpenSfM stats.
     """
     import os
     target_uuid = uuid.UUID(file_id)
     orig_filename = override_filename or os.path.basename(file_path)
     safe_filename = override_safe_filename or os.path.basename(file_path)
-    video_uuid = uuid.UUID(video_metadata_id) if video_metadata_id else None
+    batch_uuid = uuid.UUID(str(batch_id)) if batch_id else None
 
-    if job_id and (not override_filename or not override_safe_filename):
+    if job_id and (not override_filename or not override_safe_filename or not batch_uuid):
         try:
-            stmt_job = select(Job).where(Job.id == job_id)
+            job_uuid = uuid.UUID(str(job_id))
+            stmt_job = select(Job).where(Job.id == job_uuid)
             res_job = await session.execute(stmt_job)
             job_record = res_job.scalar_one_or_none()
             if job_record and isinstance(job_record.payload, dict):
                 orig_filename = override_filename or job_record.payload.get("filename", orig_filename)
                 safe_filename = override_safe_filename or job_record.payload.get("safe_filename", safe_filename)
-                if not video_uuid and job_record.payload.get("video_metadata_id"):
-                    video_uuid = uuid.UUID(str(job_record.payload.get("video_metadata_id")))
+                if not batch_uuid and job_record.payload.get("batch_id"):
+                    batch_uuid = uuid.UUID(str(job_record.payload.get("batch_id")))
+
+            if not batch_uuid and job_record:
+                if job_record.pipeline_id:
+                    stmt_pipeline_jobs = select(Job).where(Job.pipeline_id == job_record.pipeline_id)
+                    res_pj = await session.execute(stmt_pipeline_jobs)
+                    for pj in res_pj.scalars().all():
+                        if pj.payload and isinstance(pj.payload, dict) and pj.payload.get("batch_id"):
+                            batch_uuid = uuid.UUID(str(pj.payload.get("batch_id")))
+                            break
+
+                if not batch_uuid and job_record.depends_on:
+                    parent_uuids = [uuid.UUID(str(d)) for d in job_record.depends_on if d]
+                    if parent_uuids:
+                        stmt_parents = select(Job).where(Job.id.in_(parent_uuids))
+                        res_parents = await session.execute(stmt_parents)
+                        for pj in res_parents.scalars().all():
+                            if pj.payload and isinstance(pj.payload, dict) and pj.payload.get("batch_id"):
+                                batch_uuid = uuid.UUID(str(pj.payload.get("batch_id")))
+                                break
+                            if pj.result and isinstance(pj.result, dict) and pj.result.get("batch_id"):
+                                batch_uuid = uuid.UUID(str(pj.result.get("batch_id")))
+                                break
         except Exception as e:
-            print(f"Failed to fetch job payload for metadata filenames: {e}")
+            print(f"Failed to fetch job payload or batch_id for metadata: {e}")
 
     stmt_existing = select(PointCloudMetadata).where(PointCloudMetadata.id == target_uuid)
     res_existing = await session.execute(stmt_existing)
@@ -111,8 +138,8 @@ async def upsert_pointcloud_metadata(
 
     if is_append and existing_record:
         existing_record.number_of_points = (existing_record.number_of_points or 0) + number_of_points
-        if video_uuid:
-            existing_record.video_metadata_id = video_uuid
+        if batch_uuid:
+            existing_record.batch_id = batch_uuid
         if bbox.get("min_x") is not None:
             existing_record.min_x = min(existing_record.min_x, bbox["min_x"] + offset_x) if existing_record.min_x is not None else (bbox["min_x"] + offset_x)
         if bbox.get("max_x") is not None:
@@ -131,6 +158,15 @@ async def upsert_pointcloud_metadata(
             existing_record.min_y, existing_record.max_y,
             existing_record.min_z, existing_record.max_z
         )
+        if reconstruction_index is not None:
+            existing_record.reconstruction_index = reconstruction_index
+        if views is not None:
+            existing_record.views = views
+        if sparse_points is not None:
+            existing_record.sparse_points = sparse_points
+        if dense_points is not None:
+            existing_record.dense_points = dense_points
+
         await session.commit()
         return existing_record
 
@@ -145,8 +181,8 @@ async def upsert_pointcloud_metadata(
 
     if existing_record:
         existing_record.job_id = uuid.UUID(job_id) if job_id else None
-        if video_uuid:
-            existing_record.video_metadata_id = video_uuid
+        if batch_uuid:
+            existing_record.batch_id = batch_uuid
         existing_record.orig_filename = orig_filename
         existing_record.safe_filename = safe_filename
         existing_record.number_of_points = number_of_points
@@ -159,13 +195,22 @@ async def upsert_pointcloud_metadata(
         existing_record.center = center_wkt
         existing_record.pcid = pcid
         existing_record.transform_matrix = transform_matrix
+        if reconstruction_index is not None:
+            existing_record.reconstruction_index = reconstruction_index
+        if views is not None:
+            existing_record.views = views
+        if sparse_points is not None:
+            existing_record.sparse_points = sparse_points
+        if dense_points is not None:
+            existing_record.dense_points = dense_points
+
         await session.commit()
         return existing_record
 
     metadata_record = PointCloudMetadata(
         id=target_uuid,
         job_id=uuid.UUID(job_id) if job_id else None,
-        video_metadata_id=video_uuid,
+        batch_id=batch_uuid,
         orig_filename=orig_filename,
         safe_filename=safe_filename,
         number_of_points=number_of_points,
@@ -177,9 +222,43 @@ async def upsert_pointcloud_metadata(
         max_z=max_z,
         center=center_wkt,
         pcid=pcid,
-        transform_matrix=transform_matrix
+        transform_matrix=transform_matrix,
+        reconstruction_index=reconstruction_index if reconstruction_index is not None else 0,
+        views=views,
+        sparse_points=sparse_points,
+        dense_points=dense_points
     )
     session.add(metadata_record)
     await session.commit()
     return metadata_record
+
+
+async def update_pointcloud_opensfm_stats(
+    session: AsyncSession,
+    file_id: str,
+    reconstruction_index: int = 0,
+    views: Optional[int] = None,
+    sparse_points: Optional[int] = None,
+    dense_points: Optional[int] = None
+) -> Optional[PointCloudMetadata]:
+    """Updates OpenSfM statistics on an existing PointCloudMetadata record."""
+    try:
+        target_uuid = uuid.UUID(file_id)
+        stmt = select(PointCloudMetadata).where(PointCloudMetadata.id == target_uuid)
+        res = await session.execute(stmt)
+        record = res.scalar_one_or_none()
+        if record:
+            record.reconstruction_index = reconstruction_index
+            if views is not None:
+                record.views = views
+            if sparse_points is not None:
+                record.sparse_points = sparse_points
+            if dense_points is not None:
+                record.dense_points = dense_points
+            await session.commit()
+            return record
+    except Exception as e:
+        print(f"Failed to update OpenSfM stats for pointcloud {file_id}: {e}")
+    return None
+
 

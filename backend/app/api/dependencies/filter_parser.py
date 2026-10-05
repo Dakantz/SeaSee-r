@@ -1,7 +1,9 @@
+import uuid
 from typing import Set, List, Optional, Any, Dict
 from fastapi import Request, HTTPException
 
 from app.schemas.filter import FilterCriterion
+from app.services.pointcloud.query_builder import FILTER_FIELD_MAP, cast_value
 
 VALID_OPERATORS: Set[str] = {"eq", "ne", "gt", "gte", "lt", "lte", "in", "like"}
 RESERVED_PARAMS: Set[str] = {"lod", "page", "limit", "predefined_query"}
@@ -83,6 +85,17 @@ class QueryFilterParser:
                 )
 
             parsed_val = self._parse_value(operator, raw_val)
+
+            field_spec = FILTER_FIELD_MAP.get(field)
+            if field_spec:
+                val_type = field_spec.get("type", "string")
+                try:
+                    cast_value(parsed_val, val_type)
+                except ValueError as ve:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid input format for filter field '{field}': {str(ve)}"
+                    )
 
             if operator == "in":
                 if field in in_filters_map:

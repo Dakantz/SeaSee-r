@@ -1,9 +1,11 @@
+import uuid
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy import update
 from app.core.database import async_session
 from app.models.job import Job
+from app.services.worker.tasks import _update_job_status
 
 class BaseTaskHandler(ABC):
     """
@@ -18,24 +20,17 @@ class BaseTaskHandler(ABC):
         progress: float = 0.0,
         error_message: Optional[str] = None,
         result: Optional[dict] = None
-    ) -> None:
+    ) -> bool:
         """Updates job status, progress percentage, error message, and results in PostgreSQL."""
-        async with async_session() as session:
-            values = {
-                "status": status,
-                "progress": round(progress, 2),
-                "error_message": error_message
-            }
-            if result is not None:
-                values["result"] = result
-            if status == "RUNNING":
-                values["started_at"] = datetime.utcnow()
-            elif status in ("COMPLETED", "FAILED"):
-                values["completed_at"] = datetime.utcnow()
+        job_uuid = uuid.UUID(str(job_id_str)) if isinstance(job_id_str, (str, uuid.UUID)) else job_id_str
 
-            stmt = update(Job).where(Job.id == job_id_str).values(**values)
-            await session.execute(stmt)
-            await session.commit()
+        return await _update_job_status(
+            job_id_str=job_id_str,
+            status=status,
+            progress=progress,
+            error_message=error_message,
+            result=result
+        )
 
     @abstractmethod
     async def execute(self, job_id: str, payload: Dict[str, Any], name: str = "", task_type: str = "") -> Dict[str, Any]:

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Integer, Float, DateTime, ForeignKey, Index, BigInteger, func
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, foreign, remote
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.types import NullType, UserDefinedType
 
@@ -58,7 +58,7 @@ class PointCloudMetadata(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     job_id = Column(UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True)
-    video_metadata_id = Column(UUID(as_uuid=True), ForeignKey("video_metadata.id", ondelete="SET NULL"), nullable=True)
+    batch_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     orig_filename = Column(String(255), nullable=False)
     safe_filename = Column(String(255), nullable=True)
     number_of_points = Column(Integer, nullable=False, default=0)
@@ -78,8 +78,20 @@ class PointCloudMetadata(Base):
     pcid = Column(Integer, nullable=False)  # pgPointcloud format format schema ID
     
     transform_matrix = Column(ARRAY(Float), nullable=False, default=[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0])
+    
+    # OpenSfM reconstruction statistics
+    reconstruction_index = Column(Integer, nullable=True, default=0)
+    views = Column(Integer, nullable=True)
+    sparse_points = Column(Integer, nullable=True)
+    dense_points = Column(Integer, nullable=True)
 
-    video_metadata = relationship("Video", back_populates="pointclouds")
+    upload_metadata = relationship(
+        "UploadMetadata",
+        primaryjoin="foreign(PointCloudMetadata.batch_id) == remote(UploadMetadata.batch_id)",
+        uselist=True,
+        viewonly=True,
+    )
+
 
 POINTCLOUD_PATCH_MODELS = {}
 

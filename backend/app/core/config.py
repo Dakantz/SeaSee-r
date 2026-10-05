@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     opensfm_ingestion_dir: str = "./data/opensfm_ingestion"
     # directory for ingesting EMODnet bathymetry geotif files
     emodnet_ingestion_dir: str = "./data/emodnet_ingestion"
+    # default path for OpenSfM configuration file
+    opensfm_config: str = "backend/app/core/openSfM/config.yaml"
+    # whether OpenSfM mesh computation is executed during sparse reconstruction
+    opensfm_compute_mesh: bool = False
+    # minimum views required for a reconstruction to trigger dense reconstruction
+    opensfm_min_views_for_dense: int = 10
     
     # Database and Redis connections (with localhost fallback for local runs)
     database_url: str = "postgresql+asyncpg://postgres:postgres_secure_password@localhost:5432/seaseer"
@@ -30,6 +36,12 @@ class Settings(BaseSettings):
     camera_srid: int = 3857
     backend_srid: int = 3857
     
+    # Default timeout in seconds for RQ background jobs (default: 3600s * 8 = 8h)
+    job_timeout: int = 3600 * 8
+
+    # Frontend container URL for health checks (defaults to Docker network host)
+    frontend_url: str = "http://frontend:80"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

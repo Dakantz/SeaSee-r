@@ -2,7 +2,8 @@ fastapi
 uvicorn
 pydantic
 pydantic-settings
-sqlalchemy
+sqlalchemy[asyncio]
+greenlet
 asyncpg
 psycopg2-binary
 alembic
@@ -16,4 +17,5 @@ psutil
 pillow
 numpy
 geoalchemy2
-
+pyyaml
+opencv-python-headless

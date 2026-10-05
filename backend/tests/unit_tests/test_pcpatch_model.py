@@ -162,3 +162,32 @@ async def test_ingest_pgpointcloud_transformation_stage():
         assert tf_stages[0]["matrix"] == "1 0 0 15.0 0 1 0 20.0 0 0 1 0 0 0 0 1"
 
 
+@pytest.mark.anyio
+async def test_ingest_pointcloud_to_db_skips_overdecimated_lods():
+    from app.services.worker.handlers.pointcloud import PointCloudUploadTaskHandler
+
+    ingested_lods = []
+
+    async def fake_ingest_pgpointcloud(*args, **kwargs):
+        ingested_lods.append(kwargs.get("lod"))
+        return 1
+
+    handler = PointCloudUploadTaskHandler()
+
+    with patch("app.services.worker.handlers.pointcloud.get_pointcloud_stats", return_value=({}, 400)), \
+         patch("app.services.worker.handlers.pointcloud.get_pointcloud_dimensions", return_value=["X", "Y", "Z"]), \
+         patch("app.services.worker.handlers.pointcloud.ingest_pgpointcloud", side_effect=fake_ingest_pgpointcloud), \
+         patch("app.services.worker.handlers.pointcloud.upsert_pointcloud_metadata", AsyncMock()):
+
+        await handler.ingest_pointcloud_to_db(
+            file_path="/tmp/small.ply",
+            file_id="22222222-2222-2222-2222-222222222222"
+        )
+
+    # For 400 points, steps 512 (LOD 9) and 1024 (LOD 10) exceed point count and should be skipped
+    assert ingested_lods == [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    assert 9 not in ingested_lods
+    assert 10 not in ingested_lods
+
+
+

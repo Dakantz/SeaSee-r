@@ -1,22 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
+import { TransformControls } from "@react-three/drei";
 import * as THREE from "three";
-import { usePLYPointCloudContext } from "./PLYPointCloudContext";
-import { generateDelaunayTerrainMesh } from "./utils/delaunayTriangulation";
+import { usePLYPointCloudContext, type PerfTestMetric, type PerfTestSummary } from "./PLYPointCloudContext";
+import ViewportGizmoHelper from "./ViewportGizmoHelper";
 import { TrajectoryRenderer } from "../RovRenderer/trajectoryRenderer";
-import { fetchBinaryGeometry } from "./utils/pointCloudLoader";
-import type { FilterRule } from "./utils/filterUtils";
+import type { PositionSample } from "../TelemetoryPanel/TelemetryPositionReader";
 
 export { CustomQueryManager, PointCloudList } from "./CustomQueryManager";
 export { CustomQueryManagerContainer, PointCloudListContainer } from "./CustomQueryManagerContainer";
 export type { CustomQuery, CustomQueryManagerProps, PointCloudItem, PointCloudListProps } from "./CustomQueryManager";
-import { getBoundingBoxCenter, type CustomQuery } from "./CustomQueryManager";
+import { CameraMovementSystem, TARGET_X, TARGET_Y } from "./utils/CameraMovementController";
+import { getPointCloudTransform } from "./utils/pointCloudTransform";
+import DynamicCubicLODController, { BoxOutline } from "./DynamicCubicLODController";
+import { getApiBaseUrl } from "../../utils/apiConfig";
 
 
 // @ts-expect-error - geo-three submodule
 import { MapView, DebugProvider, HeightDebugProvider, OpenStreetMapsProvider, OpenMapTilesProvider, MapTilerProvider, BingMapsProvider, BathymetryProvider, EmodnetProvider, EmodnetTileProvider, EmodnetWCSProvider, UnitsUtils, MapNodeGeometry, MapHeightNodeShader, MapHeightNode, MapNodeHeightGeometry, MapPlaneNode, CanvasUtils } from "../../../public/geo-three/build/geo-three.module.js";
 
-// Set skirt depth to 100.0 so the skirt extends down to height -100
+// Set skirt depth to 2000.0 so the skirt extends down to height -2000
 MapHeightNodeShader.geometry = new MapNodeGeometry(1.0, 1.0, MapHeightNodeShader.geometrySize, MapHeightNodeShader.geometrySize, true, 2000.0);
 
 if (MapHeightNode.prototype.loadHeightGeometry) {
@@ -73,9 +76,6 @@ if (MapHeightNode.prototype.loadHeightGeometry) {
         this.heightLoaded = true;
     };
 }
-
-const TARGET_X = 1622520.9730428709;
-const TARGET_Y = -5522707.795739262;
 
 function SceneLighting() {
     const {
@@ -135,176 +135,8 @@ function SceneLighting() {
     );
 }
 
-function getHeightFactor(z: number): number {
-    return Math.max(0.1, Math.abs(z) / 1000);
-}
-
-const _qYaw = new THREE.Quaternion();
-const _qPitch = new THREE.Quaternion();
-const _tmpVecForward = new THREE.Vector3();
-const _tmpVecRight = new THREE.Vector3();
-const _tmpVecUp = new THREE.Vector3();
-const _tmpVecDir = new THREE.Vector3();
-
-const _colorHovered = new THREE.Color("#ffaa00");
-const _colorDefault = new THREE.Color("#00e5ff");
-
-function CameraPositionControls() {
-    const { camera, gl } = useThree();
-    const isDragging = useRef(false);
-    const dragButton = useRef<number | null>(null);
-    const previousMouse = useRef({ x: 0, y: 0 });
-    const keysPressed = useRef<{ [key: string]: boolean }>({});
-
-    const initialized = useRef(false);
-    useEffect(() => {
-        if (!initialized.current) {
-            camera.up.set(0, 0, 1);
-            camera.lookAt(TARGET_X, TARGET_Y, 0);
-            initialized.current = true;
-        }
-    }, [camera]);
-
-    useEffect(() => {
-        const domElement = gl.domElement;
-
-        const onPointerDown = (e: PointerEvent) => {
-            isDragging.current = true;
-            dragButton.current = e.button;
-            previousMouse.current = { x: e.clientX, y: e.clientY };
-        };
-
-        const onPointerMove = (e: PointerEvent) => {
-            if (!isDragging.current) return;
-
-            const deltaX = e.clientX - previousMouse.current.x;
-            const deltaY = e.clientY - previousMouse.current.y;
-            previousMouse.current = { x: e.clientX, y: e.clientY };
-
-            if (dragButton.current === 0) {
-                // Left click: Rotate around current camera position using quaternions
-                const rotateSpeed = 0.003;
-
-                // 1. Yaw rotation around local camera Up-axis
-                const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
-                _qYaw.setFromAxisAngle(up, -deltaX * rotateSpeed);
-
-                // 2. Pitch rotation around local camera Right-axis
-                const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
-                _qPitch.setFromAxisAngle(right, -deltaY * rotateSpeed);
-
-                // Apply pitch then yaw to camera quaternion
-                camera.quaternion.premultiply(_qPitch).premultiply(_qYaw).normalize();
-                // camera.up.set(0, 0, 1);
-            } else if (dragButton.current === 2 || dragButton.current === 1) {
-                // Right or middle click: Pan camera position
-                const heightFactor = getHeightFactor(camera.position.z);
-                const panSpeed = 2.0 * heightFactor;
-                const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
-                const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
-
-                right.z = 0;
-                up.z = 0;
-                if (right.lengthSq() > 0) right.normalize();
-                if (up.lengthSq() > 0) up.normalize();
-
-                camera.position.addScaledVector(right, -deltaX * panSpeed);
-                camera.position.addScaledVector(up, deltaY * panSpeed);
-            }
-        };
-
-        const onPointerUp = () => {
-            isDragging.current = false;
-            dragButton.current = null;
-        };
-
-        const onWheel = (e: WheelEvent) => {
-            e.preventDefault();
-            const heightFactor = getHeightFactor(camera.position.z);
-            const zoomSpeed = 1.0 * heightFactor;
-            camera.getWorldDirection(_tmpVecDir);
-
-            const moveDistance = -Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 100) * zoomSpeed;
-            camera.position.addScaledVector(_tmpVecDir, moveDistance);
-        };
-
-        const onContextMenu = (e: MouseEvent) => {
-            e.preventDefault();
-        };
-
-        const onKeyDown = (e: KeyboardEvent) => {
-            keysPressed.current[e.code] = true;
-        };
-
-        const onKeyUp = (e: KeyboardEvent) => {
-            keysPressed.current[e.code] = false;
-        };
-
-        domElement.addEventListener("pointerdown", onPointerDown);
-        window.addEventListener("pointermove", onPointerMove);
-        window.addEventListener("pointerup", onPointerUp);
-        domElement.addEventListener("wheel", onWheel, { passive: false });
-        domElement.addEventListener("contextmenu", onContextMenu);
-        window.addEventListener("keydown", onKeyDown);
-        window.addEventListener("keyup", onKeyUp);
-
-        return () => {
-            domElement.removeEventListener("pointerdown", onPointerDown);
-            window.removeEventListener("pointermove", onPointerMove);
-            window.removeEventListener("pointerup", onPointerUp);
-            domElement.removeEventListener("wheel", onWheel);
-            domElement.removeEventListener("contextmenu", onContextMenu);
-            window.removeEventListener("keydown", onKeyDown);
-            window.removeEventListener("keyup", onKeyUp);
-        };
-    }, [camera, gl]);
-
-    useFrame((_, delta) => {
-        if (
-            document.activeElement &&
-            (document.activeElement.tagName === "INPUT" ||
-                document.activeElement.tagName === "TEXTAREA" ||
-                document.activeElement.tagName === "SELECT")
-        ) {
-            return;
-        }
-
-        const keys = keysPressed.current;
-        if (!keys) return;
-
-        const isShift = keys["ShiftLeft"];
-        const heightFactor = getHeightFactor(camera.position.z);
-        const moveSpeed = (isShift ? 3000 : 800) * heightFactor * delta;
-
-        camera.getWorldDirection(_tmpVecForward);
-        const right = _tmpVecRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
-        const up = _tmpVecUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
-
-        if (keys["KeyW"]) {
-            camera.position.addScaledVector(_tmpVecForward, moveSpeed);
-        }
-        if (keys["KeyS"]) {
-            camera.position.addScaledVector(_tmpVecForward, -moveSpeed);
-        }
-        if (keys["KeyA"]) {
-            camera.position.addScaledVector(right, -moveSpeed);
-        }
-        if (keys["KeyD"]) {
-            camera.position.addScaledVector(right, moveSpeed);
-        }
-        if (keys["KeyE"]) {
-            camera.position.addScaledVector(up, moveSpeed);
-        }
-        if (keys["KeyQ"]) {
-            camera.position.addScaledVector(up, -moveSpeed);
-        }
-    });
-
-    return null;
-}
-
 function GeoThreeHeightmap() {
-    const { showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider } = usePLYPointCloudContext();
+    const { showHeightmap, experimentalBathymetry, heightmapMode, heightmapMapProvider, heightmapHeightProvider } = usePLYPointCloudContext();
     const mapViewRef = useRef<any>(null);
 
     const mapView = useMemo(() => {
@@ -312,10 +144,21 @@ function GeoThreeHeightmap() {
         try {
             let provider: any;
             let heightProvider: any = null;
-            const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+            const apiBaseUrl = getApiBaseUrl();
 
-            const mapChoice = heightmapMapProvider ?? "OpenStreetMaps";
-            const heightChoice = heightmapHeightProvider ?? "Bathymetry";
+            let mapChoice = heightmapMapProvider ?? "OpenStreetMaps";
+            let heightChoice = heightmapHeightProvider ?? (experimentalBathymetry ? "Bathymetry" : "EmodnetWCSBilinear");
+
+            if (!experimentalBathymetry) {
+                const expMap = ["Bathymetry", "MapTilerBasic", "MapTilerOutdoor", "MapTilerSatellite", "Bing"];
+                if (expMap.includes(mapChoice)) {
+                    mapChoice = "OpenStreetMaps";
+                }
+                const expHeight = ["Bathymetry", "Debug", "MapTiler"];
+                if (expHeight.includes(heightChoice)) {
+                    heightChoice = "EmodnetWCSBilinear";
+                }
+            }
 
             // 1. Map Imagery Provider
             switch (mapChoice) {
@@ -391,7 +234,7 @@ function GeoThreeHeightmap() {
             console.error("Failed to initialize GeoThree MapView:", err);
             return null;
         }
-    }, [showHeightmap, heightmapMode, heightmapMapProvider, heightmapHeightProvider]);
+    }, [showHeightmap, experimentalBathymetry, heightmapMode, heightmapMapProvider, heightmapHeightProvider]);
 
     useEffect(() => {
         mapViewRef.current = mapView;
@@ -446,303 +289,177 @@ function GeoThreeHeightmap() {
     return <primitive object={mapView} position={[0, -0.5, 0]} />;
 }
 
+function QuerySummaryOutlines() {
+    const { queries, summaryMap, hoveredId, editingPointcloudId } = usePLYPointCloudContext();
 
+    const outlineItems = useMemo(() => {
+        const items: Array<{
+            id: string;
+            queryId: string;
+            minX: number;
+            minY: number;
+            minZ: number;
+            maxX: number;
+            maxY: number;
+            maxZ: number;
+            transformMatrix?: number[];
+            isHovered: boolean;
+            isSelected: boolean;
+        }> = [];
 
-function PointCloudCenterMarkers() {
-    const {
-        queries,
-        summaryMap,
-        hoveredId,
-        selectPointcloud,
-        hoverPointcloud,
-        focusCameraTarget,
-        startProgressiveStream,
-    } = usePLYPointCloudContext();
+        queries.forEach((q) => {
+            const summary = summaryMap[q.id];
+            if (!summary) return;
 
-    const meshRef = useRef<THREE.InstancedMesh>(null);
-    const dummy = useMemo(() => new THREE.Object3D(), []);
+            const isQueryHovered = q.id === hoveredId;
+            const isQuerySelected = q.id === editingPointcloudId;
 
-    useEffect(() => {
-        if (!meshRef.current || queries.length === 0) return;
+            let hasConnectedOutlines = false;
 
-        if (meshRef.current.geometry) {
-            meshRef.current.geometry.boundingSphere = new THREE.Sphere(
-                new THREE.Vector3(0, 0, 0),
-                Infinity
-            );
-        }
+            // Render a separate bounding box for EVERY Connected Metadata record
+            if (summary.connected_pointclouds && summary.connected_pointclouds.length > 0) {
+                summary.connected_pointclouds.forEach((pc, idx) => {
+                    if (
+                        typeof pc.min_x === "number" && typeof pc.max_x === "number" &&
+                        typeof pc.min_y === "number" && typeof pc.max_y === "number" &&
+                        typeof pc.min_z === "number" && typeof pc.max_z === "number"
+                    ) {
+                        const isPcHovered = isQueryHovered || pc.id === hoveredId;
+                        const isPcSelected = pc.id === editingPointcloudId || (isQuerySelected && summary.connected_pointclouds!.length === 1);
 
-        queries.forEach((query, index) => {
-            const [cx, cy, cz] = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, TARGET_Y, 0];
+                        items.push({
+                            id: `connected-pc-bbox-${q.id}-${pc.id || idx}`,
+                            queryId: q.id,
+                            minX: pc.min_x,
+                            minY: pc.min_y,
+                            minZ: pc.min_z,
+                            maxX: pc.max_x,
+                            maxY: pc.max_y,
+                            maxZ: pc.max_z,
+                            transformMatrix: pc.transform_matrix && pc.transform_matrix.length === 16 ? pc.transform_matrix : undefined,
+                            isHovered: isPcHovered,
+                            isSelected: isPcSelected,
+                        });
+                        hasConnectedOutlines = true;
+                    }
+                });
+            }
 
-            const isHovered = query.id === hoveredId;
-
-            // Fixed size in 3D world space
-            const scale = isHovered ? 1.5 : 1.0;
-
-            dummy.position.set(cx, cy, cz);
-            dummy.scale.set(scale, scale, scale);
-            dummy.updateMatrix();
-            meshRef.current!.setMatrixAt(index, dummy.matrix);
-
-            const color = isHovered ? _colorHovered : _colorDefault;
-            meshRef.current!.setColorAt(index, color);
+            // Fallback overall query summary bounding box if present and no connected bounds exist
+            if (
+                !hasConnectedOutlines &&
+                summary.bounding_box &&
+                typeof summary.bounding_box.min_x === "number" &&
+                typeof summary.bounding_box.max_x === "number" &&
+                typeof summary.bounding_box.min_y === "number" &&
+                typeof summary.bounding_box.max_y === "number" &&
+                typeof summary.bounding_box.min_z === "number" &&
+                typeof summary.bounding_box.max_z === "number"
+            ) {
+                items.push({
+                    id: `summary-bbox-${q.id}`,
+                    queryId: q.id,
+                    minX: summary.bounding_box.min_x,
+                    minY: summary.bounding_box.min_y,
+                    minZ: summary.bounding_box.min_z,
+                    maxX: summary.bounding_box.max_x,
+                    maxY: summary.bounding_box.max_y,
+                    maxZ: summary.bounding_box.max_z,
+                    isHovered: isQueryHovered,
+                    isSelected: isQuerySelected,
+                });
+            }
         });
 
-        meshRef.current.instanceMatrix.needsUpdate = true;
-        if (meshRef.current.instanceColor) {
-            meshRef.current.instanceColor.needsUpdate = true;
-        }
-    }, [queries, summaryMap, hoveredId, dummy]);
+        return items;
+    }, [queries, summaryMap, hoveredId, editingPointcloudId]);
 
-    if (queries.length === 0) return null;
-
-    const handleLoadQuery = (query: CustomQuery) => {
-        selectPointcloud(query.id);
-        if (startProgressiveStream) {
-            startProgressiveStream(query.id, 10, 0, query.filters);
-        }
-    };
+    if (outlineItems.length === 0) return null;
 
     return (
-        <instancedMesh
-            ref={meshRef}
-            args={[undefined, undefined, queries.length]}
-            onClick={(e) => {
-                e.stopPropagation();
-                if (e.instanceId !== undefined && queries[e.instanceId]) {
-                    const query = queries[e.instanceId];
-                    handleLoadQuery(query);
-                }
-            }}
-            onDoubleClick={(e) => {
-                e.stopPropagation();
-                if (e.instanceId !== undefined && queries[e.instanceId]) {
-                    const query = queries[e.instanceId];
-                    handleLoadQuery(query);
-                    const center = getBoundingBoxCenter(summaryMap[query.id]) || [TARGET_X, TARGET_Y, 0];
-                    focusCameraTarget(center);
-                }
-            }}
-            onPointerOver={(e) => {
-                e.stopPropagation();
-                document.body.style.cursor = "pointer";
-                if (e.instanceId !== undefined && queries[e.instanceId]) {
-                    hoverPointcloud(queries[e.instanceId].id);
-                }
-            }}
-            onPointerOut={(e) => {
-                e.stopPropagation();
-                document.body.style.cursor = "auto";
-                hoverPointcloud(null);
-            }}
-        >
-            <sphereGeometry args={[1, 16, 16]} />
-            <meshStandardMaterial roughness={0.3} metalness={0.2} />
-        </instancedMesh>
+        <group name="query-summary-outlines">
+            {outlineItems.map((item) => {
+                const width = Math.max(0.1, item.maxX - item.minX);
+                const height = Math.max(0.1, item.maxY - item.minY);
+                const depth = Math.max(0.1, item.maxZ - item.minZ);
+
+                const cx = (item.minX + item.maxX) / 2;
+                const cy = (item.minY + item.maxY) / 2;
+                const cz = (item.minZ + item.maxZ) / 2;
+
+                const color = item.isHovered ? "#ffaa00" : item.isSelected ? "#3b82f6" : "#00e5ff";
+
+                return (
+                    <QuerySingleOutlineBox
+                        key={item.id}
+                        cx={cx}
+                        cy={cy}
+                        cz={cz}
+                        width={width}
+                        height={height}
+                        depth={depth}
+                        color={color}
+                        transformMatrix={item.transformMatrix}
+                    />
+                );
+            })}
+        </group>
     );
 }
 
-import type { PositionSample } from "../TelemetoryPanel/TelemetryPositionReader";
-
-function CameraFocusController() {
-    const { camera, gl } = useThree();
-    const { cameraTarget, cameraViewTarget } = usePLYPointCloudContext();
-
-    const animState = useRef<{
-        startTime: number;
-        duration: number;
-        startPos: THREE.Vector3;
-        targetCamPos: THREE.Vector3;
-        targetCenter: THREE.Vector3;
-    } | null>(null);
-
-    const viewAnimState = useRef<{
-        startTime: number;
-        duration: number;
-        startPos: THREE.Vector3;
-        targetPos: THREE.Vector3;
-        startQuat: THREE.Quaternion;
-        targetQuat: THREE.Quaternion;
-        startFov: number;
-        targetFov: number;
-    } | null>(null);
-
-    const startFocusAnimation = useCallback((targetCenter: THREE.Vector3, customOffset?: [number, number, number] | number) => {
-        let offsetVec = new THREE.Vector3(0, -150, 150);
-        if (customOffset !== undefined) {
-            if (Array.isArray(customOffset)) {
-                offsetVec = new THREE.Vector3(...customOffset);
-            } else if (typeof customOffset === "number") {
-                offsetVec = new THREE.Vector3(0, -customOffset, customOffset);
-            }
-        }
-        const targetCamPos = targetCenter.clone().add(offsetVec);
-
-        viewAnimState.current = null;
-        animState.current = {
-            startTime: performance.now() / 1000,
-            duration: 0.6,
-            startPos: camera.position.clone(),
-            targetCamPos: targetCamPos,
-            targetCenter: targetCenter.clone(),
-        };
-    }, [camera]);
+function QuerySingleOutlineBox({
+    cx,
+    cy,
+    cz,
+    width,
+    height,
+    depth,
+    color,
+    transformMatrix,
+}: {
+    cx: number;
+    cy: number;
+    cz: number;
+    width: number;
+    height: number;
+    depth: number;
+    color: string;
+    transformMatrix?: number[];
+}) {
+    const groupRef = useRef<THREE.Group>(null);
 
     useEffect(() => {
-        if (!cameraTarget) return;
-        const { x, y, z, offset } = cameraTarget;
-        if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
-            const targetCenter = new THREE.Vector3(x, y, z);
-            startFocusAnimation(targetCenter, offset);
+        if (groupRef.current && transformMatrix && transformMatrix.length === 16) {
+            const mat = new THREE.Matrix4().fromArray(transformMatrix);
+            groupRef.current.matrix.copy(mat);
+            groupRef.current.matrixAutoUpdate = false;
+        } else if (groupRef.current) {
+            groupRef.current.matrixAutoUpdate = true;
         }
-    }, [cameraTarget, startFocusAnimation]);
+    }, [transformMatrix]);
 
-    useEffect(() => {
-        if (!cameraViewTarget) return;
-        const { position, quaternion, fov } = cameraViewTarget;
-        const targetPos = new THREE.Vector3(...position);
-
-        let targetQuat: THREE.Quaternion;
-        if (quaternion && quaternion.length === 4) {
-            targetQuat = new THREE.Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
-        } else {
-            targetQuat = camera.quaternion.clone();
-        }
-
-        const perspCam = camera as THREE.PerspectiveCamera;
-        const startFov = perspCam.fov ?? 60;
-        const targetFov = fov ?? startFov;
-
-        animState.current = null;
-        viewAnimState.current = {
-            startTime: performance.now() / 1000,
-            duration: 0.6,
-            startPos: camera.position.clone(),
-            targetPos,
-            startQuat: camera.quaternion.clone(),
-            targetQuat,
-            startFov,
-            targetFov,
-        };
-    }, [cameraViewTarget, camera]);
-
-    useEffect(() => {
-        const domElement = gl.domElement;
-
-        const stopAnimation = () => {
-            if (animState.current) {
-                animState.current = null;
-            }
-            if (viewAnimState.current) {
-                viewAnimState.current = null;
-            }
-        };
-
-        const onKeyDown = (e: KeyboardEvent) => {
-            if (
-                document.activeElement &&
-                (document.activeElement.tagName === "INPUT" ||
-                    document.activeElement.tagName === "TEXTAREA" ||
-                    document.activeElement.tagName === "SELECT")
-            ) {
-                return;
-            }
-            const navKeys = [
-                "KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE"
-            ];
-            if (navKeys.includes(e.code)) {
-                stopAnimation();
-            }
-        };
-
-        domElement.addEventListener("pointerdown", stopAnimation);
-        domElement.addEventListener("wheel", stopAnimation, { passive: true });
-        domElement.addEventListener("touchstart", stopAnimation, { passive: true });
-        window.addEventListener("keydown", onKeyDown);
-
-        return () => {
-            domElement.removeEventListener("pointerdown", stopAnimation);
-            domElement.removeEventListener("wheel", stopAnimation);
-            domElement.removeEventListener("touchstart", stopAnimation);
-            window.removeEventListener("keydown", onKeyDown);
-        };
-    }, [gl]);
-
-    useFrame(() => {
-        if (animState.current) {
-            const { startTime, duration, startPos, targetCamPos, targetCenter } = animState.current;
-            const now = performance.now() / 1000;
-            const elapsed = now - startTime;
-            const progress = Math.min(1, elapsed / duration);
-            const easeT = 1 - Math.pow(1 - progress, 3);
-
-            camera.position.lerpVectors(startPos, targetCamPos, easeT);
-            camera.up.set(0, 0, 1);
-            camera.lookAt(targetCenter);
-
-            if (progress >= 1) {
-                camera.position.copy(targetCamPos);
-                camera.up.set(0, 0, 1);
-                camera.lookAt(targetCenter);
-                animState.current = null;
-            }
-            return;
-        }
-
-        if (viewAnimState.current) {
-            const { startTime, duration, startPos, targetPos, startQuat, targetQuat, startFov, targetFov } = viewAnimState.current;
-            const now = performance.now() / 1000;
-            const elapsed = now - startTime;
-            const progress = Math.min(1, elapsed / duration);
-            const easeT = 1 - Math.pow(1 - progress, 3);
-
-            camera.position.lerpVectors(startPos, targetPos, easeT);
-            camera.quaternion.slerpQuaternions(startQuat, targetQuat, easeT);
-
-            const perspCam = camera as THREE.PerspectiveCamera;
-            if (perspCam.fov !== undefined && startFov !== targetFov) {
-                perspCam.fov = THREE.MathUtils.lerp(startFov, targetFov, easeT);
-                perspCam.updateProjectionMatrix();
-            }
-
-            if (progress >= 1) {
-                camera.position.copy(targetPos);
-                camera.quaternion.copy(targetQuat);
-                if (perspCam.fov !== undefined && targetFov) {
-                    perspCam.fov = targetFov;
-                    perspCam.updateProjectionMatrix();
-                }
-                viewAnimState.current = null;
-            }
-        }
-    });
-
-    return null;
+    return (
+        <group ref={groupRef}>
+            <group position={[cx, cy, cz]}>
+                <BoxOutline width={width} height={height} depth={depth} color={color} />
+            </group>
+        </group>
+    );
 }
+
+
+
+
 
 function DBCameraTrajectoryDisplay() {
     const {
         showCameraTrajectories,
-        loadedGeometries,
-        loadingIds,
+        queries,
         summaryMap,
-        mode,
+        catalog,
         setCameraView,
+        setIsCameraUpFixed,
     } = usePLYPointCloudContext();
-
-    const displayedKeys = useMemo(() => {
-        const keys = new Set<string>();
-        for (const id of loadedGeometries.keys()) {
-            if (id) keys.add(id);
-        }
-        if (loadingIds) {
-            for (const id of loadingIds) {
-                if (id) keys.add(id);
-            }
-        }
-        return Array.from(keys);
-    }, [loadedGeometries, loadingIds]);
 
     const headerMap = useMemo(() => {
         const map = new Map<string, { id: string; focal?: number | null; width?: number | null; height?: number | null }>();
@@ -760,77 +477,126 @@ function DBCameraTrajectoryDisplay() {
         return map;
     }, [summaryMap]);
 
-    const handlePointClick = useCallback((sample: PositionSample, routePosition: [number, number, number]) => {
-        if (!sample) return;
+    const handlePointClick = useCallback(
+        (sample: PositionSample, routePosition: [number, number, number], pcId?: string) => {
+            if (!sample) return;
 
-        if (sample.filename) {
-            console.log("Clicked trajectory point filename:", sample.filename);
-        }
+            if (sample.filename) {
+                console.log("Clicked trajectory point filename:", sample.filename);
+            }
 
-        // Compute 3D camera position and orientation directly for native Z-up
-        const routeOffset = new THREE.Vector3(...routePosition);
+            setIsCameraUpFixed(false);
 
-        // 1. Compute 3D camera position in world coordinates
-        const localPos = new THREE.Vector3(sample.x, sample.y, sample.z);
-        const worldPos = localPos.clone().add(routeOffset);
+            // Compute 3D camera position and orientation directly for native Z-up
+            const routeOffset = new THREE.Vector3(...routePosition);
 
-        // 2. Compute 3D camera orientation quaternion in world coordinates
-        let worldQuat: THREE.Quaternion;
-        if (sample.rotation && Array.isArray(sample.rotation) && sample.rotation.length === 4) {
-            worldQuat = new THREE.Quaternion(
-                sample.rotation[0],
-                sample.rotation[1],
-                sample.rotation[2],
-                sample.rotation[3]
-            );
-        } else if (sample.direction && Array.isArray(sample.direction) && sample.direction.length === 3) {
-            const worldDir = new THREE.Vector3(sample.direction[0], sample.direction[1], sample.direction[2]).normalize();
+            // 1. Compute 3D camera position in world coordinates
+            const localPos = new THREE.Vector3(sample.x, sample.y, sample.z);
+            const worldPos = localPos.clone().add(routeOffset);
 
-            const tempCam = new THREE.PerspectiveCamera();
-            tempCam.up.set(0, 0, 1);
-            tempCam.position.copy(worldPos);
-            tempCam.lookAt(worldPos.clone().add(worldDir));
-            worldQuat = tempCam.quaternion.clone();
-        } else {
-            worldQuat = new THREE.Quaternion();
-        }
+            // 2. Compute 3D camera orientation quaternion in world coordinates
+            let worldQuat: THREE.Quaternion;
+            if (sample.rotation && Array.isArray(sample.rotation) && sample.rotation.length === 4) {
+                worldQuat = new THREE.Quaternion(
+                    sample.rotation[0],
+                    sample.rotation[1],
+                    sample.rotation[2],
+                    sample.rotation[3]
+                );
+            } else if (sample.direction && Array.isArray(sample.direction) && sample.direction.length === 3) {
+                const worldDir = new THREE.Vector3(sample.direction[0], sample.direction[1], sample.direction[2]).normalize();
 
-        // 3. Compute camera vertical FOV (in degrees) from camera header focal length
-        let fovDeg: number | undefined = undefined;
-        if (sample.cameraHeaderId && headerMap.has(sample.cameraHeaderId)) {
-            const header = headerMap.get(sample.cameraHeaderId);
-            if (header && typeof header.focal === "number" && header.width && header.height) {
-                const maxDim = Math.max(header.width, header.height);
-                const focalPixels = header.focal * maxDim;
-                if (focalPixels > 0) {
-                    const fovRad = 2 * Math.atan((header.height / 2) / focalPixels);
-                    fovDeg = fovRad * (180 / Math.PI);
+                const tempCam = new THREE.PerspectiveCamera();
+                tempCam.up.set(0, 0, 1);
+                tempCam.position.copy(worldPos);
+                tempCam.lookAt(worldPos.clone().add(worldDir));
+                worldQuat = tempCam.quaternion.clone();
+            } else {
+                worldQuat = new THREE.Quaternion();
+            }
+
+            // 3. Retrieve point cloud transformation matrix (full world matrix M_world)
+            const targetId = pcId || "";
+            const { matrixArr } = getPointCloudTransform(targetId, summaryMap, catalog);
+
+            // Apply transformation matrix to position & quaternion before moving camera
+            if (matrixArr && matrixArr.length === 16) {
+                const matWorld = new THREE.Matrix4().fromArray(matrixArr);
+
+                // Transform position: p_world = M_world * p_local
+                worldPos.applyMatrix4(matWorld);
+
+                // Transform orientation quaternion
+                const transformPos = new THREE.Vector3();
+                const transformQuat = new THREE.Quaternion();
+                const transformScale = new THREE.Vector3();
+                matWorld.decompose(transformPos, transformQuat, transformScale);
+
+                worldQuat.premultiply(transformQuat);
+            }
+
+            // 4. Compute camera vertical FOV (in degrees) from camera header focal length
+            let fovDeg: number | undefined = undefined;
+            if (sample.cameraHeaderId && headerMap.has(sample.cameraHeaderId)) {
+                const header = headerMap.get(sample.cameraHeaderId);
+                if (header && typeof header.focal === "number" && header.width && header.height) {
+                    const maxDim = Math.max(header.width, header.height);
+                    const focalPixels = header.focal * maxDim;
+                    if (focalPixels > 0) {
+                        const fovRad = 2 * Math.atan((header.height / 2) / focalPixels);
+                        fovDeg = fovRad * (180 / Math.PI);
+                    }
                 }
             }
-        }
 
-        setCameraView({
-            position: [worldPos.x, worldPos.y, worldPos.z],
-            quaternion: [worldQuat.x, worldQuat.y, worldQuat.z, worldQuat.w],
-            fov: fovDeg,
-        });
-    }, [headerMap, setCameraView]);
+            setCameraView({
+                position: [worldPos.x, worldPos.y, worldPos.z],
+                quaternion: [worldQuat.x, worldQuat.y, worldQuat.z, worldQuat.w],
+                fov: fovDeg,
+            });
+        },
+        [headerMap, setCameraView, setIsCameraUpFixed, summaryMap, catalog]
+    );
 
-    if (!showCameraTrajectories || displayedKeys.length === 0) return null;
+    if (!showCameraTrajectories || queries.length === 0) return null;
 
-    const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+    const apiBaseUrl = getApiBaseUrl();
 
     const routesToRender: Array<{
         key: string;
+        pcId: string;
         url: string;
         allowedHeaderIds: Set<string>;
         position: [number, number, number];
     }> = [];
 
-    for (const qId of displayedKeys) {
+    const seenRouteKeys = new Set<string>();
+
+    for (const query of queries) {
+        const qId = query.id;
+        if (!qId) continue;
         const summary = summaryMap?.[qId];
         const connectedHeaders = summary?.connected_camera_headers;
         if (!connectedHeaders || connectedHeaders.length === 0) {
+            const query = queries.find((q) => q.id === qId);
+            const pcIdRule = query?.filters?.find(
+                (f) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator)
+            )?.value;
+            const pcId = pcIdRule ? String(pcIdRule) : (qId.includes("-") && qId.length >= 32 ? qId : null);
+
+            if (pcId) {
+                const rKey = `${qId}-${pcId}`;
+                if (!seenRouteKeys.has(rKey)) {
+                    seenRouteKeys.add(rKey);
+                    routesToRender.push({
+                        key: rKey,
+                        pcId,
+                        url: `${apiBaseUrl}/pointclouds/${pcId}/camera-routes`,
+                        allowedHeaderIds: new Set<string>(),
+                        position: [0, 0, 0],
+                    });
+                }
+            }
             continue;
         }
 
@@ -846,15 +612,17 @@ function DBCameraTrajectoryDisplay() {
         }
 
         headersByPc.forEach((headerIds, pcId) => {
-            const position: [number, number, number] =
-                mode === "plyUrl" ? [TARGET_X, TARGET_Y, 0] : [0, 0, 0];
-
-            routesToRender.push({
-                key: `${qId}-${pcId}`,
-                url: `${apiBaseUrl}/pointclouds/${pcId}/camera-routes`,
-                allowedHeaderIds: headerIds,
-                position,
-            });
+            const rKey = `${qId}-${pcId}`;
+            if (!seenRouteKeys.has(rKey)) {
+                seenRouteKeys.add(rKey);
+                routesToRender.push({
+                    key: rKey,
+                    pcId,
+                    url: `${apiBaseUrl}/pointclouds/${pcId}/camera-routes`,
+                    allowedHeaderIds: headerIds,
+                    position: [0, 0, 0],
+                });
+            }
         });
     }
 
@@ -863,492 +631,328 @@ function DBCameraTrajectoryDisplay() {
     return (
         <group>
             {routesToRender.map((route) => (
-                <TrajectoryRenderer
-                    key={route.key}
-                    url={route.url}
-                    allowedHeaderIds={route.allowedHeaderIds}
-                    position={route.position}
-                    color={0x00ffcc}
-                    lineWidth={3}
-                    showPoints={true}
-                    pointSize={1.5}
-                    onPointClick={(sample) => handlePointClick(sample, route.position)}
-                />
+                <PointCloudTransformItem key={route.key} id={route.pcId}>
+                    <TrajectoryRenderer
+                        url={route.url}
+                        allowedHeaderIds={route.allowedHeaderIds}
+                        position={route.position}
+                        color={0x00ffcc}
+                        lineWidth={3}
+                        showPoints={true}
+                        pointSize={1.5}
+                        onPointClick={(sample) => handlePointClick(sample, route.position, route.pcId)}
+                    />
+                </PointCloudTransformItem>
             ))}
         </group>
     );
 }
 
-function getLodColor(lod: number): string {
-    const colors: Record<number, string> = {
-        0: "#ff0055", // Red/Pink (LOD 0 - highest detail)
-        1: "#ffaa00", // Orange (LOD 1)
-        2: "#ffff00", // Yellow (LOD 2)
-        3: "#00ff66", // Bright Green (LOD 3)
-        4: "#00ffff", // Cyan (LOD 4)
-        5: "#0088ff", // Blue (LOD 5)
-        6: "#aa00ff", // Purple (LOD 6)
-        7: "#ff00aa", // Magenta (LOD 7)
-        8: "#888888", // Gray (LOD 8)
-        9: "#ffffff", // White (LOD 9)
-        10: "#445566", // Slate (LOD 10 - Global)
-    };
-    return colors[lod] || "#ffffff";
-}
-
-function BoxOutline({ width, height, depth, color }: { width: number; height: number; depth: number; color: string }) {
-    const edgesGeometry = useMemo(() => {
-        const box = new THREE.BoxGeometry(width, height, depth);
-        const edges = new THREE.EdgesGeometry(box);
-        box.dispose();
-        return edges;
-    }, [width, height, depth]);
-
-    useEffect(() => {
-        return () => {
-            edgesGeometry.dispose();
-        };
-    }, [edgesGeometry]);
-
-    return (
-        <lineSegments geometry={edgesGeometry}>
-            <lineBasicMaterial color={color} transparent opacity={0.7} />
-        </lineSegments>
-    );
-}
-
-interface ChunkSlotData {
-    key: string;
-    queryId: string;
-    lod: number;
-    i?: number;
-    j?: number;
-    k?: number;
-    bounds?: {
-        minX: number; maxX: number;
-        minY: number; maxY: number;
-        minZ: number; maxZ: number;
-    };
-    geometry?: THREE.BufferGeometry;
-    status: "loading" | "loaded" | "empty";
-    abortController?: AbortController;
-}
-
-interface FetchTask {
-    key: string;
-    queryId: string;
-    lod: number;
-    i?: number;
-    j?: number;
-    k?: number;
-    distSq: number;
-    filters: FilterRule[];
-    bounds?: {
-        minX: number; maxX: number;
-        minY: number; maxY: number;
-        minZ: number; maxZ: number;
-    };
-}
-
-const W0_BASE_CELL_WIDTH = 0.25;
-const MAX_CONCURRENT_FETCHES = 100;
-const MOVEMENT_THRESHOLD_SQ = 0.025;
-const SHOW_OUTLINES = false
-
-function DynamicCubicLODController() {
-    const { camera } = useThree();
+export function PointCloudTransformItem({
+    id,
+    children,
+}: {
+    id: string;
+    children: React.ReactNode;
+}) {
     const {
+        editingPointcloudId,
+        gizmoMode,
+        updatePointcloudTransform,
+        summaryMap,
         queries,
-        loadedGeometries,
-        mode,
-        renderMode,
-        wireframe,
-        pointSize,
+        catalog,
+        setIsGizmoDragging,
     } = usePLYPointCloudContext();
 
-    const [chunksMap, setChunksMap] = useState<Map<string, ChunkSlotData>>(new Map());
-    const activeFetchesRef = useRef<number>(0);
-    const pendingQueueRef = useRef<FetchTask[]>([]);
-    const activeKeysRef = useRef<Set<string>>(new Set());
-    const lastCamPosRef = useRef<THREE.Vector3>(new THREE.Vector3(NaN, NaN, NaN));
+    const [pivotObj, setPivotObj] = useState<THREE.Group | null>(null);
 
-    const activeTargetQueries = useMemo(() => {
-        if (mode !== "binary") return [];
-        const targets: Array<{ id: string; filters?: FilterRule[] }> = [];
-        const targetIds = new Set<string>();
+    const isEditing = useMemo(() => {
+        if (!editingPointcloudId || !gizmoMode) return false;
+        if (editingPointcloudId === id) return true;
 
-        for (const id of loadedGeometries.keys()) {
-            if (id) targetIds.add(id);
-        }
-        for (const q of queries) {
-            if (q.id) targetIds.add(q.id);
+        const summary = summaryMap[editingPointcloudId];
+        if (summary?.connected_pointclouds && summary.connected_pointclouds.length === 1 && summary.connected_pointclouds[0].id === id) {
+            return true;
         }
 
-        for (const id of targetIds) {
-            const matchedQuery = queries.find((q) => q.id === id);
-            targets.push({
-                id,
-                filters: matchedQuery?.filters || [
-                    { id: `filter-${id}`, field: "pointcloud_id", operator: "eq", value: id }
-                ]
-            });
-        }
-        return targets;
-    }, [mode, loadedGeometries, queries]);
-
-    const processQueue = useCallback(() => {
-        while (activeFetchesRef.current < MAX_CONCURRENT_FETCHES && pendingQueueRef.current.length > 0) {
-            const task = pendingQueueRef.current.shift();
-            if (!task) break;
-
-            if (!activeKeysRef.current.has(task.key)) continue;
-
-            activeFetchesRef.current++;
-            const controller = new AbortController();
-
-            setChunksMap((prevMap) => {
-                const newMap = new Map(prevMap);
-                newMap.set(task.key, {
-                    key: task.key,
-                    queryId: task.queryId,
-                    lod: task.lod,
-                    i: task.i,
-                    j: task.j,
-                    k: task.k,
-                    bounds: task.bounds,
-                    status: "loading",
-                    abortController: controller,
-                });
-                return newMap;
-            });
-
-            fetchBinaryGeometry(task.queryId, task.lod, controller.signal, task.filters)
-                .then((geom) => {
-                    if (controller.signal.aborted) {
-                        geom.dispose();
-                        return;
-                    }
-                    setChunksMap((prevMap) => {
-                        const entry = prevMap.get(task.key);
-                        if (!entry || controller.signal.aborted) {
-                            geom.dispose();
-                            return prevMap;
-                        }
-                        const newMap = new Map(prevMap);
-                        newMap.set(task.key, {
-                            ...entry,
-                            geometry: geom,
-                            status: "loaded",
-                            abortController: undefined,
-                        });
-                        return newMap;
-                    });
-                })
-                .catch((_err) => {
-                    if (controller.signal.aborted) return;
-                    setChunksMap((prevMap) => {
-                        const entry = prevMap.get(task.key);
-                        if (!entry) return prevMap;
-                        const newMap = new Map(prevMap);
-                        newMap.set(task.key, {
-                            ...entry,
-                            status: "empty",
-                            abortController: undefined,
-                        });
-                        return newMap;
-                    });
-                })
-                .finally(() => {
-                    activeFetchesRef.current--;
-                    processQueue();
-                });
-        }
-    }, []);
-
-    useFrame(() => {
-        if (mode !== "binary" || activeTargetQueries.length === 0) return;
-
-        const camPos = camera.position;
-
-        if (
-            !Number.isNaN(lastCamPosRef.current.x) &&
-            camPos.distanceToSquared(lastCamPosRef.current) < MOVEMENT_THRESHOLD_SQ
-        ) {
-            return;
+        const query = queries.find((q) => q.id === editingPointcloudId);
+        const filterPcId = query?.filters?.find((f) => f.field === "pointcloud_id")?.value;
+        if (filterPcId && String(filterPcId) === id) {
+            return true;
         }
 
-        lastCamPosRef.current.copy(camPos);
+        return false;
+    }, [editingPointcloudId, gizmoMode, id, summaryMap, queries]);
 
-        const pcX = camPos.x;
-        const pcY = camPos.y;
-        const pcZ = camPos.z;
+    // Retrieve saved transform_matrix (M_world) and center offset via getPointCloudTransform
+    const { matrixArr, center } = useMemo(() => {
+        return getPointCloudTransform(id, summaryMap, catalog);
+    }, [id, summaryMap, catalog]);
 
-        const newActiveKeys = new Set<string>();
-        const newTasks: FetchTask[] = [];
+    const [cx, cy, cz] = center;
 
-        for (const { id: queryId, filters: baseFilters } of activeTargetQueries) {
-            // Global LOD 10 view
-            const globalKey = `${queryId}_lod10_global`;
-            newActiveKeys.add(globalKey);
-            if (!chunksMap.has(globalKey)) {
-                newTasks.push({
-                    key: globalKey,
-                    queryId,
-                    lod: 10,
-                    distSq: 0,
-                    filters: baseFilters || [],
-                });
-            }
-
-            // 3x3x3 cell neighborhood across spatial LOD levels (3x scaling factor so middle cube of LOD L overlaps 27 cubes of LOD L-1)
-            for (let lod = 0; lod <= 9; lod++) {
-                const wL = W0_BASE_CELL_WIDTH * Math.pow(3, lod);
-
-                const centerI = Math.floor(pcX / wL);
-                const centerJ = Math.floor(pcY / wL);
-                const centerK = Math.floor(pcZ / wL);
-
-                for (let dx = -1; dx <= 1; dx++) {
-                    for (let dy = -1; dy <= 1; dy++) {
-                        for (let dz = -1; dz <= 1; dz++) {
-                            const i = centerI + dx;
-                            const j = centerJ + dy;
-                            const k = centerK + dz;
-
-                            const chunkKey = `${queryId}_lod${lod}_${i}_${j}_${k}`;
-                            newActiveKeys.add(chunkKey);
-
-                            if (chunksMap.has(chunkKey)) continue;
-
-                            const minX = i * wL;
-                            const maxX = (i + 1) * wL;
-                            const minY = j * wL;
-                            const maxY = (j + 1) * wL;
-                            const minZ = k * wL;
-                            const maxZ = (k + 1) * wL;
-
-                            const cellCenterX = (i + 0.5) * wL;
-                            const cellCenterY = (j + 0.5) * wL;
-                            const cellCenterZ = (k + 0.5) * wL;
-
-                            const distSq =
-                                Math.pow(cellCenterX - pcX, 2) +
-                                Math.pow(cellCenterY - pcY, 2) +
-                                Math.pow(cellCenterZ - pcZ, 2);
-
-                            const combinedFilters: FilterRule[] = [
-                                ...(baseFilters || []),
-                                { id: `spatial-min_x-${lod}-${i}`, field: "min_x", operator: "gte", value: minX },
-                                { id: `spatial-max_x-${lod}-${i}`, field: "max_x", operator: "lte", value: maxX },
-                                { id: `spatial-min_y-${lod}-${j}`, field: "min_y", operator: "gte", value: minY },
-                                { id: `spatial-max_y-${lod}-${j}`, field: "max_y", operator: "lte", value: maxY },
-                                { id: `spatial-min_z-${lod}-${k}`, field: "min_z", operator: "gte", value: minZ },
-                                { id: `spatial-max_z-${lod}-${k}`, field: "max_z", operator: "lte", value: maxZ },
-                            ];
-
-                            newTasks.push({
-                                key: chunkKey,
-                                queryId,
-                                lod,
-                                i, j, k,
-                                distSq,
-                                filters: combinedFilters,
-                                bounds: { minX, maxX, minY, maxY, minZ, maxZ },
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        activeKeysRef.current = newActiveKeys;
-
-        // Retain loaded chunks in memory until they are more than 3 times as far away as where they would be loaded
-        setChunksMap((prevMap) => {
-            let changed = false;
-            const newMap = new Map(prevMap);
-            for (const [key, entry] of prevMap.entries()) {
-                if (key.endsWith("_global")) continue;
-                if (newActiveKeys.has(key)) continue;
-
-                if (
-                    entry.i !== undefined &&
-                    entry.j !== undefined &&
-                    entry.k !== undefined &&
-                    entry.lod !== undefined
-                ) {
-                    const wL = W0_BASE_CELL_WIDTH * Math.pow(3, entry.lod);
-                    const camCenterI = Math.floor(pcX / wL);
-                    const camCenterJ = Math.floor(pcY / wL);
-                    const camCenterK = Math.floor(pcZ / wL);
-
-                    const dx = Math.abs(entry.i - camCenterI);
-                    const dy = Math.abs(entry.j - camCenterJ);
-                    const dz = Math.abs(entry.k - camCenterK);
-
-                    // Chunks are loaded when max(dx, dy, dz) <= 1 (3x3x3 grid).
-                    // Keep in memory until max(dx, dy, dz) > 3 (more than 3x as far as loading threshold).
-                    if (dx <= 3 && dy <= 3 && dz <= 3) {
-                        continue;
-                    }
-                }
-
-                if (entry.abortController) {
-                    entry.abortController.abort();
-                }
-                if (entry.geometry) {
-                    entry.geometry.dispose();
-                }
-                newMap.delete(key);
-                changed = true;
-            }
-            return changed ? newMap : prevMap;
-        });
-
-        // Filter and merge pending queue tasks
-        const existingQueuedKeys = new Set(pendingQueueRef.current.map((t) => t.key));
-        const filteredPending = pendingQueueRef.current.filter((t) => newActiveKeys.has(t.key));
-
-        for (const task of newTasks) {
-            if (!existingQueuedKeys.has(task.key)) {
-                filteredPending.push(task);
-            }
-        }
-
-        // Priority ordering: LOD 10 first down to LOD 0 last, then closest cell center first
-        filteredPending.sort((a, b) => {
-            if (b.lod !== a.lod) {
-                return b.lod - a.lod;
-            }
-            return a.distSq - b.distSq;
-        });
-
-        pendingQueueRef.current = filteredPending;
-        processQueue();
-    });
-
+    // Apply saved initial transform matrix from metadata onto pivot group
+    // Formula: M_pivot = T(-c) * M_world * T(c)
     useEffect(() => {
-        return () => {
-            pendingQueueRef.current = [];
-            activeKeysRef.current.clear();
-            setChunksMap((prevMap) => {
-                prevMap.forEach((entry) => {
-                    entry.abortController?.abort();
-                    entry.geometry?.dispose();
-                });
-                return new Map();
-            });
-        };
-    }, []);
+        if (!pivotObj) return;
 
-    if (mode !== "binary" || chunksMap.size === 0) return null;
+        const matWorld = (matrixArr && matrixArr.length === 16)
+            ? new THREE.Matrix4().fromArray(matrixArr)
+            : new THREE.Matrix4().identity();
+
+        const Tc = new THREE.Matrix4().makeTranslation(cx, cy, cz);
+        const T_neg_c = new THREE.Matrix4().makeTranslation(-cx, -cy, -cz);
+        const matPivot = T_neg_c.clone().multiply(matWorld).multiply(Tc);
+
+        matPivot.decompose(pivotObj.position, pivotObj.quaternion, pivotObj.scale);
+        pivotObj.updateMatrix();
+    }, [matrixArr, cx, cy, cz, pivotObj]);
+
+    const handleObjectChange = useCallback(() => {
+        if (!pivotObj) return;
+        pivotObj.updateMatrix();
+    }, [pivotObj]);
+
+    const handleMouseUp = useCallback(() => {
+        const targetId = id;
+        if (!pivotObj || !targetId) return;
+        pivotObj.updateMatrix();
+
+        // Convert pivot delta matrix (matPivot) back to full world matrix (matWorld):
+        // Formula: M_world = T(c) * M_pivot * T(-c)
+        const matPivot = pivotObj.matrix;
+        const Tc = new THREE.Matrix4().makeTranslation(cx, cy, cz);
+        const T_neg_c = new THREE.Matrix4().makeTranslation(-cx, -cy, -cz);
+        const matWorld = Tc.clone().multiply(matPivot).multiply(T_neg_c);
+
+        const matrixArray = matWorld.toArray();
+        updatePointcloudTransform(targetId, matrixArray);
+    }, [id, pivotObj, cx, cy, cz, updatePointcloudTransform]);
 
     return (
         <group>
-            {Array.from(chunksMap.values()).map((chunk) => {
-                if (!chunk.geometry && (!SHOW_OUTLINES || !chunk.bounds)) return null;
-                return (
-                    <group key={chunk.key}>
-                        {chunk.geometry && (
-                            renderMode === "mesh" ? (
-                                <mesh geometry={chunk.geometry}>
-                                    <meshStandardMaterial
-                                        vertexColors={!!chunk.geometry.attributes.color}
-                                        side={THREE.DoubleSide}
-                                        wireframe={wireframe}
-                                        roughness={0.5}
-                                        metalness={0.1}
-                                    />
-                                </mesh>
-                            ) : (
-                                <points geometry={chunk.geometry}>
-                                    <pointsMaterial
-                                        vertexColors={!!chunk.geometry.attributes.color}
-                                        size={pointSize * 0.0025 * Math.pow(2, chunk.lod)}
-                                        sizeAttenuation
-                                    />
-                                </points>
-                            )
-                        )}
-
-                        {/* Spatial Chunk Bounding Cube Outer Wireframe Visualizer */}
-                        {SHOW_OUTLINES && chunk.bounds && (
-                            <group
-                                position={[
-                                    (chunk.bounds.minX + chunk.bounds.maxX) / 2,
-                                    (chunk.bounds.minY + chunk.bounds.maxY) / 2,
-                                    (chunk.bounds.minZ + chunk.bounds.maxZ) / 2,
-                                ]}
-                            >
-                                <BoxOutline
-                                    width={chunk.bounds.maxX - chunk.bounds.minX}
-                                    height={chunk.bounds.maxY - chunk.bounds.minY}
-                                    depth={chunk.bounds.maxZ - chunk.bounds.minZ}
-                                    color={getLodColor(chunk.lod)}
-                                />
-                            </group>
-                        )}
+            <group position={[cx, cy, cz]}>
+                <group ref={setPivotObj}>
+                    <group position={[-cx, -cy, -cz]}>
+                        {children}
                     </group>
-                );
-            })}
+                </group>
+            </group>
+
+            {isEditing && pivotObj && (
+                <TransformControls
+                    object={pivotObj}
+                    mode={gizmoMode!}
+                    onMouseDown={() => setIsGizmoDragging(true)}
+                    onMouseUp={() => {
+                        setIsGizmoDragging(false);
+                        handleMouseUp();
+                    }}
+                    onObjectChange={handleObjectChange}
+                />
+            )}
         </group>
     );
+}
+
+const PERF_TEST_START_POS = new THREE.Vector3(10, -100, 10);
+const PERF_TEST_END_POS = new THREE.Vector3(10, 100, -10);
+const PERF_TEST_LOOK_TARGET = new THREE.Vector3(0, 0, 0);
+const PERF_TEST_DURATION_SEC = 30;
+
+export function PerformanceTestController() {
+    const { camera } = useThree();
+    const {
+        perfTestTrigger,
+        isPerfTestRunning,
+        setIsPerfTestRunning,
+        setPerfTestSummary,
+        setPerfTestMetrics,
+        setCurrentFps,
+        setCurrentFrameTimeMs,
+        pointCount,
+    } = usePLYPointCloudContext();
+
+    const isRunningRef = useRef<boolean>(false);
+    const completedRef = useRef<boolean>(false);
+    const totalElapsedSecRef = useRef<number>(0);
+    const totalFramesRef = useRef<number>(0);
+    const framesInSecRef = useRef<number>(0);
+    const secTimerRef = useRef<number>(0);
+    const secondCountRef = useRef<number>(0);
+    const metricsRef = useRef<PerfTestMetric[]>([]);
+
+    useEffect(() => {
+        if (!isPerfTestRunning && isRunningRef.current) {
+            isRunningRef.current = false;
+            completedRef.current = true;
+            console.log("[Performance Test Cancelled by User]");
+        }
+    }, [isPerfTestRunning]);
+
+    useEffect(() => {
+        if (perfTestTrigger === 0) return;
+
+        camera.position.copy(PERF_TEST_START_POS);
+        camera.up.set(0, 0, 1);
+        camera.lookAt(PERF_TEST_LOOK_TARGET);
+
+        totalElapsedSecRef.current = 0;
+        totalFramesRef.current = 0;
+        framesInSecRef.current = 0;
+        secTimerRef.current = 0;
+        secondCountRef.current = 0;
+        metricsRef.current = [];
+
+        completedRef.current = false;
+        isRunningRef.current = true;
+
+        console.log("=================================================");
+        console.log("[Performance Test Started]");
+        console.log("Start Camera Position:", PERF_TEST_START_POS);
+        console.log("End Camera Position:", PERF_TEST_END_POS);
+        console.log("Look At Target:", PERF_TEST_LOOK_TARGET);
+        console.log(`Duration: ${PERF_TEST_DURATION_SEC} seconds`);
+        console.log("=================================================");
+    }, [perfTestTrigger, camera]);
+
+    useFrame((_, delta) => {
+        if (!isRunningRef.current || completedRef.current) return;
+
+        totalElapsedSecRef.current += delta;
+        const progress = Math.min(1, totalElapsedSecRef.current / PERF_TEST_DURATION_SEC);
+
+        // Move camera slowly between start and end positions while rotating to continuously look at the center
+        camera.position.lerpVectors(PERF_TEST_START_POS, PERF_TEST_END_POS, progress);
+        camera.up.set(0, 0, 1);
+        camera.lookAt(PERF_TEST_LOOK_TARGET);
+
+        // Frame counting
+        totalFramesRef.current++;
+        framesInSecRef.current++;
+        secTimerRef.current += delta;
+
+        // Measure FPS and Frametime every 1 second
+        if (secTimerRef.current >= 1.0) {
+            secondCountRef.current += 1;
+            const windowDuration = secTimerRef.current;
+            const count = framesInSecRef.current;
+            const calculatedFps = count > 0 && windowDuration > 0 ? Math.round((count / windowDuration) * 100) / 100 : 0;
+            const calculatedFrameTimeMs = count > 0 ? Math.round((windowDuration / count) * 1000 * 100) / 100 : 0;
+            const currentPoints = pointCount ?? 0;
+
+            const metric: PerfTestMetric = {
+                second: secondCountRef.current,
+                fps: calculatedFps,
+                frameTimeMs: calculatedFrameTimeMs,
+                pointsCount: currentPoints,
+                position: {
+                    x: Math.round(camera.position.x * 1000) / 1000,
+                    y: Math.round(camera.position.y * 1000) / 1000,
+                    z: Math.round(camera.position.z * 1000) / 1000,
+                },
+            };
+
+            metricsRef.current.push(metric);
+            setCurrentFps(calculatedFps);
+            setCurrentFrameTimeMs(calculatedFrameTimeMs);
+            setPerfTestMetrics((prev) => [...prev, metric]);
+
+            console.log(
+                `[Performance Test] Second ${metric.second}s: ${metric.fps} FPS | ${metric.frameTimeMs} ms | ${metric.pointsCount.toLocaleString()} points | Pos: (${metric.position.x}, ${metric.position.y}, ${metric.position.z})`
+            );
+
+            framesInSecRef.current = 0;
+            secTimerRef.current = 0; // Reset window accumulator
+        }
+
+        // Check completion
+        if (progress >= 1.0) {
+            // Capture remainder / final second if frames are pending
+            if (framesInSecRef.current > 0) {
+                secondCountRef.current += 1;
+                const windowDuration = secTimerRef.current;
+                const count = framesInSecRef.current;
+                const calculatedFps = count > 0 && windowDuration > 0 ? Math.round((count / windowDuration) * 100) / 100 : 0;
+                const calculatedFrameTimeMs = count > 0 ? Math.round((windowDuration / count) * 1000 * 100) / 100 : 0;
+                const currentPoints = pointCount ?? 0;
+
+                const metric: PerfTestMetric = {
+                    second: secondCountRef.current,
+                    fps: calculatedFps,
+                    frameTimeMs: calculatedFrameTimeMs,
+                    pointsCount: currentPoints,
+                    position: {
+                        x: Math.round(camera.position.x * 1000) / 1000,
+                        y: Math.round(camera.position.y * 1000) / 1000,
+                        z: Math.round(camera.position.z * 1000) / 1000,
+                    },
+                };
+
+                metricsRef.current.push(metric);
+                setCurrentFps(calculatedFps);
+                setCurrentFrameTimeMs(calculatedFrameTimeMs);
+                setPerfTestMetrics((prev) => [...prev, metric]);
+
+                console.log(
+                    `[Performance Test] Second ${metric.second}s (Final): ${metric.fps} FPS | ${metric.frameTimeMs} ms | ${metric.pointsCount.toLocaleString()} points | Pos: (${metric.position.x}, ${metric.position.y}, ${metric.position.z})`
+                );
+
+                framesInSecRef.current = 0;
+                secTimerRef.current = 0;
+            }
+
+            camera.position.copy(PERF_TEST_END_POS);
+            camera.up.set(0, 0, 1);
+            camera.lookAt(PERF_TEST_LOOK_TARGET);
+
+            const totalDurationSec = totalElapsedSecRef.current;
+            const totalFrames = totalFramesRef.current;
+            const averageFps = totalFrames > 0 && totalDurationSec > 0 ? Math.round((totalFrames / totalDurationSec) * 100) / 100 : 0;
+            const averageFrameTimeMs = totalFrames > 0 ? Math.round((totalDurationSec / totalFrames) * 1000 * 100) / 100 : 0;
+
+            const summary: PerfTestSummary = {
+                averageFps,
+                averageFrameTimeMs,
+                totalFrames,
+                totalDurationSec: Math.round(totalDurationSec * 100) / 100,
+                metrics: [...metricsRef.current],
+            };
+
+            (window as any).__PLY_PERFORMANCE_TEST_RESULTS__ = summary;
+
+            setPerfTestSummary(summary);
+            setIsPerfTestRunning(false);
+            completedRef.current = true;
+            isRunningRef.current = false;
+
+            console.log("=================================================");
+            console.log("[Performance Test Completed]");
+            console.log(`Average FPS: ${summary.averageFps}`);
+            console.log(`Average Frametime: ${summary.averageFrameTimeMs} ms`);
+            console.log(`Total Frames: ${summary.totalFrames}`);
+            console.log(`Total Duration: ${summary.totalDurationSec}s`);
+            console.log("Per-second breakdown:", summary.metrics);
+            console.log("=================================================");
+        }
+    });
+
+    return null;
 }
 
 export default function PLYPointCloud() {
-    const {
-        geometry,
-        renderMode,
-        wireframe,
-        pointSize,
-        loadedGeometries,
-    } = usePLYPointCloudContext();
-
-    useEffect(() => {
-        if (renderMode === "mesh") {
-            if (geometry) {
-                generateDelaunayTerrainMesh(geometry, true);
-            }
-            loadedGeometries.forEach((geom) => {
-                generateDelaunayTerrainMesh(geom, true);
-            });
-        }
-    }, [geometry, loadedGeometries, renderMode]);
-
     return (
         <group>
-            <CameraPositionControls />
-            <CameraFocusController />
+            <CameraMovementSystem />
+            <ViewportGizmoHelper />
             <SceneLighting />
             <GeoThreeHeightmap />
-            <PointCloudCenterMarkers />
+            <QuerySummaryOutlines />
             <DBCameraTrajectoryDisplay />
-            <DynamicCubicLODController />
 
-            {/* Render dynamically streamed full pointcloud geometries */}
-            {Array.from(loadedGeometries.entries()).map(([id, geom]) => (
-                <group key={id}>
-                    {renderMode === "mesh" ? (
-                        <mesh geometry={geom}>
-                            <meshStandardMaterial
-                                vertexColors={!!geom.attributes.color}
-                                side={THREE.DoubleSide}
-                                wireframe={wireframe}
-                                roughness={0.5}
-                                metalness={0.1}
-                            />
-                        </mesh>
-                    ) : (
-                        <points geometry={geom}>
-                            <pointsMaterial
-                                vertexColors={!!geom.attributes.color}
-                                size={pointSize}
-                                sizeAttenuation
-                            />
-                        </points>
-                    )}
-                </group>
-            ))}
+            <DynamicCubicLODController />
+            <PerformanceTestController />
         </group>
     );
 }

@@ -2,7 +2,7 @@ from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.video import VideoStatus
 
@@ -31,6 +31,38 @@ class VideoResponse(BaseModel):
     total_bytes: Optional[int] = None
     video_start_at: datetime
     video_stop_at: datetime
+    duration: Optional[float] = None
+    stream_url: Optional[str] = None
+    download_url: Optional[str] = None
     upload_metadata: Optional[UploadMetadataResponse] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BatchIdResponse(BaseModel):
+    batch_id: UUID
+    batchId: Optional[UUID] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BatchOverviewResponse(BaseModel):
+    batch_id: UUID
+    first_video_filename: Optional[str] = None
+    video_count: int = 0
+    total_video_length: float = 0.0
+    pointcloud_count: int = 0
+    total_points: int = 0
+    created_at: Optional[datetime] = None
+    log_count: int = 0
+    video_filenames: List[str] = []
+    log_filenames: List[str] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StartBatchPipelineRequest(BaseModel):
+    fps_list: Optional[List[float]] = None
+    frame_counts: Optional[List[int]] = None
+    blur_thresholds: List[float] = Field(default_factory=lambda: [50.0])
+

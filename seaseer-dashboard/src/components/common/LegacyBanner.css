@@ -1,0 +1,114 @@
+.legacy-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-lg, 12px);
+    padding: 10px 20px;
+    background: linear-gradient(90deg, rgba(245, 158, 11, 0.16) 0%, rgba(180, 83, 9, 0.12) 100%);
+    border-bottom: 1px solid rgba(245, 158, 11, 0.35);
+    backdrop-filter: blur(8px);
+    color: var(--color-text-primary, #f8fafc);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-md, 14px);
+    z-index: 90;
+    position: relative;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    flex-shrink: 0;
+    animation: legacyBannerSlideDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes legacyBannerSlideDown {
+    from {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.legacy-banner-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.legacy-banner-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    background: rgba(245, 158, 11, 0.25);
+    border: 1px solid rgba(245, 158, 11, 0.5);
+    border-radius: 4px;
+    color: #fbbf24;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.legacy-banner-icon {
+    color: #f59e0b;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.legacy-banner-text {
+    color: #fef3c7;
+    font-weight: 500;
+}
+
+.legacy-banner-target {
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.legacy-banner-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.legacy-banner-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    background: #f59e0b;
+    color: #0f172a;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 6px;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.legacy-banner-link-btn:hover {
+    background: #fbbf24;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(245, 158, 11, 0.3);
+}
+
+.legacy-banner-dismiss-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: #cbd5e1;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.legacy-banner-dismiss-btn:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.1);
+}

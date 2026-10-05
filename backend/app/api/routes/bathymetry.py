@@ -10,12 +10,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 import numpy as np
 from PIL import Image
-from redis import Redis
-from rq import Queue
-
 from app.core.database import get_db_session
 from app.core.config import settings
 from app.models.job import Job
+from app.utils.queue_utils import enqueue_job
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/bathymetry", tags=["bathymetry"])
@@ -393,13 +391,7 @@ async def upload_emodnet_csv(
 
     # Enqueue job to Redis Queue for worker execution
     try:
-        redis_conn = Redis.from_url(settings.redis_url)
-        q = Queue("pointcloud_tasks", connection=redis_conn)
-        q.enqueue(
-            "app.services.worker.tasks.run_background_job",
-            str(job_record.id),
-            job_id=str(job_record.id)
-        )
+        enqueue_job(job_record.id, job_record.task_type)
     except Exception as e:
         print(f"Warning: Could not enqueue job {job_record.id} to Redis Queue: {e}")
 

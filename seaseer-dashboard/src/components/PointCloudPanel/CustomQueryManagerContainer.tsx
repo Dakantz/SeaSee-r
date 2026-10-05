@@ -18,8 +18,6 @@ export const CustomQueryManagerContainer: React.FC = () => {
   const focusCameraTarget = contextState?.focusCameraTarget ?? (() => { });
   const startProgressiveStream = contextState?.startProgressiveStream;
   const unloadPointCloud = contextState?.unloadPointCloud;
-  const loadedGeometries = contextState?.loadedGeometries ?? new Map();
-  const loadingIds = contextState?.loadingIds ?? new Set();
 
   const handleRunQuery = (query: CustomQuery) => {
     if (startProgressiveStream) {
@@ -46,8 +44,6 @@ export const CustomQueryManagerContainer: React.FC = () => {
   return (
     <CustomQueryManager
       queries={queries}
-      loadedQueryIds={Array.from(loadedGeometries.keys())}
-      loadingQueryIds={Array.from(loadingIds)}
       hoveredId={contextState?.hoveredId ?? null}
       onRunQuery={handleRunQuery}
       onUnloadQuery={handleUnloadQuery}

@@ -1,10 +1,14 @@
 import asyncio
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from sqlalchemy import update, select
+from rq.timeouts import JobTimeoutException
 
 from app.core.database import async_session
-from app.models.job import Job
+from app.models.job import Job, JobStatus
+
+logger = logging.getLogger(__name__)
 
 async def _update_job_status(
     job_id_str: str,
@@ -12,9 +16,28 @@ async def _update_job_status(
     progress: float = 0.0,
     error_message: Optional[str] = None,
     result: Optional[dict] = None
-):
-    """Updates job status, progress percentage, error message, and results in PostgreSQL."""
+) -> bool:
+    """Updates job status, progress percentage, error message, and results in PostgreSQL, and processes dependency queues.
+    Returns True if status update succeeded, or False if job is CANCELLED and non-CANCELLED update was ignored.
+    """
+    import uuid
     async with async_session() as session:
+        current_started_at = None
+        try:
+            job_uuid = uuid.UUID(job_id_str)
+            res = await session.execute(select(Job.status, Job.started_at).where(Job.id == job_uuid))
+            row = res.first()
+            if row:
+                current_status, current_started_at = row[0], row[1]
+                if current_status == JobStatus.CANCELLED and status not in ("CANCELLED",):
+                    logger.info(f"Job {job_id_str} is CANCELLED. Ignoring status update to '{status}'.")
+                    return False
+        except (ValueError, TypeError, AttributeError):
+            pass
+        except Exception as check_err:
+            logger.warning(f"Could not verify job status for {job_id_str}: {check_err}")
+
+        now = datetime.now(timezone.utc)
         values = {
             "status": status,
             "progress": round(progress, 2),
@@ -22,14 +45,206 @@ async def _update_job_status(
         }
         if result is not None:
             values["result"] = result
+
         if status == "RUNNING":
-            values["started_at"] = datetime.utcnow()
-        elif status in ("COMPLETED", "FAILED"):
-            values["completed_at"] = datetime.utcnow()
+            if current_started_at is None:
+                values["started_at"] = now
+        elif status in ("COMPLETED", "FAILED", "CANCELLED"):
+            values["completed_at"] = now
 
         stmt = update(Job).where(Job.id == job_id_str).values(**values)
         await session.execute(stmt)
         await session.commit()
+
+        # Process dependency updates and pipeline status
+        await _process_job_dependency_updates(session, job_id_str, status)
+        return True
+
+
+async def _process_job_dependency_updates(session, job_id_str: str, status: str):
+    import uuid
+    from redis import Redis
+    from rq import Queue
+    from app.core.config import settings
+    from app.models.job import Job, JobStatus, Pipeline, PipelineStatus
+
+    try:
+        job_uuid = uuid.UUID(job_id_str)
+    except (ValueError, TypeError):
+        return
+
+    job_res = await session.execute(select(Job).where(Job.id == job_uuid))
+    job = job_res.scalar_one_or_none()
+    pipeline_id = job.pipeline_id if job else None
+
+    if status == "COMPLETED":
+        res = await session.execute(select(Job).where(Job.status.in_([JobStatus.BLOCKED, JobStatus.PENDING])))
+        blocked_jobs = res.scalars().all()
+
+        for dep_job in blocked_jobs:
+            deps = dep_job.depends_on or []
+            if job_id_str in deps or str(job_uuid) in deps:
+                parent_uuids = []
+                for d in deps:
+                    try:
+                        parent_uuids.append(uuid.UUID(str(d)))
+                    except (ValueError, TypeError):
+                        pass
+
+                if parent_uuids:
+                    p_res = await session.execute(select(Job.status).where(Job.id.in_(parent_uuids)))
+                    parent_statuses = p_res.scalars().all()
+                    if all(s == JobStatus.COMPLETED for s in parent_statuses):
+                        dep_job.status = JobStatus.PENDING
+                        await session.commit()
+
+                        # Auto-enqueue dependent job
+                        try:
+                            from app.utils.queue_utils import enqueue_job
+                            enqueue_job(dep_job.id, dep_job.task_type)
+                        except Exception as e:
+                            logger.warning(f"Could not enqueue dependent job {dep_job.id} to Redis Queue: {e}")
+
+    elif status in ("FAILED", "CANCELLED"):
+        queue_to_fail = [job_id_str]
+        visited = set()
+
+        while queue_to_fail:
+            curr_id = queue_to_fail.pop(0)
+            if curr_id in visited:
+                continue
+            visited.add(curr_id)
+
+            res = await session.execute(
+                select(Job).where(Job.status.in_([JobStatus.BLOCKED, JobStatus.PENDING]))
+            )
+            candidates = res.scalars().all()
+
+            now = datetime.now(timezone.utc)
+            for cand in candidates:
+                deps = cand.depends_on or []
+                if curr_id in deps:
+                    cand.status = JobStatus.FAILED
+                    cand.completed_at = now
+                    cand.error_message = f"Parent dependency job {curr_id} failed."
+                    queue_to_fail.append(str(cand.id))
+
+            await session.commit()
+
+    if pipeline_id:
+        p_res = await session.execute(select(Pipeline).where(Pipeline.id == pipeline_id))
+        pipeline = p_res.scalar_one_or_none()
+        if pipeline:
+            pj_res = await session.execute(select(Job).where(Job.pipeline_id == pipeline_id))
+            pipeline_jobs = pj_res.scalars().all()
+
+            if any(j.status == JobStatus.FAILED for j in pipeline_jobs):
+                pipeline.status = PipelineStatus.FAILED
+            elif any(j.status == JobStatus.CANCELLED for j in pipeline_jobs):
+                pipeline.status = PipelineStatus.CANCELLED
+            elif all(j.status == JobStatus.COMPLETED for j in pipeline_jobs):
+                pipeline.status = PipelineStatus.COMPLETED
+            elif any(j.status in (JobStatus.RUNNING, JobStatus.PENDING, JobStatus.BLOCKED) for j in pipeline_jobs):
+                pipeline.status = PipelineStatus.RUNNING
+
+            await session.commit()
+
+
+def handle_rq_job_failure(job, connection, type, value, traceback):
+    """
+    Callback invoked by the parent RQ worker process whenever a job fails
+    (including when a child work-horse process crashes abruptly via SIGABRT/SIGSEGV).
+    Ensures PostgreSQL database and downstream dependencies reflect JobStatus.FAILED.
+    """
+    job_id_str = str(job.id)
+    type_name = getattr(type, "__name__", str(type)) if type else ""
+    value_str = str(value) if value else ""
+    exc_info_str = str(job.exc_info) if getattr(job, "exc_info", None) and job.exc_info else ""
+
+    combined_text = f"{type_name}\n{value_str}\n{exc_info_str}"
+
+    is_timeout = (
+        (isinstance(type, type) and issubclass(type, (JobTimeoutException, asyncio.TimeoutError, TimeoutError, asyncio.CancelledError)))
+        or type_name in ("JobTimeoutException", "CancelledError", "TimeoutError", "AbandonedJobError")
+        or "timeout" in combined_text.lower()
+        or "cancellederror" in combined_text.lower()
+    )
+
+    if is_timeout:
+        extracted_msg = None
+        for line in reversed(combined_text.splitlines()):
+            line_str = line.strip()
+            if "jobtimeoutexception" in line_str.lower() or "exceeded maximum timeout" in line_str.lower():
+                if ":" in line_str:
+                    candidate = line_str.split(":", 1)[1].strip()
+                else:
+                    candidate = line_str
+                if candidate and not candidate.startswith("raise ") and not candidate.startswith("File "):
+                    extracted_msg = candidate
+                    break
+            elif "timed out" in line_str.lower() and not line_str.startswith("Traceback") and not line_str.startswith("File "):
+                extracted_msg = line_str
+                break
+
+        if extracted_msg:
+            error_msg = extracted_msg
+        elif value_str and "timeout" in value_str.lower():
+            error_msg = value_str
+        elif value_str and "abandoned" not in value_str.lower():
+            error_msg = f"Task execution timed out: {value_str} ({type_name})"
+        else:
+            error_msg = f"Task execution timed out after exceeding worker timeout limit ({type_name or 'Timeout'})"
+    else:
+        error_msg = value_str or (f"Job execution failed ({type_name})" if type_name else "Job execution failed in Redis Queue")
+        if exc_info_str and exc_info_str not in error_msg:
+            error_msg = f"{error_msg} | {exc_info_str}"
+
+    logger.error(f"RQ failure callback triggered for job {job_id_str}: {error_msg}")
+    try:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        coro = _update_job_status(job_id_str, "FAILED", error_message=error_msg)
+        if loop and loop.is_running():
+            asyncio.create_task(coro)
+        else:
+            asyncio.run(coro)
+    except Exception as e:
+        logger.error(f"Failed to update DB job status in RQ on_failure callback for {job_id_str}: {e}")
+
+
+
+async def sync_job_status_from_redis(session, job: Job) -> bool:
+    """
+    Reconciles PostgreSQL job record with Redis RQ status.
+    If DB status is PENDING or RUNNING but Redis RQ status is FAILED,
+    updates DB status to FAILED and invokes dependency updates.
+    Returns True if status was updated, False otherwise.
+    """
+    from app.models.job import JobStatus
+    if job.status not in (JobStatus.PENDING, JobStatus.RUNNING):
+        return False
+
+    try:
+        from redis import Redis
+        from rq.job import Job as RQJob
+        from app.core.config import settings
+
+        redis_conn = Redis.from_url(settings.redis_url)
+        rq_job = RQJob.fetch(str(job.id), connection=redis_conn)
+        if rq_job and rq_job.is_failed:
+            err_msg = rq_job.exc_info or "Job failed in Redis Queue / worker process terminated"
+            job.status = JobStatus.FAILED
+            job.error_message = err_msg
+            job.completed_at = datetime.now(timezone.utc)
+            await session.commit()
+            await _process_job_dependency_updates(session, str(job.id), "FAILED")
+            return True
+    except Exception as e:
+        logger.debug(f"Redis status check skipped for job {job.id}: {e}")
+    return False
 
 
 def run_background_job(job_id_str: str) -> Dict[str, Any]:
@@ -59,5 +274,43 @@ async def _run_background_job_async(job_id_str: str) -> Dict[str, Any]:
         task_type = job_record.task_type or ""
         name = job_record.name or ""
 
-    return await task_registry.dispatch(job_id_str, task_type=task_type, payload=payload, name=name)
+    try:
+        return await task_registry.dispatch(job_id_str, task_type=task_type, payload=payload, name=name)
+    except BaseException as e:
+        type_name = type(e).__name__
+        raw_msg = str(e) or ""
+        is_timeout = (
+            isinstance(e, (JobTimeoutException, asyncio.TimeoutError, TimeoutError, asyncio.CancelledError))
+            or type_name in ("JobTimeoutException", "CancelledError", "TimeoutError")
+            or "timeout" in raw_msg.lower()
+        )
+
+        if is_timeout:
+            if raw_msg and "timeout" in raw_msg.lower():
+                error_msg = raw_msg
+            elif raw_msg:
+                error_msg = f"Task execution timed out: {raw_msg} ({type_name})"
+            else:
+                error_msg = f"Task execution timed out after exceeding worker timeout limit ({type_name})"
+            logger.error(f"Worker job {job_id_str} timed out: {error_msg}")
+        else:
+            error_msg = raw_msg or f"Task execution failed ({type_name})"
+            logger.error(f"Job {job_id_str} failed with error: {error_msg}", exc_info=True)
+
+        try:
+            await _update_job_status(job_id_str, "FAILED", error_message=error_msg)
+        except Exception as update_err:
+            logger.error(f"Failed to update job status for {job_id_str}: {update_err}")
+        raise
+
+def probe_opensfm_depthmap_task() -> dict:
+    """
+    Lightweight probe task executed on the opensfm_tasks queue
+    to verify OpenSfM depthmap / GPU availability on demand.
+    """
+    from app.services.worker.opensfm_worker import check_opensfm_depthmap_available
+    available, error = check_opensfm_depthmap_available()
+    return {"available": available, "error": error}
+
+
 

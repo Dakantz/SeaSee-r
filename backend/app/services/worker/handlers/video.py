@@ -42,25 +42,30 @@ class VideoTaskHandler(BaseTaskHandler):
                 pass
 
         async with async_session() as session:
-            video_rec: Optional[Video] = None
+            video_recs: List[Video] = []
             if file_uuid:
                 # Try finding Video by Video.id or Video.upload_metadata_id
                 stmt = select(Video).options(selectinload(Video.upload_metadata)).where(
                     (Video.id == file_uuid) | (Video.upload_metadata_id == file_uuid)
                 )
                 res = await session.execute(stmt)
-                video_rec = res.scalar_one_or_none()
+                single_v = res.scalar_one_or_none()
+                if single_v:
+                    video_recs.append(single_v)
+                    if not batch_uuid and single_v.upload_metadata and single_v.upload_metadata.batch_id:
+                        batch_uuid = single_v.upload_metadata.batch_id
 
-            if not video_rec and batch_uuid:
-                # Try finding Video associated with UploadMetadata matching batch_id
+            if batch_uuid:
+                # Find ALL Videos associated with UploadMetadata matching batch_id
                 stmt = select(Video).options(selectinload(Video.upload_metadata)).join(UploadMetadata).where(
                     UploadMetadata.batch_id == batch_uuid
                 )
                 res = await session.execute(stmt)
-                video_rec = res.scalar_one_or_none()
+                all_batch_videos = list(res.scalars().all())
+                if all_batch_videos:
+                    video_recs = all_batch_videos
 
-            if video_rec and not batch_uuid and video_rec.upload_metadata:
-                batch_uuid = video_rec.upload_metadata.batch_id
+            video_rec = video_recs[0] if video_recs else None
 
             log_file_path: Optional[str] = None
             if file_path_override and os.path.exists(file_path_override):
@@ -88,71 +93,84 @@ class VideoTaskHandler(BaseTaskHandler):
                                 log_file_path = candidate
                                 break
 
+            has_valid_log = bool(log_file_path and os.path.exists(log_file_path))
+            has_valid_video = len(video_recs) > 0
+
+            if not has_valid_video or not has_valid_log:
+                missing = []
+                if not has_valid_video:
+                    missing.append("video file")
+                if not has_valid_log:
+                    missing.append("log file (.json)")
+
+                err_msg = f"Video pipeline validation failed: Upload must contain at least 1 video file and 1 log file (.json). Missing: {', '.join(missing)}"
+                logger.error(f"{err_msg} (job {job_id})")
+                await self.update_job_status(job_id, "FAILED", error_message=err_msg)
+                raise ValueError(err_msg)
+
             await self.update_job_status(job_id, "RUNNING", 50.0)
 
             inserted_count = 0
-            if log_file_path and os.path.exists(log_file_path):
-                logger.info(f"Processing ROV log file: {log_file_path} for job {job_id}")
-                try:
-                    with open(log_file_path, "r", encoding="utf-8") as f:
-                        raw_data = json.load(f)
+            logger.info(f"Processing ROV log file: {log_file_path} for job {job_id}")
+            try:
+                with open(log_file_path, "r", encoding="utf-8") as f:
+                    raw_data = json.load(f)
 
-                    if isinstance(raw_data, list):
-                        grouped: Dict[int, Dict[str, Any]] = {}
-                        for item in raw_data:
-                            if not isinstance(item, dict):
-                                continue
-                            ts = item.get("timestamp")
-                            if ts is None:
-                                continue
+                if isinstance(raw_data, list):
+                    grouped: Dict[int, Dict[str, Any]] = {}
+                    for item in raw_data:
+                        if not isinstance(item, dict):
+                            continue
+                        ts = item.get("timestamp")
+                        if ts is None:
+                            continue
 
-                            ts_val = int(ts)
-                            time_str = item.get("time")
-                            item_payload = item.get("payload") or {}
+                        ts_val = int(ts)
+                        time_str = item.get("time")
+                        item_payload = item.get("payload") or {}
 
-                            if ts_val not in grouped:
-                                dt = None
-                                if time_str:
-                                    try:
-                                        dt = parser.parse(time_str)
-                                        if dt.tzinfo is None:
-                                            dt = dt.replace(tzinfo=timezone.utc)
-                                    except Exception:
-                                        dt = datetime.fromtimestamp(ts_val / 1000.0, tz=timezone.utc)
-                                else:
+                        if ts_val not in grouped:
+                            dt = None
+                            if time_str:
+                                try:
+                                    dt = parser.parse(time_str)
+                                    if dt.tzinfo is None:
+                                        dt = dt.replace(tzinfo=timezone.utc)
+                                except Exception:
                                     dt = datetime.fromtimestamp(ts_val / 1000.0, tz=timezone.utc)
+                            else:
+                                dt = datetime.fromtimestamp(ts_val / 1000.0, tz=timezone.utc)
 
-                                grouped[ts_val] = {
-                                    "time_recorded": dt,
-                                    "payload": {}
-                                }
+                            grouped[ts_val] = {
+                                "time_recorded": dt,
+                                "payload": {}
+                            }
 
-                            if isinstance(item_payload, dict):
-                                grouped[ts_val]["payload"].update(item_payload)
+                        if isinstance(item_payload, dict):
+                            grouped[ts_val]["payload"].update(item_payload)
 
-                        if video_rec:
-                            # Clear previous log data for idempotency
-                            await session.execute(delete(LogData).where(LogData.video_metadata_id == video_rec.id))
+                    if batch_uuid:
+                        # Clear previous log data for idempotency by batch_id
+                        await session.execute(delete(LogData).where(LogData.batch_id == batch_uuid))
 
-                            log_rows = [
-                                LogData(
-                                    id=uuid.uuid4(),
-                                    video_metadata_id=video_rec.id,
-                                    timestamp=ts_val,
-                                    time_recorded=info["time_recorded"],
-                                    payload=info["payload"]
-                                )
-                                for ts_val, info in grouped.items()
-                            ]
-                            session.add_all(log_rows)
-                            await session.commit()
-                            inserted_count = len(log_rows)
-                            logger.info(f"Inserted {inserted_count} log_data rows for video_metadata_id {video_rec.id}")
-                except Exception as e:
-                    logger.error(f"Error parsing log file {log_file_path}: {e}")
-                    raise e
-            else:
-                logger.warning(f"No log JSON file found for batch_id {batch_uuid} (job {job_id})")
+                    log_rows = [
+                        LogData(
+                            id=uuid.uuid4(),
+                            batch_id=batch_uuid,
+                            timestamp=ts_val,
+                            time_recorded=info["time_recorded"],
+                            payload=info["payload"]
+                        )
+                        for ts_val, info in grouped.items()
+                    ]
+                    session.add_all(log_rows)
+                    inserted_count = len(log_rows)
+
+                    await session.commit()
+                    logger.info(f"Inserted total {inserted_count} log_data rows for batch {batch_uuid}.")
+            except Exception as e:
+                logger.error(f"Error parsing log file {log_file_path}: {e}")
+                raise e
 
         video_metadata_id_str = str(video_rec.id) if video_rec else file_id_str
         res_data = {

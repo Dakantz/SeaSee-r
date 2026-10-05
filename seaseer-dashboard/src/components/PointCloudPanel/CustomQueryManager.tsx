@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { usePLYPointCloudContext } from "./PLYPointCloudContext";
 import { QuerySelector } from "./QuerySelector";
-import type { FilterRule } from "./utils/filterUtils.ts";
+import { type FilterRule, sanitizeNonSpatialFilters } from "./utils/filterUtils.ts";
 import { fetchPointCloudSummary } from "./utils/pointCloudApi.ts";
 
 export { QuerySelector } from "./QuerySelector";
@@ -19,6 +19,9 @@ export interface CustomQuery {
   name: string; // Display name / label for the query
   filters?: FilterRule[]; // Structured filter rules for field__operator=value queries
   summary?: QuerySummaryData | null; // Connected summary metadata & bounding box
+  selectedConnectedPointCloudIds?: string[]; // IDs of selected ConnectedPointCloudMetadata (all selected by default if undefined)
+  showCameraPositions?: boolean; // Toggle whether camera positions are displayed for this pointcloud
+  visibleCameraPointCloudIds?: string[]; // Optional specific pointcloud IDs to display cameras for
   createdAt?: string; // ISO creation timestamp
   updatedAt?: string; // ISO update timestamp
 }
@@ -69,7 +72,7 @@ export interface ConnectedPointCloudMetadata {
   created_at?: string;
   pcid?: number;
   job_id?: string | null;
-  video_metadata_id?: string | null;
+  batch_id?: string | null;
   min_x?: number | null;
   min_y?: number | null;
   min_z?: number | null;
@@ -78,8 +81,57 @@ export interface ConnectedPointCloudMetadata {
   max_z?: number | null;
   center?: [number, number, number] | number[] | null;
   transform_matrix?: number[];
+  reconstruction_index?: number | null;
+  views?: number | null;
+  sparse_points?: number | null;
+  dense_points?: number | null;
   [key: string]: any;
 }
+
+/**
+ * Helper to determine if a ConnectedPointCloudMetadata is selected for a given CustomQuery.
+ * By default, all ConnectedPointCloudMetadata are selected if selectedConnectedPointCloudIds is undefined.
+ */
+export const isConnectedPointCloudSelected = (
+  query: CustomQuery,
+  pointCloudId: string
+): boolean => {
+  if (query.selectedConnectedPointCloudIds === undefined) {
+    return true;
+  }
+  return query.selectedConnectedPointCloudIds.includes(pointCloudId);
+};
+
+/**
+ * Helper to determine if camera positions should be displayed for a specific pointcloud in a CustomQuery.
+ */
+export const isPointCloudCameraVisible = (
+  query: CustomQuery,
+  pointCloudId: string
+): boolean => {
+  // Camera positions are only visible if the dataset is selected
+  if (!isConnectedPointCloudSelected(query, pointCloudId)) {
+    return false;
+  }
+  if (query.visibleCameraPointCloudIds !== undefined) {
+    return query.visibleCameraPointCloudIds.includes(pointCloudId);
+  }
+  return query.showCameraPositions === true;
+};
+
+/**
+ * Helper to get the list of selected ConnectedPointCloudMetadata IDs for a query.
+ * Falls back to all connected pointclouds if none is explicitly specified.
+ */
+export const getSelectedConnectedPointCloudIds = (
+  query: CustomQuery,
+  connectedPointClouds?: ConnectedPointCloudMetadata[]
+): string[] => {
+  if (query.selectedConnectedPointCloudIds !== undefined) {
+    return query.selectedConnectedPointCloudIds;
+  }
+  return (connectedPointClouds || []).map((pc) => pc.id);
+};
 
 export interface QuerySummaryData {
   total_points: number;
@@ -189,13 +241,23 @@ export interface CustomQueryManagerProps {
   onUpdateQuery?: (query: CustomQuery) => void;
   /** Callback triggered whenever the list of queries changes */
   onQueriesChange?: (queries: CustomQuery[]) => void;
+  /** Callback triggered when ConnectedPointCloudMetadata selection changes for a query */
+  onSelectedConnectedPointCloudChange?: (queryId: string, selectedIds: string[]) => void;
   /** Callback triggered to focus the camera on specific 3D coordinates */
   onFocusCenter?: (center: [number, number, number] | { x: number; y: number; z: number }, offset?: [number, number, number] | number) => void;
+
+  /** Currently active editing pointcloud ID */
+  editingPointcloudId?: string | null;
+  /** Callback triggered when pointcloud editing is toggled */
+  onEdit?: (pointcloudId: string | null) => void;
+  /** Callback triggered when camera positions visibility is toggled for a pointcloud */
+  onToggleCameraPositions?: (queryId: string, show: boolean) => void;
+  /** Callback triggered when a specific pointcloud ID's camera positions are toggled */
+  onTogglePointcloudCameras?: (queryId: string, pointCloudId: string) => void;
 
   /* Legacy props maintained for component API compatibility */
   hoveredId?: string | null;
   onMoveCamera?: (pointcloudId: string) => void;
-  onEdit?: (pointcloudId: string) => void;
   onHover?: (pointcloudId: string | null) => void;
   onSelect?: (pointcloudId: string) => void;
   pointclouds?: any[];
@@ -217,16 +279,21 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
   loadedQueryIds,
   loadingQueryIds,
   hoveredId: externalHoveredId,
+  editingPointcloudId: propEditingPointcloudId,
   onAddQuery,
   onRunQuery,
   onUnloadQuery,
   onDeleteQuery,
   onUpdateQuery,
   onQueriesChange,
+  onSelectedConnectedPointCloudChange,
   onFocusCenter,
   onMoveCamera,
   onSelect,
   onHover: externalOnHover,
+  onEdit,
+  onToggleCameraPositions,
+  onTogglePointcloudCameras,
 }) => {
   // 1. Client-Side Storage & Local State Initialization
   const [internalQueries, setInternalQueries] = useState<CustomQuery[]>(() => {
@@ -247,13 +314,17 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
       }
     }
 
-    // Deduplicate on initial load
+    // Deduplicate and sanitize on initial load
     const seen = new Set<string>();
     const deduplicated: CustomQuery[] = [];
     for (const item of list) {
-      if (!seen.has(item.id)) {
-        seen.add(item.id);
-        deduplicated.push(item);
+      const cleanItem = {
+        ...item,
+        filters: sanitizeNonSpatialFilters(item.filters),
+      };
+      if (!seen.has(cleanItem.id)) {
+        seen.add(cleanItem.id);
+        deduplicated.push(cleanItem);
       }
     }
     return deduplicated;
@@ -261,7 +332,7 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
 
   const queries = externalQueries || internalQueries;
 
-  const [saveStatusMap, setSaveStatusMap] = useState<Record<string, string>>({});
+  const [saveStatusMap] = useState<Record<string, string>>({});
   const [localSummaryMap, setLocalSummaryMap] = useState<Record<string, QuerySummaryData>>({});
   const [summaryLoadingMap, setSummaryLoadingMap] = useState<Record<string, boolean>>({});
   const [summaryErrorMap, setSummaryErrorMap] = useState<Record<string, string | null>>({});
@@ -270,6 +341,11 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
   let contextSetSummaryMap: React.Dispatch<React.SetStateAction<Record<string, QuerySummaryData>>> | undefined;
   let contextHoveredId: string | null | undefined;
   let contextHoverPointcloud: ((id: string | null) => void) | undefined;
+  let editingPointcloudId: string | null = null;
+  let setEditingPointcloudId: ((id: string | null) => void) | undefined;
+  let gizmoMode: "translate" | "rotate" | "scale" | null = null;
+  let setGizmoMode: ((mode: "translate" | "rotate" | "scale" | null) => void) | undefined;
+
   try {
     const ctx = usePLYPointCloudContext();
     if (ctx) {
@@ -277,6 +353,10 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
       contextSetSummaryMap = ctx.setSummaryMap;
       contextHoveredId = ctx.hoveredId;
       contextHoverPointcloud = ctx.hoverPointcloud;
+      editingPointcloudId = ctx.editingPointcloudId;
+      setEditingPointcloudId = ctx.setEditingPointcloudId;
+      gizmoMode = ctx.gizmoMode;
+      setGizmoMode = ctx.setGizmoMode;
     }
   } catch {
     // Outside PLYPointCloudContext
@@ -288,8 +368,91 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
     contextSetSummaryMap?.(updater);
   };
 
+  const effectiveEditingPointcloudId = propEditingPointcloudId !== undefined
+    ? propEditingPointcloudId
+    : (editingPointcloudId ?? null);
+
+  const activeEditingMetadata = React.useMemo(() => {
+    if (!effectiveEditingPointcloudId) return null;
+    for (const q of queries) {
+      const summary = summaryMap[q.id];
+      const found = summary?.connected_pointclouds?.find((pc) => pc.id === effectiveEditingPointcloudId);
+      if (found) return found;
+    }
+    return null;
+  }, [effectiveEditingPointcloudId, queries, summaryMap]);
+
+  const handleEdit = (id: string | null) => {
+    onEdit?.(id);
+    setEditingPointcloudId?.(id);
+    if (!id) {
+      setGizmoMode?.(null);
+    } else if (!gizmoMode) {
+      setGizmoMode?.("translate");
+    }
+  };
+
   const effectiveHoveredId = externalHoveredId !== undefined ? externalHoveredId : (contextHoveredId ?? null);
   const handleHover = externalOnHover ?? contextHoverPointcloud;
+
+  const handleToggleCameraPositions = (queryId: string) => {
+    const q = queries.find((item) => item.id === queryId);
+    if (!q) return;
+
+    const summary = summaryMap[queryId];
+    const selectedConnectedIds = (summary?.connected_pointclouds || [])
+      .filter((p) => p && isConnectedPointCloudSelected(q, p.id))
+      .map((p) => p.id);
+    const isCurrentlyActive = q.showCameraPositions === true || (q.visibleCameraPointCloudIds !== undefined && q.visibleCameraPointCloudIds.length > 0);
+    const nextVal = !isCurrentlyActive;
+
+    handleUpdateQuery(queryId, {
+      showCameraPositions: nextVal,
+      visibleCameraPointCloudIds: nextVal ? selectedConnectedIds : [],
+    });
+    onToggleCameraPositions?.(queryId, nextVal);
+  };
+
+  const handleTogglePointcloudCameras = (queryId: string, pointCloudId: string) => {
+    const q = queries.find((item) => item.id === queryId);
+    if (!q) return;
+
+    const summary = summaryMap[queryId];
+    const allConnectedIds = (summary?.connected_pointclouds || []).map((p) => p.id);
+    const currentlyVisible = isPointCloudCameraVisible(q, pointCloudId);
+    const isSelected = isConnectedPointCloudSelected(q, pointCloudId);
+
+    let nextVisibleIds: string[];
+    if (q.visibleCameraPointCloudIds !== undefined) {
+      nextVisibleIds = currentlyVisible
+        ? q.visibleCameraPointCloudIds.filter((id) => id !== pointCloudId)
+        : [...q.visibleCameraPointCloudIds, pointCloudId];
+    } else {
+      if (q.showCameraPositions === true) {
+        nextVisibleIds = allConnectedIds.filter((id) => id !== pointCloudId);
+      } else {
+        nextVisibleIds = [pointCloudId];
+      }
+    }
+
+    const nextShowCameras = nextVisibleIds.length > 0;
+    const updates: Record<string, any> = {
+      showCameraPositions: nextShowCameras,
+      visibleCameraPointCloudIds: nextVisibleIds,
+    };
+
+    if (!isSelected) {
+      const currentSelected = q.selectedConnectedPointCloudIds !== undefined
+        ? q.selectedConnectedPointCloudIds
+        : allConnectedIds;
+      const newSelected = [...currentSelected, pointCloudId];
+      updates.selectedConnectedPointCloudIds = newSelected;
+    }
+
+    handleUpdateQuery(queryId, updates);
+    onToggleCameraPositions?.(queryId, nextShowCameras);
+    onTogglePointcloudCameras?.(queryId, pointCloudId);
+  };
 
   const isQueryLoading = (id: string) => {
     if (!loadingQueryIds) return false;
@@ -309,6 +472,55 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
     try {
       const data = await fetchPointCloudSummary({ lod, filters });
       updateSummaryMap((prev) => ({ ...prev, [queryId]: data }));
+
+      if (data?.connected_pointclouds && data.connected_pointclouds.length > 0) {
+        const targetQ = queries.find((q) => q.id === queryId);
+        if (targetQ) {
+          const allPcIds = data.connected_pointclouds.map((pc) => String(pc.id));
+          const updates: Record<string, any> = {};
+
+          if (targetQ.selectedConnectedPointCloudIds === undefined) {
+            const unselectedIds = new Set<string>();
+            for (const otherQ of queries) {
+              if (otherQ.id === queryId) continue;
+              const otherSummary = summaryMap[otherQ.id] || otherQ.summary;
+              const otherAllPcIds = otherSummary?.connected_pointclouds?.map((pc) => String(pc.id)) || [];
+              if (otherQ.selectedConnectedPointCloudIds !== undefined) {
+                for (const pcId of allPcIds) {
+                  if (otherAllPcIds.includes(pcId) && !otherQ.selectedConnectedPointCloudIds.includes(pcId)) {
+                    unselectedIds.add(pcId);
+                  }
+                }
+              }
+            }
+
+            if (unselectedIds.size > 0) {
+              updates.selectedConnectedPointCloudIds = allPcIds.filter((id) => !unselectedIds.has(id));
+            }
+          }
+
+          if (targetQ.visibleCameraPointCloudIds === undefined && !targetQ.showCameraPositions) {
+            const visibleCamInOthers = new Set<string>();
+            for (const otherQ of queries) {
+              if (otherQ.id === queryId) continue;
+              for (const pcId of allPcIds) {
+                if (isPointCloudCameraVisible(otherQ, pcId)) {
+                  visibleCamInOthers.add(pcId);
+                }
+              }
+            }
+            if (visibleCamInOthers.size > 0) {
+              updates.showCameraPositions = true;
+              updates.visibleCameraPointCloudIds = Array.from(visibleCamInOthers);
+            }
+          }
+
+          if (Object.keys(updates).length > 0) {
+            handleUpdateQuery(queryId, updates);
+          }
+        }
+      }
+
       return data;
     } catch (err: any) {
       console.error(`Error fetching summary for query ${queryId}:`, err);
@@ -400,13 +612,233 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
     handleFocusQuery(newQuery);
   };
 
+  /**
+   * Helper to retrieve all pointcloud IDs associated with a query.
+   */
+  const getQueryPointCloudIds = (queryItem: CustomQuery): string[] => {
+    const ids = new Set<string>();
+    const summary = summaryMap[queryItem.id] || queryItem.summary;
+    if (summary?.connected_pointclouds) {
+      for (const pc of summary.connected_pointclouds) {
+        if (pc?.id) ids.add(String(pc.id));
+      }
+    }
+    if (queryItem.filters) {
+      for (const f of queryItem.filters) {
+        if (f.field === "pointcloud_id" && f.value) {
+          if (Array.isArray(f.value)) {
+            f.value.forEach((v) => ids.add(String(v)));
+          } else if (typeof f.value === "string" && f.value.includes(",")) {
+            f.value.split(",").forEach((v) => ids.add(v.trim()));
+          } else {
+            ids.add(String(f.value));
+          }
+        }
+      }
+    }
+    if (queryItem.selectedConnectedPointCloudIds) {
+      for (const id of queryItem.selectedConnectedPointCloudIds) {
+        ids.add(String(id));
+      }
+    }
+    return Array.from(ids);
+  };
+
+  /**
+   * Synchronizes selected connected point cloud IDs and camera visibility across queries.
+   * When 2 or more queries share a pointcloud:
+   * - If a pointcloud gets selected/unselected in one query, it gets selected/unselected across all queries sharing it.
+   * - If camera positions for a pointcloud get toggled on/off in one query, they get toggled on/off across all queries sharing it.
+   */
+  const handleSynchronizedQueryUpdate = (
+    queryId: string,
+    updates: Record<string, any>
+  ) => {
+    const targetQuery = queries.find((q) => q.id === queryId);
+    if (!targetQuery) return;
+
+    const targetAllIds = getQueryPointCloudIds(targetQuery);
+
+    // 1. Calculate selection changes
+    let addedSelectedIds: string[] = [];
+    let removedSelectedIds: string[] = [];
+    if (updates.selectedConnectedPointCloudIds !== undefined && Array.isArray(updates.selectedConnectedPointCloudIds)) {
+      const targetPrevSelected = targetQuery.selectedConnectedPointCloudIds !== undefined
+        ? targetQuery.selectedConnectedPointCloudIds
+        : targetAllIds;
+      addedSelectedIds = updates.selectedConnectedPointCloudIds.filter((id) => !targetPrevSelected.includes(id));
+      removedSelectedIds = targetPrevSelected.filter((id) => !updates.selectedConnectedPointCloudIds.includes(id));
+    }
+
+    // 2. Calculate camera visibility changes
+    let cameraAddedIds: string[] = [];
+    let cameraRemovedIds: string[] = [];
+    const hasCameraUpdates = updates.visibleCameraPointCloudIds !== undefined || updates.showCameraPositions !== undefined;
+    if (hasCameraUpdates) {
+      const targetPrevVisibleCameras = targetQuery.visibleCameraPointCloudIds !== undefined
+        ? targetQuery.visibleCameraPointCloudIds
+        : (targetQuery.showCameraPositions ? targetAllIds.filter((id) => isConnectedPointCloudSelected(targetQuery, id)) : []);
+
+      let targetNewVisibleCameras: string[];
+      if (updates.visibleCameraPointCloudIds !== undefined && Array.isArray(updates.visibleCameraPointCloudIds)) {
+        targetNewVisibleCameras = updates.visibleCameraPointCloudIds;
+      } else if (updates.showCameraPositions !== undefined) {
+        targetNewVisibleCameras = updates.showCameraPositions
+          ? targetAllIds.filter((id) => isConnectedPointCloudSelected(targetQuery, id))
+          : [];
+      } else {
+        targetNewVisibleCameras = targetPrevVisibleCameras;
+      }
+
+      cameraAddedIds = targetNewVisibleCameras.filter((id) => !targetPrevVisibleCameras.includes(id));
+      cameraRemovedIds = targetPrevVisibleCameras.filter((id) => !targetNewVisibleCameras.includes(id));
+    }
+
+    const updatedTimestamp = new Date().toISOString();
+    const updatedList = queries.map((q) => {
+      if (q.id === queryId) {
+        return {
+          ...q,
+          ...updates,
+          updatedAt: updatedTimestamp,
+        };
+      }
+
+      const qAllIds = getQueryPointCloudIds(q);
+      let hasQChanges = false;
+      let nextQSelected = q.selectedConnectedPointCloudIds;
+      let nextQVisibleCameras = q.visibleCameraPointCloudIds;
+      let nextQShowCameras = q.showCameraPositions;
+
+      // Sync selected pointclouds
+      if (addedSelectedIds.length > 0 || removedSelectedIds.length > 0) {
+        const qAdded = addedSelectedIds.filter((id) => qAllIds.includes(id));
+        const qRemoved = removedSelectedIds.filter((id) => qAllIds.includes(id));
+        if (qAdded.length > 0 || qRemoved.length > 0) {
+          const qCurrentSelected = q.selectedConnectedPointCloudIds !== undefined
+            ? [...q.selectedConnectedPointCloudIds]
+            : [...qAllIds];
+          let updatedSelected = qCurrentSelected.filter((id) => !qRemoved.includes(id));
+          for (const id of qAdded) {
+            if (!updatedSelected.includes(id)) {
+              updatedSelected.push(id);
+            }
+          }
+          nextQSelected = updatedSelected;
+          hasQChanges = true;
+        }
+      }
+
+      // Sync camera positions visibility
+      if (cameraAddedIds.length > 0 || cameraRemovedIds.length > 0) {
+        const qCamAdded = cameraAddedIds.filter((id) => qAllIds.includes(id));
+        const qCamRemoved = cameraRemovedIds.filter((id) => qAllIds.includes(id));
+        if (qCamAdded.length > 0 || qCamRemoved.length > 0) {
+          const qCurrentVisible = q.visibleCameraPointCloudIds !== undefined
+            ? [...q.visibleCameraPointCloudIds]
+            : (q.showCameraPositions ? [...qAllIds] : []);
+          let updatedVisible = qCurrentVisible.filter((id) => !qCamRemoved.includes(id));
+          for (const id of qCamAdded) {
+            if (!updatedVisible.includes(id)) {
+              updatedVisible.push(id);
+            }
+          }
+          nextQVisibleCameras = updatedVisible;
+          nextQShowCameras = updatedVisible.length > 0;
+          hasQChanges = true;
+        }
+      }
+
+      // If pointclouds were deselected, ensure they are also removed from visible cameras in other queries
+      if (removedSelectedIds.length > 0 && nextQVisibleCameras !== undefined) {
+        const qRemoved = removedSelectedIds.filter((id) => qAllIds.includes(id));
+        if (qRemoved.length > 0) {
+          nextQVisibleCameras = nextQVisibleCameras.filter((id) => !qRemoved.includes(id));
+          nextQShowCameras = nextQVisibleCameras.length > 0;
+          hasQChanges = true;
+        }
+      }
+
+      if (!hasQChanges) {
+        return q;
+      }
+
+      return {
+        ...q,
+        ...(nextQSelected !== undefined ? { selectedConnectedPointCloudIds: nextQSelected } : {}),
+        ...(nextQVisibleCameras !== undefined ? { visibleCameraPointCloudIds: nextQVisibleCameras, showCameraPositions: nextQShowCameras } : {}),
+        updatedAt: updatedTimestamp,
+      };
+    });
+
+    if (!externalQueries) {
+      setInternalQueries(updatedList);
+    }
+
+    updatedList.forEach((q) => {
+      const orig = queries.find((o) => o.id === q.id);
+      if (orig !== q) {
+        onUpdateQuery?.(q);
+        if (q.selectedConnectedPointCloudIds && orig?.selectedConnectedPointCloudIds !== q.selectedConnectedPointCloudIds) {
+          onSelectedConnectedPointCloudChange?.(q.id, q.selectedConnectedPointCloudIds);
+        }
+        if (orig?.showCameraPositions !== q.showCameraPositions) {
+          onToggleCameraPositions?.(q.id, !!q.showCameraPositions);
+        }
+      }
+    });
+
+    onQueriesChange?.(updatedList);
+  };
+
+  /**
+   * Helper alias maintaining backwards compatibility
+   */
+  const handleSelectedConnectedPointCloudChange = (
+    queryId: string,
+    newSelectedIds: string[],
+    additionalUpdatesForTargetQuery?: Record<string, any>
+  ) => {
+    handleSynchronizedQueryUpdate(queryId, {
+      selectedConnectedPointCloudIds: newSelectedIds,
+      ...(additionalUpdatesForTargetQuery || {}),
+    });
+  };
+
   // Handler for title / filter updates
-  const handleUpdateQuery = (id: string, field: string, value: any) => {
+  const handleUpdateQuery = (id: string, field: string | Record<string, any>, value?: any) => {
+    if (
+      field === "selectedConnectedPointCloudIds" ||
+      field === "visibleCameraPointCloudIds" ||
+      field === "showCameraPositions"
+    ) {
+      handleSynchronizedQueryUpdate(id, { [field]: value });
+      return;
+    }
+
+    if (typeof field === "object" && field !== null) {
+      if (
+        "selectedConnectedPointCloudIds" in field ||
+        "visibleCameraPointCloudIds" in field ||
+        "showCameraPositions" in field
+      ) {
+        handleSynchronizedQueryUpdate(id, field);
+        return;
+      }
+    }
+
     const updatedTimestamp = new Date().toISOString();
     const updatedList = queries.map((q) => {
       if (q.id !== id) return q;
+      if (typeof field === "object" && field !== null) {
+        return {
+          ...q,
+          ...field,
+          updatedAt: updatedTimestamp,
+        };
+      }
       if (field === "filters") {
-        const filtersList = (value as FilterRule[]) || [];
+        const filtersList = sanitizeNonSpatialFilters((value as FilterRule[]) || []);
         return {
           ...q,
           filters: filtersList,
@@ -428,20 +860,6 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
       }
     }
     onQueriesChange?.(updatedList);
-
-    // Auto-save feedback
-    triggerSaveFeedback(id, "Auto-saved");
-  };
-
-  const triggerSaveFeedback = (id: string, message: string) => {
-    setSaveStatusMap((prev) => ({ ...prev, [id]: message }));
-    setTimeout(() => {
-      setSaveStatusMap((prev) => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
-    }, 2000);
   };
 
   // Handler to delete a query
@@ -517,6 +935,76 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
         </button>
       </div>
 
+      {effectiveEditingPointcloudId && (
+        <div style={{
+          background: 'rgba(30, 41, 59, 0.95)',
+          border: '1px solid #3b82f6',
+          borderRadius: '6px',
+          padding: '10px 12px',
+          marginBottom: '12px',
+          color: '#f8fafc',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: '#60a5fa' }}>
+              ✏️ Gizmo Controls: {activeEditingMetadata ? (activeEditingMetadata.orig_filename || activeEditingMetadata.safe_filename || activeEditingMetadata.id.substring(0, 8)) : (effectiveEditingPointcloudId.length > 8 ? effectiveEditingPointcloudId.substring(0, 8) : effectiveEditingPointcloudId)} (Transforming Active)
+            </span>
+            <button
+              type="button"
+              onClick={() => handleEdit(null)}
+              style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '13px' }}
+              title="Stop editing transform"
+            >
+              ✕
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button
+              type="button"
+              onClick={() => setGizmoMode?.('translate')}
+              style={{
+                flex: 1, padding: '4px 6px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
+                backgroundColor: gizmoMode === 'translate' ? '#2563eb' : '#334155', color: 'white'
+              }}
+            >
+              Move
+            </button>
+            <button
+              type="button"
+              onClick={() => setGizmoMode?.('rotate')}
+              style={{
+                flex: 1, padding: '4px 6px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
+                backgroundColor: gizmoMode === 'rotate' ? '#2563eb' : '#334155', color: 'white'
+              }}
+            >
+              Rotate
+            </button>
+            <button
+              type="button"
+              onClick={() => setGizmoMode?.('scale')}
+              style={{
+                flex: 1, padding: '4px 6px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
+                backgroundColor: gizmoMode === 'scale' ? '#2563eb' : '#334155', color: 'white'
+              }}
+            >
+              Scale
+            </button>
+            <button
+              type="button"
+              onClick={() => handleEdit(null)}
+              style={{
+                flex: 1, padding: '4px 6px', borderRadius: '4px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 500,
+                backgroundColor: gizmoMode === null ? '#991b1b' : '#334155', color: 'white'
+              }}
+            >
+              Off
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Query Cards List */}
       {queries.length === 0 ? (
         <div className="custom-query-manager__empty">
@@ -529,16 +1017,35 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
             const extractedId = pcIdRule ? String(pcIdRule) : null;
             const summary = summaryMap[q.id];
             const connectedPcs = summary?.connected_pointclouds || [];
+            const selectedConnectedIds = q.selectedConnectedPointCloudIds;
+            const activeConnectedPcs = selectedConnectedIds
+              ? connectedPcs.filter((pc) => selectedConnectedIds.includes(pc.id))
+              : connectedPcs;
             const isLoadingStream =
               isQueryLoading(q.id) ||
               (extractedId ? isQueryLoading(extractedId) : false) ||
-              connectedPcs.some((pc) => isQueryLoading(pc.id));
+              activeConnectedPcs.some((pc) => isQueryLoading(pc.id));
             const isLoadedStream =
               isQueryLoaded(q.id) ||
               (extractedId ? isQueryLoaded(extractedId) : false) ||
-              connectedPcs.some((pc) => isQueryLoaded(pc.id));
+              (activeConnectedPcs.length > 0 && activeConnectedPcs.some((pc) => isQueryLoaded(pc.id)));
             const saveStatus = saveStatusMap[q.id];
             const isHovered = q.id === effectiveHoveredId;
+            const isCamerasActive = !!q.showCameraPositions;
+            const cameraToggleButton = (
+              <button
+                type="button"
+                className={`custom-query-manager__camera-toggle-btn query-selector__btn--cameras ${isCamerasActive ? "active" : ""}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleCameraPositions(q.id);
+                }}
+                title={isCamerasActive ? "Hide camera positions for this pointcloud" : "Display camera positions for this pointcloud"}
+                aria-pressed={isCamerasActive}
+              >
+                📷 {isCamerasActive ? "Cameras On" : "Cameras"}
+              </button>
+            );
 
             return (
               <QuerySelector
@@ -551,13 +1058,20 @@ export const CustomQueryManager: React.FC<CustomQueryManagerProps> = ({
                 summary={summary}
                 summaryLoading={summaryLoadingMap[q.id]}
                 summaryError={summaryErrorMap[q.id]}
+                cameraToggleButton={cameraToggleButton}
+                onToggleCameraPositions={handleToggleCameraPositions}
+                onTogglePointcloudCameras={handleTogglePointcloudCameras}
                 onUpdateQuery={handleUpdateQuery}
+                onSelectedConnectedChange={(queryId, selectedIds) => {
+                  handleSelectedConnectedPointCloudChange(queryId, selectedIds);
+                }}
                 onDeleteQuery={handleDeleteQuery}
                 onRunQuery={handleRun}
                 onUnloadQuery={onUnloadQuery}
                 onFocusQuery={handleFocusQuery}
                 onRefreshSummary={fetchQuerySummary}
                 onHover={handleHover}
+                onEdit={handleEdit}
               />
             );
           })}

@@ -1,8 +1,10 @@
+import uuid
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
 from app.api.dependencies.tusd import parse_tusd_webhook, IgnoreWebhook
+from app.schemas.video import BatchIdResponse
 from app.services.tusd import (
     VideoUploadService,
     MetadataUploadService,
@@ -13,6 +15,28 @@ router = APIRouter(
     prefix="/webhooks",
     tags=["TUSD Webhooks"]
 )
+
+tusd_router = APIRouter(
+    prefix="/tusd",
+    tags=["TUSD"]
+)
+
+@tusd_router.post("/batch-id", response_model=BatchIdResponse)
+async def generate_tusd_batch_id():
+    """
+    Generate a new batch UUID for grouping files during tusd upload.
+    """
+    new_id = uuid.uuid4()
+    return BatchIdResponse(batch_id=new_id, batchId=new_id)
+
+@tusd_router.get("/batch-id", response_model=BatchIdResponse)
+async def get_tusd_batch_id():
+    """
+    Get a newly generated batch UUID for grouping files during tusd upload.
+    """
+    new_id = uuid.uuid4()
+    return BatchIdResponse(batch_id=new_id, batchId=new_id)
+
 
 # Strategy pattern map
 WEBHOOK_HANDLERS = {

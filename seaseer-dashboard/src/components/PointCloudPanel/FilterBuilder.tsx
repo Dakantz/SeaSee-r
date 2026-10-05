@@ -3,19 +3,25 @@ import type { FilterRule, FilterOperator } from "./utils/filterUtils.ts";
 
 const AVAILABLE_FIELDS = [
   { label: "Point Cloud ID", value: "pointcloud_id", type: "string" },
-  { label: "Points Count", value: "number_of_points", type: "number" },
+  { label: "Job ID", value: "job_id", type: "string" },
+  { label: "Batch ID", value: "batch_id", type: "string" },
   { label: "Original Filename", value: "orig_filename", type: "string" },
-  { label: "Video Start Time", value: "video_start_at", type: "datetime-local" },
-  { label: "Video Stop Time", value: "video_stop_at", type: "datetime-local" },
+  { label: "Safe Filename", value: "safe_filename", type: "string" },
+  { label: "Points Count", value: "number_of_points", type: "number" },
   { label: "Min X", value: "min_x", type: "number" },
   { label: "Max X", value: "max_x", type: "number" },
   { label: "Min Y", value: "min_y", type: "number" },
   { label: "Max Y", value: "max_y", type: "number" },
   { label: "Min Z", value: "min_z", type: "number" },
   { label: "Max Z", value: "max_z", type: "number" },
+  { label: "Created At", value: "created_at", type: "datetime-local" },
+  { label: "Video Start Time", value: "video_start_at", type: "datetime-local" },
+  { label: "Video Stop Time", value: "video_stop_at", type: "datetime-local" },
+  { label: "Reconstruction Index", value: "reconstruction_index", type: "number" },
+  { label: "Views", value: "views", type: "number" },
+  { label: "Sparse Points", value: "sparse_points", type: "number" },
+  { label: "Dense Points", value: "dense_points", type: "number" },
 ];
-
-const SPATIAL_FIELDS = ["min_x", "max_x", "min_y", "max_y", "min_z", "max_z"];
 
 const OPERATORS: { label: string; value: FilterOperator }[] = [
   { label: "=", value: "eq" },
@@ -60,16 +66,12 @@ export const FilterBuilder: React.FC<FilterBuilderProps> = ({ filters, onChange 
     <div className="filter-builder">
       {filters.map((rule) => {
         const fieldConfig = AVAILABLE_FIELDS.find((f) => f.value === rule.field);
-        const isSpatial = SPATIAL_FIELDS.includes(rule.field);
-        const availableOperators = isSpatial
-          ? OPERATORS.filter((op) => op.value === "eq")
-          : OPERATORS;
 
         const handleFieldChange = (newField: string) => {
-          const isNewSpatial = SPATIAL_FIELDS.includes(newField);
           updateRule(rule.id, {
             field: newField,
-            operator: isNewSpatial ? "eq" : rule.operator,
+            operator: rule.operator,
+            value: "",
           });
         };
 
@@ -88,13 +90,11 @@ export const FilterBuilder: React.FC<FilterBuilderProps> = ({ filters, onChange 
 
             {/* Operator Selector */}
             <select
-              value={isSpatial ? "eq" : rule.operator}
+              value={rule.operator}
               onChange={(e) => updateRule(rule.id, { operator: e.target.value as FilterOperator })}
-              disabled={isSpatial}
-              title={isSpatial ? "Spatial bounds filter operator is locked to '='" : undefined}
-              className={`filter-builder__select filter-builder__select--operator ${isSpatial ? "filter-builder__select--disabled" : ""}`}
+              className="filter-builder__select filter-builder__select--operator"
             >
-              {availableOperators.map((op) => (
+              {OPERATORS.map((op) => (
                 <option key={op.value} value={op.value}>{op.label}</option>
               ))}
             </select>

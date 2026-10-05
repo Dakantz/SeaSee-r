@@ -14,6 +14,24 @@ from app.services.opensfm.ingest import (
 
 logger = logging.getLogger(__name__)
 
+def _find_opensfm_pointcloud(folder_path: Optional[str], file_path: Optional[str] = None) -> Optional[str]:
+    if file_path and os.path.exists(file_path):
+        return file_path
+    if not folder_path:
+        return None
+    candidates = [
+        os.path.join(folder_path, "odm_georeferencing", "odm_georeferenced_model.laz"),
+        os.path.join(folder_path, "odm_filterpoints", "point_cloud.ply"),
+        os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz"),
+        os.path.join(folder_path, "odm_meshing", "odm_mesh.ply"),
+        os.path.join(folder_path, "point_cloud.ply"),
+        os.path.join(folder_path, "fused.laz"),
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return None
+
 class OpenSfMTaskHandler(BaseTaskHandler):
     task_types = ["opensfm_ingest", "opensfm_append"]
 
@@ -28,7 +46,7 @@ class OpenSfMTaskHandler(BaseTaskHandler):
         offset_y: float = 0.0
     ) -> Dict[str, Any]:
         """Async implementation for OpenSfM pointcloud and camera trajectory processing."""
-        # 1. Ingest fused.laz point cloud using PointCloudUploadTaskHandler
+        # 1. Ingest fused.laz / point_cloud.ply using PointCloudUploadTaskHandler
         pc_handler = PointCloudUploadTaskHandler()
         await pc_handler.ingest_pointcloud_pipeline(
             file_path=file_path,
@@ -47,8 +65,24 @@ class OpenSfMTaskHandler(BaseTaskHandler):
                 await self.update_job_status(job_id, "COMPLETED", 100.0)
             return {"status": "success", "file_id": file_id}
 
-        shots_geojson_path = os.path.join(folder_path, "shots.geojson")
-        reconstruction_json_path = os.path.join(folder_path, "reconstruction.json")
+        shots_geojson_path = None
+        for cand in [
+            os.path.join(folder_path, "shots.geojson"),
+            os.path.join(folder_path, "odm_report", "shots.geojson")
+        ]:
+            if os.path.exists(cand):
+                shots_geojson_path = cand
+                break
+
+        reconstruction_json_path = None
+        for cand in [
+            os.path.join(folder_path, "reconstruction.json"),
+            os.path.join(folder_path, "opensfm", "reconstruction.json"),
+            os.path.join(folder_path, "opensfm", "reports", "reconstruction.json")
+        ]:
+            if os.path.exists(cand):
+                reconstruction_json_path = cand
+                break
 
         from app.models.camera import CameraHeader, CameraFrame
         from app.services.opensfm.ingest import (
@@ -57,18 +91,19 @@ class OpenSfMTaskHandler(BaseTaskHandler):
             parse_shots_geojson,
             get_camera_center,
             get_camera_viewing_direction,
-            get_camera_three_quaternion
+            get_camera_three_quaternion,
+            compute_relative_times
         )
         from geoalchemy2 import WKTElement
 
         header_info = {}
         frames_list = []
 
-        if os.path.exists(shots_geojson_path):
-            header_info, frames_list = parse_shots_geojson(shots_geojson_path)
-        elif os.path.exists(reconstruction_json_path):
+        import re
+        if reconstruction_json_path and os.path.exists(reconstruction_json_path):
             reconstructions = parse_reconstruction_json(reconstruction_json_path)
             if reconstructions:
+                # Use the primary continuous connected reconstruction component (Cluster 0)
                 data = reconstructions[0]
                 cameras = data.get("cameras", {})
                 first_cam_key = next(iter(cameras), "v2 unknown unknown 3840 2160 brown 0.85") if cameras else "v2 unknown unknown 3840 2160 brown 0.85"
@@ -101,6 +136,11 @@ class OpenSfMTaskHandler(BaseTaskHandler):
                         "rotation": rot_quat,
                         "relative_time": sdata.get("relative_time", 0.0)
                     })
+        elif shots_geojson_path and os.path.exists(shots_geojson_path):
+            header_info, frames_list = parse_shots_geojson(shots_geojson_path)
+
+        if frames_list:
+            frames_list = compute_relative_times(frames_list)
 
         if header_info and frames_list:
             async with async_session() as session:
@@ -143,12 +183,20 @@ class OpenSfMTaskHandler(BaseTaskHandler):
         folder_path = payload.get("folder_path")
         is_append = payload.get("is_append", False) or (task_type == "opensfm_append")
         file_id = (payload.get("existing_id") or payload.get("file_id")) if is_append else (payload.get("file_id") or job_id)
-        fused_laz_path = os.path.join(folder_path, "undistorted", "depthmaps", "fused.laz") if folder_path else payload.get("file_path")
+        
+        pointcloud_path = _find_opensfm_pointcloud(folder_path, payload.get("file_path"))
+        if not pointcloud_path:
+            error_msg = f"No point cloud file (.laz, .ply) found in folder '{folder_path}' for job {job_id}"
+            logger.error(error_msg)
+            if job_id:
+                await self.update_job_status(job_id, "FAILED", 0.0, error=error_msg)
+            raise FileNotFoundError(error_msg)
+
         offset_x = float(payload.get("offset_x", 0.0))
         offset_y = float(payload.get("offset_y", 0.0))
 
         return await self.process_opensfm(
-            file_path=fused_laz_path,
+            file_path=pointcloud_path,
             file_id=file_id,
             job_id=job_id,
             folder_path=folder_path,

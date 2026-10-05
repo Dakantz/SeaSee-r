@@ -74,6 +74,12 @@
   border: 1px solid var(--color-warning-border);
 }
 
+.job-status-blocked {
+  background-color: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
 .job-status-running {
   background-color: var(--color-primary-subtle);
   color: var(--color-primary-text);
@@ -90,6 +96,12 @@
   background-color: var(--color-danger-subtle);
   color: var(--color-danger-text);
   border: 1px solid var(--color-danger-border);
+}
+
+.job-status-cancelled {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .job-progress-bar-wrapper {
@@ -111,6 +123,10 @@
   background: linear-gradient(90deg, var(--color-warning-hover), var(--color-warning-text));
 }
 
+.job-progress-bar-fill.blocked {
+  background: linear-gradient(90deg, #64748b, #94a3b8);
+}
+
 .job-progress-bar-fill.running {
   background: linear-gradient(90deg, var(--color-primary), var(--color-primary-text));
   background-size: 200% 100%;
@@ -123,6 +139,10 @@
 
 .job-progress-bar-fill.failed {
   background: linear-gradient(90deg, var(--color-danger), var(--color-danger-text));
+}
+
+.job-progress-bar-fill.cancelled {
+  background: linear-gradient(90deg, #dc2626, #ef4444);
 }
 
 @keyframes jobProgressShimmer {

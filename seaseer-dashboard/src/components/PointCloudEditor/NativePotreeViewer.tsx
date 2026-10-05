@@ -3,8 +3,6 @@ import { usePotreeViewer } from './hooks/usePotreeViewer';
 import { useLoadPLY } from './hooks/useLoadPLY';
 import { useLoadEPT } from './hooks/useLoadEPT';
 import { useTransformControls } from './hooks/useTransformControls';
-import { useYellowSphere } from './hooks/useYellowSphere';
-import { usePotreeRovRenderer } from './hooks/usePotreeRovRenderer';
 
 interface NativePotreeViewerProps {
     pointCloudIds: string[];
@@ -22,18 +20,18 @@ const PointCloudLoader: React.FC<{ identifier: string }> = ({ identifier }) => {
 const NativePotreeViewer: React.FC<NativePotreeViewerProps> = ({ pointCloudIds, gizmoMode = null, editingPointcloudId = null }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const renderAreaRef = useRef<HTMLDivElement>(null);
-    
+
     // Initialize Potree
     usePotreeViewer(containerRef, renderAreaRef);
 
+    // Only allow editing if editingPointcloudId is in pointCloudIds (selected point clouds)
+    const effectiveEditingId = (editingPointcloudId && pointCloudIds.includes(editingPointcloudId))
+        ? editingPointcloudId
+        : null;
+
     // Initialize TransformControls (Gizmo)
-    useTransformControls(gizmoMode, editingPointcloudId);
+    useTransformControls(gizmoMode, effectiveEditingId);
 
-    // Add yellow sphere at coordinates (0, 0, 0)
-    useYellowSphere([0, 0, 0], 1.0);
-
-    // Add ROV 3D model & Trajectory Path into Potree scene
-    usePotreeRovRenderer();
 
     return (
         <div ref={containerRef} className="potree_container" style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 0 }}>

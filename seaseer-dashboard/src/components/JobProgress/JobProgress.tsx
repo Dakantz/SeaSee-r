@@ -98,7 +98,7 @@ export const JobProgress: React.FC<JobProgressProps> = ({
     // Fetch immediately on mount or ID change
     fetchJob();
 
-    const isTerminal = jobData?.status === 'COMPLETED' || jobData?.status === 'FAILED';
+    const isTerminal = jobData?.status === 'COMPLETED' || jobData?.status === 'FAILED' || jobData?.status === 'CANCELLED';
     if (isTerminal) return;
 
     const intervalId = setInterval(() => {
@@ -131,6 +131,16 @@ export const JobProgress: React.FC<JobProgressProps> = ({
               <polyline points="12 6 12 12 16 14"></polyline>
             </svg>
             Pending
+          </span>
+        );
+      case 'BLOCKED':
+        return (
+          <span className="job-progress-status-badge job-status-blocked">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            Blocked
           </span>
         );
       case 'RUNNING':
@@ -166,6 +176,16 @@ export const JobProgress: React.FC<JobProgressProps> = ({
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
             Failed
+          </span>
+        );
+      case 'CANCELLED':
+        return (
+          <span className="job-progress-status-badge job-status-cancelled">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
+            </svg>
+            Cancelled
           </span>
         );
       default:
@@ -209,8 +229,10 @@ export const JobProgress: React.FC<JobProgressProps> = ({
         <span>
           {status === 'RUNNING' && 'Processing job...'}
           {status === 'PENDING' && 'Waiting in queue...'}
+          {status === 'BLOCKED' && 'Blocked (waiting on parent job)...'}
           {status === 'COMPLETED' && 'Job finished successfully'}
           {status === 'FAILED' && 'Job failed'}
+          {status === 'CANCELLED' && 'Job cancelled'}
         </span>
         <span className="job-progress-percent">
           {status === 'COMPLETED' ? 100 : normalizedProgress}%

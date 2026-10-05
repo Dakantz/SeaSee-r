@@ -28,12 +28,20 @@ def run_cmd(cmd: list[str], cwd=None):
 @pytest.fixture(scope="session", autouse=True)
 def test_environment():
     """Spin up the test docker environment and run migrations."""
+    import shutil
+    if not shutil.which("docker"):
+        print("Docker executable not found in PATH; skipping container spinup.")
+        yield
+        return
+
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
     compose_file = os.path.join(project_root, "docker-compose.test.yml")
     backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     
     print("Spinning up test environment...")
     run_cmd(["docker", "compose", "-f", compose_file, "up", "-d", "--wait"], cwd=project_root)
+
+
     
     # Run migrations
     print("Running database migrations...")

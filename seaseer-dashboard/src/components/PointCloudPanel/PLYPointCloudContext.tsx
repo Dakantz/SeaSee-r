@@ -1,14 +1,15 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import * as THREE from "three";
 import type { PointCloudMetadataResponse } from "../../client";
-import type { QuerySummaryData, CustomQuery } from "./CustomQueryManager";
+import { type QuerySummaryData, type CustomQuery, isConnectedPointCloudSelected } from "./CustomQueryManager";
 import { fetchPointCloudSummary } from "./utils/pointCloudApi.ts";
-import type { FilterRule } from "./utils/filterUtils.ts";
+import { type FilterRule, sanitizeNonSpatialFilters } from "./utils/filterUtils.ts";
 
 export type MapProviderChoice = "OpenStreetMaps" | "Bathymetry" | "EmodnetWMS" | "EmodnetWCSBilinear" | "EmodnetWCSNearestNeighbour" | "Debug" | "MapTilerBasic" | "MapTilerOutdoor" | "MapTilerSatellite" | "Bing";
 export type HeightProviderChoice = "Bathymetry" | "EmodnetWCSBilinear" | "EmodnetWCSNearestNeighbour" | "None" | "Debug" | "MapTiler" | "Bing";
 
 import { loadProgressivePointCloud, setPointCloudLoading } from "./utils/pointCloudLoader";
+import { getApiBaseUrl } from "../../utils/apiConfig";
 
 export interface AddCustomQueryPayload {
     name?: string;
@@ -22,9 +23,23 @@ export interface CameraViewTarget {
     timestamp: number;
 }
 
+export interface PerfTestMetric {
+    second: number;
+    fps: number;
+    frameTimeMs: number;
+    pointsCount: number;
+    position: { x: number; y: number; z: number };
+}
+
+export interface PerfTestSummary {
+    averageFps: number;
+    averageFrameTimeMs: number;
+    totalFrames: number;
+    totalDurationSec: number;
+    metrics: PerfTestMetric[];
+}
+
 export interface PLYPointCloudContextType {
-    mode: "binary" | "plyFile" | "plyUrl";
-    setMode: (mode: "binary" | "plyFile" | "plyUrl") => void;
     renderMode: "points" | "mesh";
     setRenderMode: (mode: "points" | "mesh") => void;
     wireframe: boolean;
@@ -33,6 +48,8 @@ export interface PLYPointCloudContextType {
     setPointSize: (size: number) => void;
     showHeightmap: boolean;
     setShowHeightmap: (show: boolean) => void;
+    experimentalBathymetry: boolean;
+    setExperimentalBathymetry: (val: boolean | ((prev: boolean) => boolean)) => void;
     heightmapMode: "HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR";
     setHeightmapMode: (mode: "HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR") => void;
     heightmapMapProvider: MapProviderChoice;
@@ -47,6 +64,7 @@ export interface PLYPointCloudContextType {
     isLoading: boolean;
     error: string | null;
     pointCount: number | null;
+    setPointCount: (count: number | null) => void;
     keyLightIntensity: number;
     setKeyLightIntensity: (val: number) => void;
     fillLightIntensity: number;
@@ -58,6 +76,10 @@ export interface PLYPointCloudContextType {
     startProgressiveStream: (queryId: string, startLod?: number, endLod?: number, filters?: FilterRule[]) => Promise<void>;
     showCameraTrajectories: boolean;
     setShowCameraTrajectories: (show: boolean) => void;
+    showOutlines: boolean;
+    setShowOutlines: (show: boolean) => void;
+    disableDynamicLOD: boolean;
+    setDisableDynamicLOD: (disable: boolean) => void;
 
     // Custom Queries state & action dispatcher
     queries: CustomQuery[];
@@ -68,26 +90,53 @@ export interface PLYPointCloudContextType {
     catalog: PointCloudMetadataResponse[];
     isFetchingCatalog: boolean;
     fetchCatalog: () => Promise<void>;
-    selectPointcloud: (id: string | null) => void;
+    selectPointcloud: (id: string | null, queryId?: string | null) => void;
+    selectedPointcloudId: string | null;
+    selectedQueryId: string | null;
     hoveredId: string | null;
     hoverPointcloud: (id: string | null) => void;
     cameraTarget: { x: number; y: number; z: number; offset?: [number, number, number] | number; timestamp: number } | null;
     focusCameraTarget: (target: [number, number, number] | { x: number; y: number; z: number }, offset?: [number, number, number] | number) => void;
     cameraViewTarget: CameraViewTarget | null;
     setCameraView: (view: Omit<CameraViewTarget, "timestamp">) => void;
-    loadedGeometries: Map<string, THREE.BufferGeometry>;
-    loadingIds: Set<string>;
-    isStreamLoaded: (queryId: string) => boolean;
-    isStreamLoading: (queryId: string) => boolean;
     unloadPointCloud: (id: string) => void;
     summaryMap: Record<string, QuerySummaryData>;
     setSummaryMap: React.Dispatch<React.SetStateAction<Record<string, QuerySummaryData>>>;
     fetchQuerySummary: (queryId: string, filters?: FilterRule[], lod?: number) => Promise<QuerySummaryData | null>;
+
+    // Camera UP position lock state
+    isCameraUpFixed: boolean;
+    setIsCameraUpFixed: React.Dispatch<React.SetStateAction<boolean>>;
+    toggleCameraUpFixed: () => void;
+
+    // Pointcloud Transform Edit State
+    editingPointcloudId: string | null;
+    setEditingPointcloudId: (id: string | null) => void;
+    gizmoMode: "translate" | "rotate" | "scale" | null;
+    setGizmoMode: (mode: "translate" | "rotate" | "scale" | null) => void;
+    updatePointcloudTransform: (id: string, matrix: number[]) => Promise<void>;
+    isGizmoDragging: boolean;
+    setIsGizmoDragging: (dragging: boolean) => void;
+
+    // Performance Test State
+    perfTestTrigger: number;
+    startPerfTest: () => void;
+    stopPerfTest: () => void;
+    isPerfTestRunning: boolean;
+    setIsPerfTestRunning: React.Dispatch<React.SetStateAction<boolean>>;
+    perfTestMetrics: PerfTestMetric[];
+    setPerfTestMetrics: React.Dispatch<React.SetStateAction<PerfTestMetric[]>>;
+    perfTestSummary: PerfTestSummary | null;
+    setPerfTestSummary: React.Dispatch<React.SetStateAction<PerfTestSummary | null>>;
+    currentFps: number | null;
+    setCurrentFps: React.Dispatch<React.SetStateAction<number | null>>;
+    currentFrameTimeMs: number | null;
+    setCurrentFrameTimeMs: React.Dispatch<React.SetStateAction<number | null>>;
 }
 
 const DEFAULT_HARDCODED_IDENTIFIER = "";
 
-const PLYPointCloudContext = createContext<PLYPointCloudContextType | undefined>(undefined);
+export const PLYPointCloudContext = createContext<PLYPointCloudContextType | undefined>(undefined);
 
 export const usePLYPointCloudContext = () => {
     const context = useContext(PLYPointCloudContext);
@@ -96,57 +145,14 @@ export const usePLYPointCloudContext = () => {
     }
     return context;
 };
-/**
- * Helper function to check if an active key (in loadedGeometries or loadingIds)
- * matches a target queryId or pointcloudId.
- */
-const isKeyMatch = (
-    activeKey: string,
-    targetId: string,
-    queries: CustomQuery[],
-    summaryMap: Record<string, QuerySummaryData>
-): boolean => {
-    if (!activeKey || !targetId) return false;
-    if (activeKey === targetId) return true;
-
-    // Check if activeKey is a query ID that targets targetId (as a pointcloud_id)
-    const activeQuery = queries.find((q) => q.id === activeKey);
-    if (activeQuery) {
-        const pcIdRule = activeQuery.filters?.find(
-            (f) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator)
-        )?.value;
-        if (pcIdRule && String(pcIdRule) === targetId) return true;
-
-        const summary = summaryMap[activeQuery.id];
-        if (summary?.connected_pointclouds?.some((pc) => pc.id === targetId)) {
-            return true;
-        }
-    }
-
-    // Check if targetId is a query ID that targets activeKey (as a pointcloud_id)
-    const targetQuery = queries.find((q) => q.id === targetId);
-    if (targetQuery) {
-        const pcIdRule = targetQuery.filters?.find(
-            (f) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator)
-        )?.value;
-        if (pcIdRule && String(pcIdRule) === activeKey) return true;
-
-        const summary = summaryMap[targetQuery.id];
-        if (summary?.connected_pointclouds?.some((pc) => pc.id === activeKey)) {
-            return true;
-        }
-    }
-
-    return false;
-};
 
 export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [mode, setMode] = useState<"binary" | "plyFile" | "plyUrl">("binary");
     const [renderMode, setRenderMode] = useState<"points" | "mesh">("points");
     const [wireframe, setWireframe] = useState<boolean>(true);
     const [pointSize, setPointSize] = useState<number>(0.1);
-    const [showHeightmap, setShowHeightmap] = useState<boolean>(false);
-    const [heightmapMode, setHeightmapMode] = useState<"HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR">("HEIGHT");
+    const [showHeightmap, setShowHeightmap] = useState<boolean>(true);
+    const [experimentalBathymetry, setExperimentalBathymetry] = useState<boolean>(false);
+    const [heightmapMode, setHeightmapMode] = useState<"HEIGHT" | "HEIGHT_SHADER" | "MARTINI" | "PLANAR">("HEIGHT_SHADER");
     const [heightmapMapProvider, setHeightmapMapProvider] = useState<MapProviderChoice>("OpenStreetMaps");
     const [heightmapHeightProvider, setHeightmapHeightProvider] = useState<HeightProviderChoice>("EmodnetWCSBilinear");
     const [identifier, setIdentifier] = useState<string>(DEFAULT_HARDCODED_IDENTIFIER);
@@ -160,9 +166,22 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const [hemisphereLightIntensity, setHemisphereLightIntensity] = useState<number>(0.6);
     const [ambientLightIntensity, setAmbientLightIntensity] = useState<number>(0.4);
     const [showCameraTrajectories, setShowCameraTrajectories] = useState<boolean>(true);
+    const [showOutlines, setShowOutlines] = useState<boolean>(false);
+    const [disableDynamicLOD, setDisableDynamicLOD] = useState<boolean>(false);
     const [summaryMap, setSummaryMap] = useState<Record<string, QuerySummaryData>>({});
     const [cameraTarget, setCameraTarget] = useState<{ x: number; y: number; z: number; offset?: [number, number, number] | number; timestamp: number } | null>(null);
     const [cameraViewTarget, setCameraViewTargetState] = useState<CameraViewTarget | null>(null);
+
+    const [selectedPointcloudId, setSelectedPointcloudId] = useState<string | null>(null);
+    const [selectedQueryId, setSelectedQueryId] = useState<string | null>(null);
+    const [editingPointcloudId, setEditingPointcloudId] = useState<string | null>(null);
+    const [gizmoMode, setGizmoMode] = useState<"translate" | "rotate" | "scale" | null>(null);
+    const [isGizmoDragging, setIsGizmoDragging] = useState<boolean>(false);
+    const [isCameraUpFixed, setIsCameraUpFixed] = useState<boolean>(true);
+
+    const toggleCameraUpFixed = useCallback(() => {
+        setIsCameraUpFixed((prev) => !prev);
+    }, []);
 
     const setCameraView = useCallback((view: Omit<CameraViewTarget, "timestamp">) => {
         setCameraViewTargetState({
@@ -178,7 +197,10 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
             if (saved !== null) {
                 const parsed = JSON.parse(saved);
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                    return parsed;
+                    return parsed.map((q: CustomQuery) => ({
+                        ...q,
+                        filters: sanitizeNonSpatialFilters(q.filters),
+                    }));
                 }
             }
         } catch (e) {
@@ -197,35 +219,148 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
 
     // Multi-pointcloud states
     const [catalog, setCatalog] = useState<PointCloudMetadataResponse[]>([]);
+
+    // Performance Test State
+    const [perfTestTrigger, setPerfTestTrigger] = useState<number>(0);
+    const [isPerfTestRunning, setIsPerfTestRunning] = useState<boolean>(false);
+    const [perfTestMetrics, setPerfTestMetrics] = useState<PerfTestMetric[]>([]);
+    const [perfTestSummary, setPerfTestSummary] = useState<PerfTestSummary | null>(null);
+    const [currentFps, setCurrentFps] = useState<number | null>(null);
+    const [currentFrameTimeMs, setCurrentFrameTimeMs] = useState<number | null>(null);
+
+    const startPerfTest = useCallback(() => {
+        setPerfTestMetrics([]);
+        setPerfTestSummary(null);
+        setCurrentFps(null);
+        setCurrentFrameTimeMs(null);
+        setIsPerfTestRunning(true);
+        setPerfTestTrigger((prev) => prev + 1);
+    }, []);
+
+    const stopPerfTest = useCallback(() => {
+        setIsPerfTestRunning(false);
+    }, []);
     const [isFetchingCatalog, setIsFetchingCatalog] = useState<boolean>(false);
     const [hoveredId, setHoveredId] = useState<string | null>(null);
-    const [loadedGeometries, setLoadedGeometries] = useState<Map<string, THREE.BufferGeometry>>(new Map());
-    const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
+
+    const updatePointcloudTransform = useCallback(async (id: string, matrix: number[]) => {
+        try {
+            const API_BASE_URL = getApiBaseUrl();
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+            const targetUuids = new Set<string>();
+
+            if (uuidRegex.test(id)) {
+                let isAllowed = true;
+                if (queries && queries.length > 0) {
+                    for (const q of queries) {
+                        const summary = summaryMap[q.id];
+                        const isConnected = summary?.connected_pointclouds?.some((pc) => pc && String(pc.id) === id);
+                        const isFiltered = q.filters?.some((f) => f.field === "pointcloud_id" && String(f.value) === id);
+                        if (isConnected || isFiltered) {
+                            if (!isConnectedPointCloudSelected(q, id)) {
+                                isAllowed = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (isAllowed) {
+                    targetUuids.add(id);
+                }
+            } else {
+                // Look up in summaryMap for connected pointclouds
+                const summary = summaryMap[id];
+                const query = queries.find((q) => q.id === id);
+                if (summary?.connected_pointclouds) {
+                    for (const pc of summary.connected_pointclouds) {
+                        if (pc.id && uuidRegex.test(pc.id)) {
+                            if (!query || isConnectedPointCloudSelected(query, pc.id)) {
+                                targetUuids.add(pc.id);
+                            }
+                        }
+                    }
+                }
+
+                // Look up in query filters
+                const filterPcId = query?.filters?.find((f) => f.field === "pointcloud_id")?.value;
+                if (filterPcId && uuidRegex.test(String(filterPcId))) {
+                    if (!query || isConnectedPointCloudSelected(query, String(filterPcId))) {
+                        targetUuids.add(String(filterPcId));
+                    }
+                }
+            }
+
+            if (targetUuids.size === 0) {
+                // Check catalog for a pointcloud matching id
+                for (const pc of catalog) {
+                    if (pc.id === id && uuidRegex.test(pc.id)) {
+                        targetUuids.add(pc.id);
+                    }
+                }
+                // Check summaryMap values for a pointcloud matching id
+                for (const currSummary of Object.values(summaryMap)) {
+                    if (currSummary?.connected_pointclouds) {
+                        for (const pc of currSummary.connected_pointclouds) {
+                            if (pc.id === id && uuidRegex.test(pc.id)) {
+                                targetUuids.add(pc.id);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (targetUuids.size === 0) {
+                console.error("Could not resolve any valid pointcloud UUID for id", id);
+                return;
+            }
+
+            // Dispatch PATCH for each target pointcloud UUID
+            for (const pcUuid of targetUuids) {
+                const res = await fetch(`${API_BASE_URL}/pointclouds/${pcUuid}/transform`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ matrix }),
+                });
+                if (!res.ok) {
+                    console.error("Failed to update transform matrix for pointcloud UUID", pcUuid, res.status, res.statusText);
+                } else {
+                    console.log("Successfully updated transform matrix for pointcloud UUID", pcUuid);
+                }
+            }
+
+            // Update summaryMap in context
+            setSummaryMap((prev) => {
+                const next = { ...prev };
+                for (const [key, currSummary] of Object.entries(next)) {
+                    let updatedConnected = currSummary?.connected_pointclouds;
+                    if (currSummary?.connected_pointclouds) {
+                        updatedConnected = currSummary.connected_pointclouds.map((pc) =>
+                            targetUuids.has(pc.id) ? { ...pc, transform_matrix: matrix } : pc
+                        );
+                    }
+                    if (targetUuids.has(key) || key === id || currSummary?.connected_pointclouds) {
+                        next[key] = {
+                            ...currSummary,
+                            connected_pointclouds: updatedConnected,
+                            ...(targetUuids.has(key) || key === id ? { transform_matrix: matrix } : {}),
+                        };
+                    }
+                }
+                return next;
+            });
+
+            // Update catalog in context
+            setCatalog((prev) =>
+                prev.map((pc) => (targetUuids.has(pc.id) ? { ...pc, transform_matrix: matrix } : pc))
+            );
+        } catch (e) {
+            console.error("Error updating transform matrix:", e);
+        }
+    }, [summaryMap, queries, catalog]);
 
     // AbortControllers map to manage in-flight progressive LOD loads per pointcloud/query
     const activeControllersRef = React.useRef<Map<string, AbortController>>(new Map());
-
-    const isStreamLoaded = useCallback((queryId: string): boolean => {
-        if (!queryId) return false;
-        if (loadedGeometries.has(queryId)) return true;
-        for (const loadedKey of loadedGeometries.keys()) {
-            if (isKeyMatch(loadedKey, queryId, queries, summaryMap)) {
-                return true;
-            }
-        }
-        return false;
-    }, [loadedGeometries, queries, summaryMap]);
-
-    const isStreamLoading = useCallback((queryId: string): boolean => {
-        if (!queryId) return false;
-        if (loadingIds.has(queryId)) return true;
-        for (const loadingKey of loadingIds) {
-            if (isKeyMatch(loadingKey, queryId, queries, summaryMap)) {
-                return true;
-            }
-        }
-        return false;
-    }, [loadingIds, queries, summaryMap]);
 
     const fetchQuerySummary = useCallback(async (queryId: string, filters?: FilterRule[], lod = 0) => {
         try {
@@ -246,10 +381,6 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     ) => {
         if (!queryId.trim()) return;
 
-        if (isStreamLoading(queryId)) {
-            return;
-        }
-
         if (!summaryMap[queryId]) {
             fetchQuerySummary(queryId, filters);
         }
@@ -266,7 +397,6 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
 
         setIsLoading(true);
         setError(null);
-        setLoadingIds((prev) => new Set(prev).add(queryId));
 
         try {
             await loadProgressivePointCloud({
@@ -277,17 +407,12 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 signal: controller.signal,
                 onLodLoaded: (currentLod, newGeom) => {
                     if (controller.signal.aborted) return;
-                    setLoadedGeometries((prev) => {
-                        const next = new Map(prev);
-                        const oldGeom = next.get(queryId);
-                        if (oldGeom && oldGeom !== newGeom) {
-                            if (!(oldGeom as any)._disposed) {
-                                (oldGeom as any)._disposed = true;
-                                oldGeom.dispose();
-                            }
+                    setGeometry((oldGeom) => {
+                        if (oldGeom && oldGeom !== newGeom && !(oldGeom as any)._disposed) {
+                            (oldGeom as any)._disposed = true;
+                            oldGeom.dispose();
                         }
-                        next.set(queryId, newGeom);
-                        return next;
+                        return newGeom;
                     });
                     const count = newGeom.attributes.position ? newGeom.attributes.position.count : 0;
                     setPointCount(count);
@@ -307,17 +432,14 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
             if (activeControllersRef.current.get(queryId) === controller) {
                 activeControllersRef.current.delete(queryId);
             }
-            setLoadingIds((prev) => {
-                const next = new Set(prev);
-                next.delete(queryId);
-                setIsLoading(next.size > 0);
-                return next;
-            });
+            setIsLoading(false);
             setPointCloudLoading(queryId, false);
         }
-    }, [fetchQuerySummary, isStreamLoading, summaryMap]);
+    }, [fetchQuerySummary, summaryMap]);
 
-    const selectPointcloud = useCallback((id: string | null) => {
+    const selectPointcloud = useCallback((id: string | null, queryId?: string | null) => {
+        setSelectedPointcloudId(id);
+        setSelectedQueryId(queryId !== undefined ? queryId : null);
         if (id) {
             setIdentifier(id);
         }
@@ -332,9 +454,15 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         const pcIdRule = filters?.find((f) => f.field === "pointcloud_id" && (f.operator === "eq" || !f.operator))?.value;
         const targetId = pcIdRule ? String(pcIdRule) : null;
 
+        const batchIdRule = filters?.find((f) => f.field === "batch_id" && (f.operator === "eq" || !f.operator))?.value;
+        const targetBatchId = batchIdRule ? String(batchIdRule) : null;
+
         setQueries((prevQueries) => {
             const existing = prevQueries.find((q) => {
                 if (targetId && q.filters?.some((f) => f.field === "pointcloud_id" && f.value === targetId)) {
+                    return true;
+                }
+                if (targetBatchId && q.filters?.some((f) => f.field === "batch_id" && f.value === targetBatchId)) {
                     return true;
                 }
                 return false;
@@ -343,10 +471,12 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
 
             const now = new Date().toISOString();
             const defaultFilters: FilterRule[] = filters !== undefined
-                ? filters
+                ? sanitizeNonSpatialFilters(filters)
                 : targetId
                     ? [{ id: `rule-${Date.now()}`, field: "pointcloud_id", operator: "eq", value: targetId }]
-                    : [];
+                    : targetBatchId
+                        ? [{ id: `rule-${Date.now()}`, field: "batch_id", operator: "eq", value: targetBatchId }]
+                        : [];
 
             const newQuery: CustomQuery = {
                 id: `query-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -373,7 +503,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
     const fetchCatalog = useCallback(async () => {
         setIsFetchingCatalog(true);
         try {
-            const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+            const API_BASE_URL = getApiBaseUrl();
             const res = await fetch(`${API_BASE_URL}/pointclouds/`);
             if (res.ok) {
                 const data = await res.json();
@@ -395,6 +525,14 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
         fetchCatalog();
     }, [fetchCatalog]);
 
+    useEffect(() => {
+        queries.forEach((q) => {
+            if (q.id && !summaryMap[q.id]) {
+                fetchQuerySummary(q.id, q.filters);
+            }
+        });
+    }, [queries, summaryMap, fetchQuerySummary]);
+
     const unloadPointCloud = useCallback((id: string) => {
         if (activeControllersRef.current.has(id)) {
             activeControllersRef.current.get(id)?.abort();
@@ -404,42 +542,19 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
 
         setHoveredId((prev) => (prev === id ? null : prev));
 
-        setLoadingIds((prev) => {
-            const next = new Set(prev);
-            next.delete(id);
-            return next;
-        });
-
-        setLoadedGeometries((prev) => {
-            const next = new Map(prev);
-            const existing = next.get(id);
-            if (existing) {
-                if (!(existing as any)._disposed) {
-                    (existing as any)._disposed = true;
-                    existing.dispose();
-                }
-                next.delete(id);
+        setGeometry((prevGeom) => {
+            if (prevGeom && !(prevGeom as any)._disposed) {
+                (prevGeom as any)._disposed = true;
+                prevGeom.dispose();
             }
-
-            if (next.size === 0) {
-                setGeometry((prevGeom) => {
-                    if (prevGeom && !(prevGeom as any)._disposed) {
-                        (prevGeom as any)._disposed = true;
-                        prevGeom.dispose();
-                    }
-                    return null;
-                });
-            }
-
-            return next;
+            return null;
         });
+        setIsLoading(false);
     }, []);
 
     return (
         <PLYPointCloudContext.Provider
             value={{
-                mode,
-                setMode,
                 renderMode,
                 setRenderMode,
                 wireframe,
@@ -448,6 +563,8 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 setPointSize,
                 showHeightmap,
                 setShowHeightmap,
+                experimentalBathymetry,
+                setExperimentalBathymetry,
                 heightmapMode,
                 setHeightmapMode,
                 heightmapMapProvider,
@@ -462,6 +579,7 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 isLoading,
                 error,
                 pointCount,
+                setPointCount,
                 keyLightIntensity,
                 setKeyLightIntensity,
                 fillLightIntensity,
@@ -484,20 +602,47 @@ export const PLYPointCloudProvider: React.FC<{ children: ReactNode }> = ({ child
                 isFetchingCatalog,
                 fetchCatalog,
                 selectPointcloud,
+                selectedPointcloudId,
+                selectedQueryId,
                 hoveredId,
                 hoverPointcloud,
                 cameraTarget,
                 focusCameraTarget,
                 cameraViewTarget,
                 setCameraView,
-                loadedGeometries,
-                loadingIds,
-                isStreamLoaded,
-                isStreamLoading,
                 unloadPointCloud,
                 summaryMap,
                 setSummaryMap,
                 fetchQuerySummary,
+                editingPointcloudId,
+                setEditingPointcloudId,
+                gizmoMode,
+                setGizmoMode,
+                updatePointcloudTransform,
+                isGizmoDragging,
+                setIsGizmoDragging,
+                isCameraUpFixed,
+                setIsCameraUpFixed,
+                toggleCameraUpFixed,
+                showOutlines,
+                setShowOutlines,
+                disableDynamicLOD,
+                setDisableDynamicLOD,
+
+                // Performance Test exports
+                perfTestTrigger,
+                startPerfTest,
+                stopPerfTest,
+                isPerfTestRunning,
+                setIsPerfTestRunning,
+                perfTestMetrics,
+                setPerfTestMetrics,
+                perfTestSummary,
+                setPerfTestSummary,
+                currentFps,
+                setCurrentFps,
+                currentFrameTimeMs,
+                setCurrentFrameTimeMs,
             }}
         >
             {children}

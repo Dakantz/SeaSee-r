@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import numpy as np
 from typing import List, Dict, Any, Tuple
@@ -128,6 +129,41 @@ def extract_camera_route_csv(data: Dict[str, Any], csv_file_path: str) -> int:
 
     return valid_count
 
+def compute_relative_times(frames: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Computes and populates 'relative_time' (in seconds elapsed since the first frame)
+    for each frame dictionary based on the camera_frames 'timestamp' field.
+
+    Frames are sorted chronologically by timestamp (with natural filename tie-breaking).
+    The first frame has relative_time = 0.0.
+    Subsequent frames have relative_time = (timestamp - first_timestamp) / 1000.0
+    (or divided by 1.0 if timestamp is already in seconds).
+    """
+    if not frames:
+        return frames
+
+    def _sort_key(f: Dict[str, Any]):
+        ts = int(f.get("timestamp") or 0)
+        fname = f.get("filename") or ""
+        nums = [int(n) for n in re.findall(r"\d+", fname)]
+        return (ts, nums, fname)
+
+    frames.sort(key=_sort_key)
+
+    first_ts = int(frames[0].get("timestamp") or 0)
+    # If timestamps are in milliseconds (e.g. epoch ms > 1e8), divide difference by 1000.0 to get seconds
+    divisor = 1000.0 if first_ts > 1e8 else 1.0
+
+    for f in frames:
+        current_ts = int(f.get("timestamp") or 0)
+        if first_ts > 0 and current_ts >= first_ts:
+            f["relative_time"] = round((current_ts - first_ts) / divisor, 6)
+        else:
+            f["relative_time"] = float(f.get("relative_time") or 0.0)
+
+    return frames
+
+
 def parse_shots_geojson(geojson_path: str) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Reads a shots.geojson file and returns (header_info, frames_list)."""
     if not os.path.exists(geojson_path):
@@ -164,7 +200,8 @@ def parse_shots_geojson(geojson_path: str) -> Tuple[Dict[str, Any], List[Dict[st
             "position": coords,
             "direction": direction,
             "rotation": rot_quat,
-            "relative_time": props.get("relative_time", 0.0)
+            "relative_time": 0.0
         })
 
+    frames = compute_relative_times(frames)
     return header_info, frames

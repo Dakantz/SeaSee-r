@@ -22,11 +22,13 @@ export interface QuerySelectorProps {
   /** Summary calculation error state */
   summaryError?: string | null;
   /** Handler to update query fields (name, filters, etc.) */
-  onUpdateQuery: (id: string, field: string, value: any) => void;
+  onUpdateQuery: (id: string, field: string | Record<string, any>, value?: any) => void;
+  /** Handler triggered when selected connected point cloud IDs change */
+  onSelectedConnectedChange?: (queryId: string, selectedIds: string[]) => void;
   /** Handler to delete a query */
   onDeleteQuery: (id: string) => void;
-  /** Handler to run/stream a query */
-  onRunQuery: (query: CustomQuery) => void;
+  /** Optional handler to run/stream a query */
+  onRunQuery?: (query: CustomQuery) => void;
   /** Handler to unload a query from the 3D scene */
   onUnloadQuery?: (query: CustomQuery) => void;
   /** Handler to focus camera on the query bounding box center */
@@ -45,6 +47,14 @@ export interface QuerySelectorProps {
   onToggleExpand?: (expanded: boolean) => void;
   /** Optional override for number of points loaded */
   loadedPointCount?: number;
+  /** Callback triggered when pointcloud editing is toggled */
+  onEdit?: (pointcloudId: string | null) => void;
+  /** Optional camera toggle button element passed from CustomQueryManager */
+  cameraToggleButton?: React.ReactNode;
+  /** Optional handler to toggle camera positions visibility */
+  onToggleCameraPositions?: (queryId: string) => void;
+  /** Optional handler to toggle camera positions for a specific pointcloud ID */
+  onTogglePointcloudCameras?: (queryId: string, pointCloudId: string) => void;
 }
 
 /**
@@ -64,8 +74,9 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
   summaryLoading,
   summaryError,
   onUpdateQuery,
+  onSelectedConnectedChange,
   onDeleteQuery,
-  onRunQuery,
+  onRunQuery: _onRunQuery,
   onUnloadQuery,
   onFocusQuery,
   onRefreshSummary,
@@ -74,6 +85,10 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
   isExpanded: externalIsExpanded,
   onToggleExpand,
   loadedPointCount: propLoadedPointCount,
+  onEdit,
+  cameraToggleButton,
+  onToggleCameraPositions,
+  onTogglePointcloudCameras,
 }) => {
   const [internalIsExpanded, setInternalIsExpanded] = React.useState<boolean>(defaultExpanded);
 
@@ -87,27 +102,17 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
     onToggleExpand?.(nextState);
   };
 
-  // Determine actual number of points loaded from 3D context loadedGeometries
-  let loadedPoints = propLoadedPointCount ?? 0;
+  let ctx: ReturnType<typeof usePLYPointCloudContext> | null = null;
   try {
-    const ctx = usePLYPointCloudContext();
-    if (ctx && ctx.loadedGeometries && propLoadedPointCount === undefined) {
-      const geom = ctx.loadedGeometries.get(query.id);
-      if (geom?.attributes?.position) {
-        loadedPoints = geom.attributes.position.count;
-      } else if (summary?.connected_pointclouds) {
-        let count = 0;
-        for (const pc of summary.connected_pointclouds) {
-          const pcGeom = ctx.loadedGeometries.get(pc.id);
-          if (pcGeom?.attributes?.position) {
-            count += pcGeom.attributes.position.count;
-          }
-        }
-        if (count > 0) loadedPoints = count;
-      }
-    }
+    ctx = usePLYPointCloudContext();
   } catch {
     // Context unavailable
+  }
+
+  // Determine actual number of points loaded from 3D context
+  let loadedPoints = propLoadedPointCount ?? 0;
+  if (ctx && propLoadedPointCount === undefined && ctx.pointCount) {
+    loadedPoints = ctx.pointCount;
   }
 
   return (
@@ -159,7 +164,26 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
             🎯 Focus
           </button>
 
-          {isLoadedStream || isLoadingStream ? (
+          {cameraToggleButton ? (
+            cameraToggleButton
+          ) : (
+            <button
+              type="button"
+              title={query.showCameraPositions ? "Hide camera positions for this pointcloud" : "Display camera positions for this pointcloud"}
+              onClick={() => {
+                if (onToggleCameraPositions) {
+                  onToggleCameraPositions(query.id);
+                } else {
+                  onUpdateQuery(query.id, "showCameraPositions", !query.showCameraPositions);
+                }
+              }}
+              className={`query-selector__btn--cameras ${query.showCameraPositions ? "query-selector__btn--cameras-active active" : ""}`}
+            >
+              📷 {query.showCameraPositions ? "Cameras On" : "Cameras"}
+            </button>
+          )}
+
+          {(isLoadedStream || isLoadingStream) && (
             <button
               type="button"
               title="Unload this query from 3D scene"
@@ -167,15 +191,6 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
               className="query-selector__btn--unload"
             >
               ⏸️ Unload
-            </button>
-          ) : (
-            <button
-              type="button"
-              title="Run / Stream this query"
-              onClick={() => onRunQuery(query)}
-              className="query-selector__btn--stream"
-            >
-              ⚡ Stream
             </button>
           )}
 
@@ -227,13 +242,15 @@ export const QuerySelector: React.FC<QuerySelectorProps> = ({
             loadedPoints={loadedPoints}
             isLoadingStream={isLoadingStream}
             isLoadedStream={isLoadedStream}
+            onUpdateQuery={onUpdateQuery}
+            onSelectedConnectedChange={onSelectedConnectedChange}
+            onEdit={onEdit}
+            onTogglePointcloudCameras={onTogglePointcloudCameras}
           />
 
           {/* Card Controls & Status Bar */}
           <div className="query-selector__bottom-bar">
-            <span className={`query-selector__status-text ${saveStatus === "Error saving" ? "query-selector__status-text--error" : ""}`}>
-              {saveStatus ? saveStatus : "Auto-saved"}
-            </span>
+            <span className={`query-selector__status-text ${saveStatus === "Error saving" ? "query-selector__status-text--error" : ""}`}></span>
           </div>
         </>
       )}

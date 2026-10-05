@@ -31,6 +31,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        USER_ID: ${UID:-1000}
+        GROUP_ID: ${GID:-1000}
     container_name: seasee-r-test-worker
     volumes:
       - ./backend:/app

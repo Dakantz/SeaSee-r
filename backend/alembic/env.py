@@ -25,8 +25,8 @@ if config.config_file_name is not None:
 # target metadata for autogenerate
 target_metadata = Base.metadata
 
-# Convert async postgresql+asyncpg URL to sync postgresql URL for Alembic
-sync_db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+# Convert async postgresql+asyncpg URL to sync postgresql+psycopg2 URL for Alembic
+sync_db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""

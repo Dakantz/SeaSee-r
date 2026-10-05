@@ -6,8 +6,10 @@ from app.api.routes.health import router as health_router
 from app.api.routes.pointclouds import router as pointclouds_router
 from app.api.routes.jobs import router as jobs_router
 from app.api.routes.videos import router as videos_router
-from app.api.routes.tusd_webhooks import router as tusd_webhooks_router
+from app.api.routes.tusd_webhooks import router as tusd_webhooks_router, tusd_router
 from app.api.routes.bathymetry import router as bathymetry_router
+from app.api.routes.opensfm import router as opensfm_router
+from app.api.routes.logs import router as logs_router
 
 # Custom function to generate unique and clean operation IDs for the frontend client
 def custom_generate_unique_id(route: APIRoute):
@@ -42,6 +44,19 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
+import logging
+from fastapi.responses import JSONResponse
+
+logger = logging.getLogger("app.main")
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    logger.error("Unhandled exception caught in request: %s", exc, exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error", "error": str(exc)}
+    )
+
 # Serve generated EPT point cloud files statically
 app.mount("/ept", StaticFiles(directory=settings.ept_dir), name="ept")
 
@@ -51,4 +66,9 @@ app.include_router(pointclouds_router)
 app.include_router(jobs_router)
 app.include_router(videos_router)
 app.include_router(tusd_webhooks_router)
+app.include_router(tusd_router)
 app.include_router(bathymetry_router)
+app.include_router(opensfm_router, prefix="/api")
+app.include_router(opensfm_router)
+app.include_router(logs_router, prefix="/api")
+app.include_router(logs_router)

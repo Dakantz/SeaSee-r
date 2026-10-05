@@ -44,10 +44,13 @@ def test_parser_single_underscore_operator():
 
 def test_parser_in_operator_comma_separated():
     parser = QueryFilterParser(allowed_fields=ALLOWED_FIELDS)
-    req = make_request("pointcloud_id__in=uuid1,uuid2,uuid3")
+    u1 = "11111111-1111-1111-1111-111111111111"
+    u2 = "22222222-2222-2222-2222-222222222222"
+    u3 = "33333333-3333-3333-3333-333333333333"
+    req = make_request(f"pointcloud_id__in={u1},{u2},{u3}")
     filters = parser(req)
     assert len(filters) == 1
-    assert filters[0] == FilterCriterion(field="pointcloud_id", operator="in", value=["uuid1", "uuid2", "uuid3"])
+    assert filters[0] == FilterCriterion(field="pointcloud_id", operator="in", value=[u1, u2, u3])
 
 
 def test_parser_like_operator():
@@ -60,10 +63,11 @@ def test_parser_like_operator():
 
 def test_parser_reserved_params_ignored():
     parser = QueryFilterParser(allowed_fields=ALLOWED_FIELDS)
-    req = make_request("lod=2&page=1&limit=50&pointcloud_id=uuid1")
+    u1 = "11111111-1111-1111-1111-111111111111"
+    req = make_request(f"lod=2&page=1&limit=50&pointcloud_id={u1}")
     filters = parser(req)
     assert len(filters) == 1
-    assert filters[0] == FilterCriterion(field="pointcloud_id", operator="eq", value="uuid1")
+    assert filters[0] == FilterCriterion(field="pointcloud_id", operator="eq", value=u1)
 
 
 def test_parser_unauthorized_field_raises_400():
@@ -82,3 +86,37 @@ def test_parser_invalid_operator_raises_400():
         parser(req)
     assert exc_info.value.status_code == 400
     assert "Invalid filter operator" in exc_info.value.detail
+
+
+def test_parser_invalid_type_raises_400():
+    parser = QueryFilterParser(allowed_fields=ALLOWED_FIELDS)
+    req = make_request("number_of_points__gte=490e4bfb-d08b-5ebc-b039-a9ce436dd944")
+    with pytest.raises(HTTPException) as exc_info:
+        parser(req)
+    assert exc_info.value.status_code == 400
+    assert "Invalid input format for filter field 'number_of_points'" in exc_info.value.detail
+
+
+def test_parser_all_pointcloud_metadata_fields():
+    from app.api.dependencies.pointcloud import POINTCLOUD_ALLOWED_FIELDS
+    parser = QueryFilterParser(allowed_fields=POINTCLOUD_ALLOWED_FIELDS)
+    req = make_request("min_x__gte=10.5&pcid=4326&safe_filename=clean.ply")
+    filters = parser(req)
+    assert len(filters) == 3
+    assert FilterCriterion(field="min_x", operator="gte", value="10.5") in filters
+    assert FilterCriterion(field="pcid", operator="eq", value="4326") in filters
+    assert FilterCriterion(field="safe_filename", operator="eq", value="clean.ply") in filters
+
+
+def test_parser_opensfm_metadata_fields():
+    from app.api.dependencies.pointcloud import POINTCLOUD_ALLOWED_FIELDS
+    parser = QueryFilterParser(allowed_fields=POINTCLOUD_ALLOWED_FIELDS)
+    req = make_request("reconstruction_index=0&views__gte=10&sparse_points__gt=1000&dense_points__gte=50000")
+    filters = parser(req)
+    assert len(filters) == 4
+    assert FilterCriterion(field="reconstruction_index", operator="eq", value="0") in filters
+    assert FilterCriterion(field="views", operator="gte", value="10") in filters
+    assert FilterCriterion(field="sparse_points", operator="gt", value="1000") in filters
+    assert FilterCriterion(field="dense_points", operator="gte", value="50000") in filters
+
+

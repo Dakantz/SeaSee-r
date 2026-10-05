@@ -4,8 +4,9 @@ import NativePotreeViewer from './NativePotreeViewer';
 import { usePotreeScripts } from '../../hooks/usePotreeScripts';
 import type {PointCloudMetadataResponse} from "../../client";
 import PointCloudSidebar from './PointCloudSidebar';
-import { useTimelineStore } from '../../store/timelineStore';
 import { ViewerProvider } from './ViewerContext';
+import { getApiBaseUrl } from '../../utils/apiConfig';
+import LegacyBanner from '../common/LegacyBanner';
 
 const PointCloudEditorPageContent: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -13,10 +14,6 @@ const PointCloudEditorPageContent: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [error] = useState<string | null>(null);
 
-    const currentTime = useTimelineStore((state) => state.currentTime);
-    const isPlaying = useTimelineStore((state) => state.isPlaying);
-    const togglePlay = useTimelineStore((state) => state.togglePlay);
-    const reset = useTimelineStore((state) => state.reset);
 
     const [pointBudget, setPointBudget] = useState<number>(2000000);
     const [pointSize, setPointSize] = useState<number>(1.0);
@@ -43,11 +40,13 @@ const PointCloudEditorPageContent: React.FC = () => {
         
         if (newId) {
             setSelectedIds(prev => {
-                if (prev.includes(newId)) {
-                    return prev.filter(i => i !== newId);
-                } else {
-                    return [...prev, newId];
+                const next = prev.includes(newId)
+                    ? prev.filter(i => i !== newId)
+                    : [...prev, newId];
+                if (editingPointcloudId && !next.includes(editingPointcloudId)) {
+                    setEditingPointcloudId(null);
                 }
+                return next;
             });
             // We can optionally navigate if we wanted to change the URL, but keeping state is cleaner for multiselect.
         }
@@ -56,7 +55,7 @@ const PointCloudEditorPageContent: React.FC = () => {
     const handleDeletePointCloud = async (id: string) => {
         if (!window.confirm(`Delete point cloud ${id}? This cannot be undone.`)) return;
         try {
-            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+            const API_BASE_URL = getApiBaseUrl();
             const response = await fetch(`${API_BASE_URL}/pointclouds/${id}`, { method: 'DELETE' });
             if (response.ok) {
                 setSelectedIds(prev => prev.filter(sid => sid !== id));
@@ -74,7 +73,7 @@ const PointCloudEditorPageContent: React.FC = () => {
     const handleDeleteAllSelected = async (ids: string[]) => {
         if (!window.confirm(`Delete all ${ids.length} selected point clouds? This cannot be undone.`)) return;
         try {
-            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+            const API_BASE_URL = getApiBaseUrl();
             const promises = ids.map(id => fetch(`${API_BASE_URL}/pointclouds/${id}`, { method: 'DELETE' }));
             const responses = await Promise.all(promises);
             
@@ -135,10 +134,12 @@ const PointCloudEditorPageContent: React.FC = () => {
     }
 
     return (
-        <div style={{ width: '100%', height: '100vh', background: '#000', position: 'relative' }}>
-            <PointCloudSidebar onSelect={handleSelect} selectedIds={selectedIds} onEditSelect={setEditingPointcloudId} editingId={editingPointcloudId} refreshKey={refreshSidebarKey} onDelete={handleDeletePointCloud} onDeleteAll={handleDeleteAllSelected} />
-            
-            <div style={{ marginLeft: '288px', height: '100%', position: 'relative' }}>
+        <div style={{ width: '100%', height: '100%', flex: 1, display: 'flex', flexDirection: 'column', background: '#000', overflow: 'hidden' }}>
+            <LegacyBanner pageName="PointCloud Editor" />
+            <div style={{ position: 'relative', flex: 1, width: '100%', minHeight: 0, overflow: 'hidden' }}>
+                <PointCloudSidebar onSelect={handleSelect} selectedIds={selectedIds} onEditSelect={setEditingPointcloudId} editingId={editingPointcloudId} refreshKey={refreshSidebarKey} onDelete={handleDeletePointCloud} onDeleteAll={handleDeleteAllSelected} />
+                
+                <div style={{ marginLeft: '288px', height: '100%', position: 'relative' }}>
                 {/* Native Potree DOM Container */}
                 <NativePotreeViewer pointCloudIds={selectedIds} gizmoMode={gizmoMode} editingPointcloudId={editingPointcloudId} />
                 
@@ -278,46 +279,6 @@ const PointCloudEditorPageContent: React.FC = () => {
                                 </select>
                             </div>
 
-                            {/* Timeline ROV Animation Controls */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px', paddingTop: '5px', borderTop: '1px solid #333' }}>
-                                <label style={{ fontSize: '12px', color: '#ccc', display: 'flex', justifyContent: 'space-between' }}>
-                                    <span>Timeline:</span>
-                                    <span style={{ color: '#4caf50', fontWeight: 'bold' }}>{currentTime.toFixed(2)}s</span>
-                                </label>
-                                <div style={{ display: 'flex', gap: '6px' }}>
-                                    <button
-                                        onClick={togglePlay}
-                                        style={{
-                                            flex: 1,
-                                            background: isPlaying ? '#e53935' : '#2e7d32',
-                                            color: 'white',
-                                            border: 'none',
-                                            padding: '6px',
-                                            borderRadius: '4px',
-                                            cursor: 'pointer',
-                                            fontSize: '13px',
-                                            fontWeight: 500,
-                                        }}
-                                    >
-                                        {isPlaying ? 'Pause' : 'Play'}
-                                    </button>
-                                    <button
-                                        onClick={reset}
-                                        style={{
-                                            flex: 1,
-                                            background: '#555',
-                                            color: 'white',
-                                            border: 'none',
-                                            padding: '6px',
-                                            borderRadius: '4px',
-                                            cursor: 'pointer',
-                                            fontSize: '13px',
-                                        }}
-                                    >
-                                        Reset
-                                    </button>
-                                </div>
-                            </div>
                             
                             <button 
                                 onClick={() => {
@@ -391,6 +352,7 @@ const PointCloudEditorPageContent: React.FC = () => {
                         </div>
                     </div>
                 )}
+            </div>
             </div>
         </div>
     );

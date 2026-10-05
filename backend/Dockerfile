@@ -6,11 +6,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     postgresql-client \
     postgis \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Install PDAL, Entwine, and Python 3.11 from conda-forge
-RUN mamba install -y -c conda-forge pdal entwine python=3.11 && \
+# Install PDAL, Entwine, and Python 3.11 from conda-forge in a dedicated environment
+RUN mamba create -n app_env -y -c conda-forge python=3.11 pdal entwine && \
     mamba clean -ya
+
+ENV PATH=/opt/conda/envs/app_env/bin:$PATH
 
 WORKDIR /app
 
@@ -18,8 +21,13 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Create non-root user (matching host UID 1000)
-RUN userdel -f ubuntu || true && useradd -m -u 1000 -s /bin/bash appuser
+# Create non-root user (matching host UID/GID dynamically)
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+
+RUN userdel -f ubuntu || true && \
+    (groupadd -g ${GROUP_ID} appgroup 2>/dev/null || true) && \
+    (useradd -m -u ${USER_ID} -g ${GROUP_ID} -s /bin/bash appuser 2>/dev/null || useradd -m -u ${USER_ID} -s /bin/bash appuser)
 
 # Copy backend app and change ownership
 COPY --chown=appuser:appuser . .
