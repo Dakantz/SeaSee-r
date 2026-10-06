@@ -20,7 +20,15 @@ This directory contains screenshots showcasing the primary user interfaces, 3D v
 
 ---
 
-## 3. Point Cloud Overview (Transform Gizmo / Edit Mode)
+## 3. Point Cloud Overview (Octopus)
+
+![PointCloud Overview 3](./PointCloud_Overview_3.png)
+
+- **Description**: This overview displays the hiding spot of a an octopus that has been reconstructed as a point cloud.  
+
+---
+
+## 4. Point Cloud Overview (Transform Gizmo / Edit Mode)
 
 ![PointCloud Overview Edit 1](./PointCloud_Overview_Edit_1.png)
 
@@ -28,7 +36,15 @@ This directory contains screenshots showcasing the primary user interfaces, 3D v
 
 ---
 
-## 4. 2D LOD Quadtree Analyzer
+## EMODnet Bathymetry
+
+![EMODnet Bathymetry 1](./EMODnet_Bathymetry_1.png)
+
+- **Description**: Background terrain visualization within the Point Cloud Overview. Utilizes EMODnet Bathymetry depth data to render OpenStreetMap imagery over a 3D seafloor mesh with a custom height profile, providing geographic and bathymetric context.
+
+---
+
+## 2D LOD Quadtree Analyzer
 
 ![LOD Analyzer Hybrid Quadtree 1](./LOD_Analyzer_Hybrid_Quadtree_1.png)
 
@@ -36,7 +52,7 @@ This directory contains screenshots showcasing the primary user interfaces, 3D v
 
 ---
 
-## 5. System Health & Diagnostics
+## System Health & Diagnostics
 
 ![System Health Diagnostics 1](./System_Health_Diagnostics_1.png)
 
@@ -44,7 +60,7 @@ This directory contains screenshots showcasing the primary user interfaces, 3D v
 
 ---
 
-## 6. Job Pipeline Overview
+## Job Pipeline Overview
 
 ![Job Pipeline Overview 1](./job_pipeline_overview_1.png)
 

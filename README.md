@@ -2,7 +2,7 @@
 
 A system to ingest, explore, and plan operations for ROV systems in marine environments.
 
-![SeaSee-r Point Cloud Overview](./GSoC_Notes/6_Screenshots/PointCloud_Overview_1.png)
+![SeaSee-r Point Cloud Overview](./GSoC_Notes/6_Screenshots/PointCloud_Overview_3.png)
 
 _For additional interface previews and system views, see the [Screenshots Overview](./GSoC_Notes/6_Screenshots/README.md)._
 
