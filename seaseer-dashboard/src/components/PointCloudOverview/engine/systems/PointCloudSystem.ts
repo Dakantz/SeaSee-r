@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { EngineCallbacks, EngineConfig } from "../types";
-import type { CustomQuery, QuerySummaryData } from "../../../PointCloudPanel/CustomQueryManager";
+import type { CustomQuery, QuerySummaryData, ConnectedPointCloudMetadata } from "../../../PointCloudPanel/CustomQueryManager";
 import { isConnectedPointCloudSelected } from "../../../PointCloudPanel/CustomQueryManager";
 import type { PointCloudMetadataResponse } from "../../../../client";
 import type { FilterRule } from "../../../PointCloudPanel/utils/filterUtils";
@@ -87,79 +87,116 @@ export class PointCloudSystem {
         }
     }
 
-    private getTargetBounds(pcId: string): Bounds3D {
-        // 1. Check summaryMap connected_pointclouds
+    private getTargetBounds(
+        pcId: string,
+        query?: CustomQuery,
+        pcMeta?: ConnectedPointCloudMetadata
+    ): Bounds3D {
+        const hasValidBounds = (b: {
+            min_x?: number | null;
+            max_x?: number | null;
+            min_y?: number | null;
+            max_y?: number | null;
+            min_z?: number | null;
+            max_z?: number | null;
+        } | null | undefined): boolean => {
+            return (
+                b != null &&
+                b.min_x != null &&
+                b.max_x != null &&
+                b.min_y != null &&
+                b.max_y != null &&
+                b.min_z != null &&
+                b.max_z != null
+            );
+        };
+
+        const toBounds3D = (b: {
+            min_x?: number | null;
+            max_x?: number | null;
+            min_y?: number | null;
+            max_y?: number | null;
+            min_z?: number | null;
+            max_z?: number | null;
+        }): Bounds3D => ({
+            minX: Number(b.min_x),
+            maxX: Number(b.max_x),
+            minY: Number(b.min_y),
+            maxY: Number(b.max_y),
+            minZ: Number(b.min_z),
+            maxZ: Number(b.max_z),
+        });
+
+        // 1. Direct metadata passed for this specific point cloud
+        if (hasValidBounds(pcMeta)) {
+            return toBounds3D(pcMeta!);
+        }
+
+        // 2. Check query's own summary for a connected pointcloud matching pcId
+        const qSummary = query
+            ? (this.summaryMap && query.id ? this.summaryMap[query.id] : undefined) || query.summary
+            : undefined;
+
+        if (qSummary?.connected_pointclouds) {
+            const match = qSummary.connected_pointclouds.find(
+                (p) => p && String(p.id) === pcId
+            );
+            if (hasValidBounds(match)) {
+                return toBounds3D(match!);
+            }
+        }
+
+        // 3. Check catalog for pcId metadata
+        if (this.catalog) {
+            const match = this.catalog.find((c) => c && String(c.id) === pcId);
+            if (hasValidBounds(match)) {
+                return toBounds3D(match!);
+            }
+        }
+
+        // 4. Check all summaries across summaryMap for connected_pointclouds matching pcId
         if (this.summaryMap) {
             for (const summary of Object.values(this.summaryMap)) {
                 if (summary?.connected_pointclouds) {
                     const match = summary.connected_pointclouds.find(
                         (p) => p && String(p.id) === pcId
                     );
-                    if (
-                        match &&
-                        match.min_x != null &&
-                        match.max_x != null &&
-                        match.min_y != null &&
-                        match.max_y != null &&
-                        match.min_z != null &&
-                        match.max_z != null
-                    ) {
-                        return {
-                            minX: Number(match.min_x),
-                            maxX: Number(match.max_x),
-                            minY: Number(match.min_y),
-                            maxY: Number(match.max_y),
-                            minZ: Number(match.min_z),
-                            maxZ: Number(match.max_z),
-                        };
+                    if (hasValidBounds(match)) {
+                        return toBounds3D(match!);
                     }
                 }
-                if (
-                    summary?.bounding_box &&
-                    summary.bounding_box.min_x != null &&
-                    summary.bounding_box.max_x != null &&
-                    summary.bounding_box.min_y != null &&
-                    summary.bounding_box.max_y != null &&
-                    summary.bounding_box.min_z != null &&
-                    summary.bounding_box.max_z != null
-                ) {
-                    const bbox = summary.bounding_box;
-                    return {
-                        minX: Number(bbox.min_x),
-                        maxX: Number(bbox.max_x),
-                        minY: Number(bbox.min_y),
-                        maxY: Number(bbox.max_y),
-                        minZ: Number(bbox.min_z),
-                        maxZ: Number(bbox.max_z),
-                    };
+            }
+        }
+
+        // 5. If this dataset belongs specifically to `query` (single-dataset query or pcFilter matches)
+        // and that query has a bounding_box in its own summary, use that query's bounding box
+        if (qSummary && hasValidBounds(qSummary.bounding_box)) {
+            const isSinglePcQuery =
+                (qSummary.connected_pointclouds && qSummary.connected_pointclouds.length === 1 && String(qSummary.connected_pointclouds[0].id) === pcId) ||
+                query?.filters?.some((f) => f.field === "pointcloud_id" && String(f.value) === pcId) ||
+                (!qSummary.connected_pointclouds || qSummary.connected_pointclouds.length === 0);
+
+            if (isSinglePcQuery) {
+                return toBounds3D(qSummary.bounding_box!);
+            }
+        }
+
+        // 6. Look for any query in this.queries specifically targeting pcId and check its bounding_box
+        if (this.queries) {
+            for (const q of this.queries) {
+                const s = (this.summaryMap && q.id ? this.summaryMap[q.id] : undefined) || q.summary;
+                if (s && hasValidBounds(s.bounding_box)) {
+                    const matchesPc =
+                        q.filters?.some((f) => f.field === "pointcloud_id" && String(f.value) === pcId) ||
+                        (s.connected_pointclouds && s.connected_pointclouds.length === 1 && String(s.connected_pointclouds[0].id) === pcId);
+                    if (matchesPc) {
+                        return toBounds3D(s.bounding_box!);
+                    }
                 }
             }
         }
 
-        // 2. Check catalog
-        if (this.catalog) {
-            const match = this.catalog.find((c) => c && String(c.id) === pcId);
-            if (
-                match &&
-                match.min_x != null &&
-                match.max_x != null &&
-                match.min_y != null &&
-                match.max_y != null &&
-                match.min_z != null &&
-                match.max_z != null
-            ) {
-                return {
-                    minX: Number(match.min_x),
-                    maxX: Number(match.max_x),
-                    minY: Number(match.min_y),
-                    maxY: Number(match.max_y),
-                    minZ: Number(match.min_z),
-                    maxZ: Number(match.max_z),
-                };
-            }
-        }
-
-        // 3. Sensible default fallback bounds if not yet loaded in metadata
+        // 7. Sensible default fallback bounds if not yet loaded in metadata
         return {
             minX: -50,
             maxX: 50,
@@ -179,7 +216,7 @@ export class PointCloudSystem {
                 const qId = query.id;
                 if (!qId) continue;
 
-                const summary = this.summaryMap ? this.summaryMap[qId] : undefined;
+                const summary = (this.summaryMap ? this.summaryMap[qId] : undefined) || query.summary;
                 if (summary?.connected_pointclouds && summary.connected_pointclouds.length > 0) {
                     for (const pc of summary.connected_pointclouds) {
                         if (!pc.id) continue;
@@ -204,8 +241,8 @@ export class PointCloudSystem {
                                     { id: `filter-pc-${pcId}`, field: "pointcloud_id", operator: "eq", value: pcId },
                                 ];
 
-                            const bounds = this.getTargetBounds(pcId);
-                            const { matrixArr, center } = getPointCloudTransform(pcId, this.summaryMap, this.catalog);
+                            const bounds = this.getTargetBounds(pcId, query, pc);
+                            const { matrixArr, center } = getPointCloudTransform(pcId, this.summaryMap, this.catalog, query);
 
                             targets.push({
                                 key,
@@ -230,8 +267,8 @@ export class PointCloudSystem {
                             const cleanFilters: FilterRule[] = query.filters.filter(
                                 (f) => !["min_x", "max_x", "min_y", "max_y", "min_z", "max_z"].includes(f.field)
                             );
-                            const bounds = this.getTargetBounds(pcId);
-                            const { matrixArr, center } = getPointCloudTransform(pcId, this.summaryMap, this.catalog);
+                            const bounds = this.getTargetBounds(pcId, query);
+                            const { matrixArr, center } = getPointCloudTransform(pcId, this.summaryMap, this.catalog, query);
 
                             targets.push({
                                 key,

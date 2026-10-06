@@ -170,6 +170,45 @@ class TargetLODManager {
         this.octreeRoot = this.createOctreeNode(0, this.domainBounds, null);
     }
 
+    public updateTarget(target: PointCloudTarget): void {
+        const boundsChanged =
+            !this.domainBounds ||
+            this.domainBounds.minX !== target.bounds.minX ||
+            this.domainBounds.maxX !== target.bounds.maxX ||
+            this.domainBounds.minY !== target.bounds.minY ||
+            this.domainBounds.maxY !== target.bounds.maxY ||
+            this.domainBounds.minZ !== target.bounds.minZ ||
+            this.domainBounds.maxZ !== target.bounds.maxZ;
+
+        this.updateTransform(target);
+
+        if (boundsChanged) {
+            this.domainBounds = { ...target.bounds };
+            const dx = this.domainBounds.maxX - this.domainBounds.minX;
+            const dy = this.domainBounds.maxY - this.domainBounds.minY;
+            const dz = this.domainBounds.maxZ - this.domainBounds.minZ;
+
+            this.domainCenter = new THREE.Vector3(
+                this.domainBounds.minX + dx / 2,
+                this.domainBounds.minY + dy / 2,
+                this.domainBounds.minZ + dz / 2
+            );
+            this.domainMetric = Math.max(1.0, Math.sqrt(dx * dx + dy * dy + dz * dz));
+            this.switchingThreshold = this.domainMetric * this.config.switchDistanceFactor;
+
+            if (this.octreeRoot) {
+                this.evictOctreeSubtree(this.octreeRoot);
+            }
+            this.octreeRoot = this.createOctreeNode(0, this.domainBounds, null);
+
+            if (this.wholeDomainChunk) {
+                this.disposeChunk(this.wholeDomainChunk);
+                this.wholeDomainChunk = null;
+            }
+            this.isCurrentlyInside = null;
+        }
+    }
+
     public updateTransform(target: PointCloudTarget): void {
         this.target = target;
         if (target.matrixArr && target.matrixArr.length === 16) {
@@ -1076,7 +1115,7 @@ export class DynamicLODController {
         for (const target of validTargets) {
             const existing = this.targetManagers.get(target.key);
             if (existing) {
-                existing.updateTransform(target);
+                existing.updateTarget(target);
             } else {
                 const manager = new TargetLODManager(target, this.rootGroup, this.config, this.showOutlines, this.disableDynamicLOD);
                 this.targetManagers.set(target.key, manager);
