@@ -20,6 +20,7 @@ The system is designed as an extensible, scalable platform for marine researcher
 ## 2. Goals of the Project
 
 The goal is to create a website that allows users to upload ROV video feeds, process the data into a point cloud, and provide a flexible navigation interface that allows users to explore the 3D map. 
+This is to help with the documentation and study of octopuses and their surroundings that live in the sea.  
 
 ---
 
@@ -46,6 +47,11 @@ The base architecture of the SeaSee-r website has been fully implemented:
 
 - **Docker Setup**: Containerized all SeaSee-r services into 7 Docker containers.
 
+### Screenshots:
+
+![SeaSee-r Point Cloud Overview](./GSoC_Notes/6_Screenshots/PointCloud_Overview_3.png)
+
+![PointCloud Overview 2](./GSoC_Notes/6_Screenshots/PointCloud_Overview_2.png)
 ---
 
 ## 4. What’s Left to Do
@@ -58,14 +64,14 @@ The base architecture of the SeaSee-r website has been fully implemented:
 
 ---
 
-### Key Learnings
+## 5. Key Learnings
 - **Full-Stack Programming**: Gained extensive experience with both the front-end and back-end of web development.
 - **Spatial Databases & PostGIS**: Learned about spatial databases like PostGIS and how to filter and query data in them.
 - **Coordinate Reference Systems**: Deepened my understanding of geographic coordinate systems like EPSG:3765 (Croatia TM) and EPSG:3857 (Web Mercator).
 
 ---
 
-## 5. Acknowledgements
+## 6. Acknowledgements
 
 I would like to thank my mentors **Benedikt Kantz**, **Tobias Schreck**, and **Wolfgang Slany** for their guidance and help with technical challenges. 
 They always made time for me and supported the project with great ideas and advice.
